@@ -128,7 +128,7 @@ Each collection has a definition file in the workspace, for example `.surface/ty
 
 ```yaml
 name: Task
-folder: tasks/            # the type's home; created with the type; every new task is created here
+folder: tasks/            # default folder for new records; a default, not a rule
 fields:
   status:   { type: choice, options: [todo, doing, done], default: todo }
   due:      { type: date }
@@ -145,7 +145,7 @@ extra_fields: allow       # allow | warn | deny
 
 The type is the filename prefix (`task_…`). A file without an ID filename is an untyped note, not an error; Surface flags it with *"assign an ID?"*
 
-**Superseded (Oct 12): folders don't matter.** With type-prefixed ID filenames (`task_28ey28eh.md`), the type and key live in the filename. A file can sit in any folder, or none, and is still fully identified; links resolve anywhere in the workspace. The earlier "every type has a home folder" decision is replaced. Folders are optional tidiness for people. Whether Surface puts new records in a default folder is an open preference. `type:` is dropped from front matter (see CONVENTIONS).
+**Superseded (Oct 12): folders don't matter.** With type-prefixed ID filenames (`task_28ey28eh.md`), the type and key live in the filename. A file can sit in any folder, or none, and is still fully identified; links resolve anywhere in the workspace. The earlier "every type has a home folder" decision is replaced. **Decided:** Surface puts new records in a default folder for their type (for example `tasks/`) to keep things tidy. It's a default, not a rule. Files can be moved anywhere, nothing breaks, and nothing is flagged. Enforcing folders would add no search speed, because queries run on the index and agents can filter by prefix (`-g "task_*"`). `type:` is dropped from front matter (see CONVENTIONS).
 
 ### 3. A rebuildable typed index
 

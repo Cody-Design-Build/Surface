@@ -127,6 +127,7 @@ Folders play no part in the model. The type comes from the filename, not from wh
 - **Links are bare** (`[[task_28ey28eh|Order cabinets]]`). They resolve anywhere in the workspace, because IDs make every filename unique.
 - **`type:` is dropped** from front matter.
 - **Scope:** everything must live inside the workspace root. Links don't reach outside it.
+- **Default folders:** Surface creates new records in their type's default folder (`tasks/`, `contacts/`) to keep things tidy, and to keep any single folder from growing huge in Finder and Obsidian. It's not enforced, and moved files are never flagged.
 
 **ID format (proposal):** `{type prefix}_{random}`, e.g. `task_0q8z4mkr7f2c.md`. Stripe uses the same pattern (`cus_…`, `inv_…`).
 
