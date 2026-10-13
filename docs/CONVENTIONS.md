@@ -121,6 +121,13 @@ David: an ID as the filename is fine. It works like a database:
 
 Folders play no part in the model. The type comes from the filename, not from where the file sits.
 
+**Decided (Oct 12):**
+
+- **Files can live in any folder.** Location never matters, and moving a file changes nothing.
+- **Links are bare** (`[[task_28ey28eh|Order cabinets]]`). They resolve anywhere in the workspace, because IDs make every filename unique.
+- **`type:` is dropped** from front matter.
+- **Scope:** everything must live inside the workspace root. Links don't reach outside it.
+
 **ID format (proposal):** `{type prefix}_{random}`, e.g. `task_0q8z4mkr7f2c.md`. Stripe uses the same pattern (`cus_…`, `inv_…`).
 
 - **The type is in the key.** Any script can tell what a file is, and where it belongs, from its name alone. That puts type and key on one line, and possibly removes the need for folders (see below).

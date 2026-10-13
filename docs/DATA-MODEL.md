@@ -143,9 +143,9 @@ extra_fields: allow       # allow | warn | deny
 
 ### 2. How a file knows its type
 
-An explicit `type: task` field in front matter, always. A file without `type:` is an untyped note, not an error.
+The type is the filename prefix (`task_…`). A file without an ID filename is an untyped note, not an error; Surface flags it with *"assign an ID?"*
 
-**Decided (Oct 12): every type has a home folder.** Creating a new type creates its folder, and every new record of that type is always created in that folder. The explicit `type:` field still makes each file self-describing, so a file that ends up elsewhere still knows what it is. Still open: whether records may be moved out of their type folder later, and whether a record outside its folder gets flagged.
+**Superseded (Oct 12): folders don't matter.** With type-prefixed ID filenames (`task_28ey28eh.md`), the type and key live in the filename. A file can sit in any folder, or none, and is still fully identified; links resolve anywhere in the workspace. The earlier "every type has a home folder" decision is replaced. Folders are optional tidiness for people. Whether Surface puts new records in a default folder is an open preference. `type:` is dropped from front matter (see CONVENTIONS).
 
 ### 3. A rebuildable typed index
 
