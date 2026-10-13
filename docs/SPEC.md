@@ -226,6 +226,10 @@ A fix is applied only when someone accepts it. A bulk "fix all safe notices" exi
 - agent-built views (sandboxed, with live data access);
 - the first-milestone scope.
 
+### Visual style
+
+**Leaning.** Inspired by **Bear** and **Margin**: native Mac feel, typography-led, one sparing accent colour, live preview with no toolbar, calm even for structured data. See `docs/DESIGN.md`.
+
 ## 10. Agents
 
 **Leaning.**
