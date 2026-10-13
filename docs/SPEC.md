@@ -193,7 +193,27 @@ A fix is applied only when someone accepts it. A bulk "fix all safe notices" exi
 
 ### Technology
 
-**Open.** Being researched in `docs/research/SYNC-TECH.md`. Candidates: Loro, Automerge, Yjs, cr-sqlite, PowerSync, ElectricSQL, Zero, Turso, any-sync, Jazz.
+**Open, research done** (`docs/research/SYNC-TECH.md`). Recommendation, ranked:
+
+1. **Automerge 3 + automerge-repo,** with a small self-hosted relay.
+   - It's the only option that keeps the losing value when two people edit the same field (`getConflicts`), so Surface can flag it. Verified in the Automerge docs.
+   - `changeAt` applies a file edit "as of" the last-written version and lets the CRDT merge it. That's our three-way reconcile, built in.
+   - MIT licence, Rust core, full history.
+2. **Loro.** The best text handling, with line-based diffs suited to Markdown and agent edits. But fields are last-writer-wins with no conflict API, and there's less sync infrastructure ready-made.
+3. **Yjs + Hocuspocus.** Battle-tested, but weak on history and on field conflicts.
+
+**Ruled out:**
+
+- The server decides, not the devices: Zero, PowerSync, ElectricSQL, InstantDB, Turso.
+- Stalled: cr-sqlite (last release Jan 2024) and Triplit.
+- Not open source or not ready: any-sync, Jazz 2.0, DXOS, Ditto.
+
+**Applies to any choice:**
+
+- One CRDT document per record, so the relay can grant or block access per record.
+- SQLite holds the CRDT data as the truth, plus query tables rebuilt from it.
+
+**Next step:** a one-week spike. 20,000 records, the Markdown reconcile, offline team sync through a relay, and per-record permissions; Automerge first, then Loro.
 
 ### Considered and set aside
 
@@ -217,14 +237,27 @@ A fix is applied only when someone accepts it. A bulk "fix all safe notices" exi
 
 ## 9. The app
 
-**Open.** Being researched in `docs/research/APP-TECH.md`:
+**Open, research done** (`docs/research/APP-TECH.md`). Recommendation:
 
-- the app shell (Tauri, Electron or native);
-- the Markdown editor (live preview, clean round trip, collaborative editing);
-- table, board and calendar views, and the query language for ` ```surface ` blocks;
-- how agents connect (a local MCP server, a CLI, or files);
-- agent-built views (sandboxed, with live data access);
-- the first-milestone scope.
+- **App shell: Tauri 2,** a Rust core with a web interface, with Mac polish as its own workstream from day one.
+  - **Margin is built exactly this way** (Tauri v2 + CodeMirror 6; verified in its author's post on the CodeMirror forum).
+  - Fallback: a native Swift shell around the same Rust core, if the web interface isn't "Bear enough."
+- **Editor: CodeMirror 6** with an Obsidian-style live preview. It edits the text itself, so files save exactly as written. It has collaborative-editing plugins for Automerge, Loro and Yjs. ProseMirror-based editors (TipTap, BlockNote) change Markdown on save.
+- **Views:** TanStack Table and TanStack Virtual for tables, dnd-kit for boards, Schedule-X or FullCalendar for calendars.
+- **Query language:** a small YAML format modelled on Obsidian Bases, turned into SQL, plus read-only SQL for agents and power users.
+- **Agents:** one Rust core with three ways in:
+  - the Markdown files;
+  - a `surface` command-line tool;
+  - a local MCP server, restricted to this machine and protected by a token.
+
+  Agent-built views run sandboxed, following the MCP Apps standard.
+- **First milestone:** solo workspaces on Mac only.
+  - the editor;
+  - file watching with three-way merge, and the flags view;
+  - table and board views;
+  - ` ```surface ` blocks;
+  - the CLI and the MCP server;
+  - baseline Mac polish.
 
 ### Visual style
 
@@ -246,7 +279,7 @@ A fix is applied only when someone accepts it. A bulk "fix all safe notices" exi
 
 **Sync and hosting**
 
-1. The sync technology (research pending).
+1. The sync technology: Automerge (recommended) or Loro; decide after the spike.
 2. Who runs the sync server: a hosted Surface service, self-hosted, or both?
 3. Same-network peer-to-peer (Anytype-style), or always through the server?
 
@@ -267,7 +300,7 @@ A fix is applied only when someone accepts it. A bulk "fix all safe notices" exi
 
 **App**
 
-10. Shell, editor, views, agent connection, MVP scope (research pending).
+10. The shell: is about 95% of Bear's look acceptable (Tauri), or are a real native toolbar and controls required (Swift shell)? Also confirm the editor, views and MVP scope.
 
 **Parked**
 
