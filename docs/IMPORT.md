@@ -24,7 +24,7 @@ Yes. Surface's normal behaviour already covers most of it: an existing vault is 
 2. **Infer types.** Surface proposes types from the vault's existing signals: folders (`Tasks/`, `People/`), tags (`#task`), a `type:` or similar property, and recurring sets of front-matter keys. Anything unclear becomes a plain **note** type.
 3. **Infer schemas.** Surface proposes field types from the values it finds (dates, numbers, choices, links). It seeds them from Obsidian's own property types in `.obsidian/types.json`.
 4. **Review.** The user, or the agent in a conversation, confirms or edits the proposed types and schemas. This is the onboarding interview.
-5. **Assign IDs.** Each record gets a time-sortable, type-prefixed ID, written into its front matter after a single bulk approval (adopt mode).
+5. **Assign IDs.** Each record gets a time-sortable ID and a `type:`, written into its front matter after a single bulk approval (adopt mode).
 6. **Resolve links.** Wikilinks are resolved the way Obsidian resolves them (by filename, or by path when there are duplicates) and mapped to record IDs. Markdown links, heading links (`#Heading`), block links (`#^id`) and embeds (`![[...]]`) are resolved too. Ambiguous or broken links are flagged.
 7. **Flag the rest.** Fields that don't fit the schema, broken YAML, duplicate names and broken links all land in "needs attention." Nothing is rewritten without a choice.
 

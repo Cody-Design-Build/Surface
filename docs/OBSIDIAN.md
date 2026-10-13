@@ -73,7 +73,7 @@ contacts:
 ---
 ```
 
-(`type:` appears here on the assumption that the type prefix is dropped from IDs; that's still pending in SPEC §4.)
+(IDs don't carry the type; `type:` is a normal field. Decided Oct 13, SPEC §4.)
 
 ### The choice: store both sides, or one?
 

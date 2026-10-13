@@ -135,17 +135,19 @@ Record
 
 - **`title` is just a field.** It's what Surface displays, and it can repeat (every job has an "Order cabinets" task).
 - **Rule of thumb:** if something needs fields, it's a record of its own, linked or embedded. Simple to-dos in a body stay as `- [ ]`.
-- **A record's type never changes.** Turning a task into an issue is a migration: a new ID, with every link rewritten.
+- **A record's type can change** (Note → Task) with one action. It's a field edit: the ID, links and history stay the same. Fields are mapped to the new type, and any that don't fit are kept and flagged.
 
 ### IDs
 
 **Decided.**
 
-- **Format:** `{prefix}_{time}{random}`, all lowercase Crockford base32. Example: `task_0q8z4mkr7f2c`.
+- **Format:** `{time}{random}`, all lowercase Crockford base32. Example: `0q8z4mkr7f2c`.
   - 7 characters of creation time (seconds, good for about 1,000 years) plus 5 random characters (about 33 million per second).
   - IDs sort by creation time, and can be made offline on any device with no realistic chance of collision.
-- **The prefix is the type.** It's a short, stable code set in the type's schema (`prefix: task`), separate from the display name. Renaming "Tasks" to "To-dos" changes no IDs. **Being reconsidered:** see "Should IDs still carry the type?" below.
-- **Type is derived from the ID.** There's no separate `type:` field. **Being reconsidered**, as above.
+- **IDs don't carry the type (decided Oct 13).** The type is a normal field: `type: task` in the database and in front matter. Changing a record's type (Note → Task) just edits that field, so the ID, links and history stay intact.
+- **Minor open point:** one fixed prefix for every record (e.g. `s_0q8z4mkr7f2c`), to make IDs easy to recognise and search for in logs and text. It would never encode the type.
+
+> **Superseded (Oct 13): type-prefixed IDs** (`task_0q8z4mkr7f2c`, with the type derived from the prefix). The prefix existed so an ID *filename* could say what it was. Once filenames became readable titles and types became user-editable, it only had costs: a type change would need a new ID, rewritten links and split history; users would have to invent a prefix for every type; and merging types would rewrite IDs.
 
 ### Types and schemas
 
@@ -212,25 +214,9 @@ fields:
 | Delete a field | Asks first; shows how many records have values | Values removed from files in one migration | Destructive; undo through history |
 | Rename a type | Instant | `.surface/types/` mirror only | None |
 | Delete a type | Its records become Notes (or are archived); asks first | Unchanged, apart from the type | Fields that don't belong to Note are kept as extra values and flagged |
-| Change a record's type (Note → Task) | One action | Fields mapped; `type` updated | See the ID note below |
+| Change a record's type (Note → Task) | One action; same ID, links and history | Fields mapped; `type:` updated | Fields that don't exist on the new type are kept and flagged |
 
 **In teams:** editing types is a permission (owners and admins by default). Schema changes sync like any change. Two people changing the same field definition at once is flagged.
-
-### Reconsider: should IDs still carry the type?
-
-**Open, and important (expensive to change later).** The type prefix in IDs (`task_…`) existed so a *filename* could say what it was. Filenames are now readable titles, and types are now user-editable. That leaves the prefix with mostly costs:
-
-- **Changing a record's type means a new ID**, so every link is rewritten and history is split. With mutable types and "Note → Task" as a common action, that will happen constantly.
-- **Prefixes would be invented by users** for every new type.
-- **Merging or splitting types** would rewrite IDs.
-
-**Recommendation:**
-
-- Drop the type from the ID: `0q8z4mkr7f2c`, time-sortable plus random as before (optionally a fixed neutral prefix like `s_`).
-- Store the type explicitly: `type: task` in the database and in front matter.
-- Changing a record's type then just edits a field. The ID, links and history stay intact.
-
-This reverses the earlier decision that the type is derived from the ID, so it needs David's call.
 
 ## 5. The Markdown files
 
@@ -257,6 +243,7 @@ This reverses the earlier decision that the type is derived from the ID, so it n
 
 - **Reserved keys:**
   - `id`: the record ID; ties the file to its database record. **Open:** use a namespaced key such as `surface_id` to avoid clashing with vaults that already use `id` (see IMPORT).
+  - `type`: the record's type (Note, Task, …).
   - `title`.
   - `aliases`, `tags`: Obsidian's conventions, reused as-is.
 - **Every other key** is a schema field.
@@ -316,7 +303,7 @@ Everything degrades gracefully: it's readable in any text editor, renders in any
 - **New files found on disk are flagged for import,** defaulting to Note and asking for the type.
   - Refinement: if the file sits in a type's default folder (for example `tasks/`), suggest that type.
   - A bulk "import all as Note" is available for many files at once.
-- **Changing a Note into a Task later** is a type change, which is a migration: a new ID, with links rewritten. Notes to typed records will be the common case, so it must be easy (one action) and safe.
+- **Changing a Note into a Task later** is one action, and it keeps the same ID, links and history (§4). Notes becoming typed records will be the common case.
 
 ## 6. Keeping files and the database in step
 
@@ -490,7 +477,7 @@ A fix is applied only when someone accepts it. A bulk "fix all safe notices" exi
 
 **Types**
 
-- Drop the type prefix from IDs and store `type:` explicitly (recommended; §4).
+- A fixed prefix for all IDs (e.g. `s_`), or none (minor; §4).
 - Who can edit types in a team (default: owners and admins).
 
 **Organizing and Obsidian**
