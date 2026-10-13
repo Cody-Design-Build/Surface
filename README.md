@@ -24,6 +24,7 @@ Local-first. Each workspace is a local database on your device, with every recor
 
 - [`docs/SPEC.md`](docs/SPEC.md): the current design, consolidated.
 - [`docs/DESIGN.md`](docs/DESIGN.md): visual design direction (Bear and Margin inspired).
+- [`docs/OBSIDIAN.md`](docs/OBSIDIAN.md): what escaping into Obsidian looks like.
 - [`docs/research/`](docs/research/): technology research (sync, app).
 - [`docs/notes/`](docs/notes/): working notes showing how decisions were reached (design history).
 - [`docs/IMPORT.md`](docs/IMPORT.md): importing existing vaults (parked).
