@@ -109,6 +109,31 @@ The spectrum of answers:
 
 Note on option 4: Obsidian resolves links by filename only; aliases feed its link picker, not resolution. So links by front-matter ID are dead outside Surface.
 
+### Direction (Oct 12): the filename is the key, and the key carries its type
+
+David: an ID as the filename is fine. It works like a database: the folder is the table, the filename is the primary key, the file is the row, front-matter fields are columns, links are foreign keys, and `title` is just a field.
+
+**ID format (proposal):** `{type prefix}_{random}`, e.g. `task_0q8z4mkr7f2c.md`. Stripe uses the same pattern (`cus_…`, `inv_…`).
+
+- **The type is in the key.** Any script can tell what a file is, and where it belongs, from its name alone. That puts type and key on one line, and possibly removes the need for folders (see below).
+- **The prefix is a short, stable code** defined in the type's schema (`prefix: task`), separate from the display name. Renaming the "Tasks" collection to "To-dos" changes no IDs and no links.
+- **The random part:**
+  - **Lowercase only.** macOS filesystems are case-insensitive by default, so `A` and `a` would collide.
+  - **Crockford base32** (digits plus letters, without `i`, `l`, `o`, `u`), so the characters can't be confused with each other.
+  - **Time-sortable option:** about 7 characters of creation time (seconds), then 5 random. Files then sort in creation order in Finder and in Obsidian's file list, and IDs created offline by different people can't realistically collide.
+  - **Pure random option:** 10 characters (50 bits). The chance of a collision across 100,000 records of one type is about 1 in 250,000.
+- **Who generates them:** Surface and the agent (`new task`). A file created elsewhere (for example "Untitled.md" in Obsidian) is flagged *"no ID; assign one?"* Assigning the ID renames the file, so it happens only when accepted, per the flag-only rule.
+- **The ID is also stored in front matter** as `id: task_0q8z4mkr7f2c`. If the file is renamed in Finder, the front matter still says which record it is.
+- **`type:` becomes redundant.** The type is derived from the ID prefix, so a separate `type:` field would be a second copy that could drift. Keep it only if Obsidian Bases filtering needs it.
+- **A type never changes.** Turning a task into an issue is a migration: a new ID, with every link rewritten. It isn't an in-place edit.
+
+**Folders become optional.** With the type in every filename, a single flat folder still groups records by type (files sort by prefix). Choices:
+
+- **Flat:** all records in one folder. Files can't be "misplaced," and moves don't exist.
+- **Type folders as a convention:** `tasks/task_….md`. Easier on the eye in Finder and Obsidian. Since the prefix says where a file belongs, the normalizer can flag *"task_… is outside tasks/; move it back?"*
+
+Either way, folder location carries no meaning the system depends on.
+
 ### Why files at all, if filenames become keys?
 
 Readable filenames are only one of the things files provide. The rest survive every option above:
