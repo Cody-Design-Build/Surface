@@ -128,7 +128,7 @@ Each collection has a definition file in the workspace, for example `.surface/ty
 
 ```yaml
 name: Task
-folder: tasks/            # default home; optional
+folder: tasks/            # suggested home for new files only; never used for meaning
 fields:
   status:   { type: choice, options: [todo, doing, done], default: todo }
   due:      { type: date }
@@ -143,7 +143,7 @@ extra_fields: allow       # allow | warn | deny
 
 ### 2. How a file knows its type
 
-An explicit `type: task` field in front matter, with the folder as a fallback default. Being explicit survives moves and makes every file self-describing in any app.
+An explicit `type: task` field in front matter, always. Folder location never determines type (or anything else), so files can be moved freely. Being explicit also makes every file self-describing in any app. A file without `type:` is an untyped note, not an error.
 
 ### 3. A rebuildable typed index
 
@@ -181,51 +181,44 @@ Rules:
 
 One field per line, in fixed schema order, means two people editing different fields change different lines, and those merge cleanly. Long free text (descriptions, notes) belongs in the body, or in block-style YAML, so a long value never shares a line with anything else.
 
-### 6. Links without forcing unique names
+### 6. Links: by name, folder-independent
 
-Same pattern as the typed fields: **the file keeps a readable link, the index resolves it to an ID, and anything ambiguous gets flagged.** Names don't have to be unique.
+**Decided (Oct 12):**
 
-**The file always stays readable and Obsidian-compatible**, in one of three forms:
+- **Filenames are human-readable.**
+- **Folder location never matters.**
+- **Files can be moved without breaking links.**
 
-| Form | Example | When to use it |
-|---|---|---|
-| Name | `[[Jane Doe]]` | The name is unique in context (the usual case) |
-| Path | `[[contacts/Jane Doe]]` | Two records share a name. The filesystem already guarantees paths are unique. |
-| Path + display name | `[[contacts/smith/Jane Doe\|Jane Doe]]` | A long path, shown as the plain name |
+Those three together force the design:
 
-Obsidian resolves all three natively. Its "shortest path when possible" link setting does the same thing.
+- **Links are name-only wikilinks: `[[Jane Doe]]`.** They resolve by filename wherever the file sits, in Surface and in Obsidian. Moving a file never breaks a link in either.
+- **Path links are never written.** No `[[contacts/Jane Doe]]`, no `[text](../contacts/Jane Doe.md)`. A path makes the folder matter, and a move breaks the link in any app that didn't do the move.
+- **Filenames must therefore be unique across the whole workspace.** This is the price of name-only links. It's also how Obsidian already resolves links, and CDB OS already follows the rule.
 
-**How the index resolves a link**, in order:
+**Keeping names unique without IDs in filenames.** Disambiguate with human context, not codes: `Jane Doe (Acme Plumbing)`, `Kitchen Remodel - 2243 Steiner`. Surface helps:
 
-1. **Explicit path.** If the link has a path, it's unambiguous.
-2. **Narrow by type.** A typed link field in the schema (`assignee: { type: link, to: person }`) only looks at person records. A task named "Jane Doe" and a contact named "Jane Doe" never collide in that field.
-3. **Narrow by nearness** (body links, which have no type): a match in the same folder, then the same parent, before anywhere else.
-4. **Aliases.** Match names listed in a record's `aliases:` front-matter field (an existing Obsidian convention).
-5. **Still more than one match, or none:** flag it. Nothing is guessed, and the link shows as unresolved until someone picks.
+- **On create:** if the name is taken, Surface says so and suggests a qualifier, for example from the record's type or a key field. It never silently adds a number or code.
+- **On outside edits:** a duplicate filename created in Finder or another app is flagged, with the links that are now ambiguous. Nothing is renamed automatically (the flag-only rule).
 
-Steps 2–4 are **Surface-only**. Obsidian doesn't know about types, Surface's nearness rule or alias resolution. It resolves a bare `[[Name]]` by filename only, and an alias doesn't resolve a bare link there (aliases only feed its link picker). So these steps help Surface read links that humans typed loosely, but they must never be what a written link *depends* on.
+**What the ID is for.** Every record keeps a permanent `id` in front matter. Links don't carry it; the index uses it:
 
-**Writing links (Obsidian-safe rule).** When Surface or the agent creates or fixes a link, it writes the shortest form that **Obsidian would resolve to the same file**:
+- The index stores which record ID each link resolved to.
+- **Moves:** free. The name is unchanged, so links still resolve everywhere.
+- **Renames inside Surface or Obsidian:** the app doing the rename rewrites the links.
+- **Renames outside both** (Finder, git): the ID shows it's the same record under a new name. Links using the old name are flagged "target renamed; update N links?" and are updated only when someone accepts.
+- **A duplicate appears:** existing links keep their stored target and are flagged until the name collision is resolved.
 
-- the plain `[[Name]]` only if that filename is unique across the whole workspace;
-- otherwise a path, `[[contacts/Jane Doe]]`, or a path plus display name.
+**Resolution order in Surface** (for reading links humans typed loosely):
 
-Uniqueness here is judged the way Obsidian judges it (by filename across the vault), not by Surface's type narrowing. A link Surface writes therefore points to the same record in both apps.
+1. exact filename;
+2. `aliases:` in front matter;
+3. if still unresolved or ambiguous, narrowing by the link field's type, then flagging.
 
-**Compatibility notes:**
+Steps 2–3 are Surface-only conveniences. Obsidian resolves by filename only, which is why unique filenames, not Surface's narrowing, are what make links safe in both apps.
 
-- Links in front matter must be quoted strings (`assignee: "[[Jane Doe]]"`), or lists of them. Obsidian treats those as real links in properties, backlinks and the graph.
-- Heading links (`[[Note#Heading]]`) and block links (`[[Note#^id]]`) are native Obsidian syntax.
-- Renames done *in Obsidian* are handled by Obsidian's own "update links" setting, and Surface just sees the updated files. Renames done in Finder or git break the links in Obsidian until someone accepts Surface's "update N links?" flag.
-- A loose bare link a human typed (`[[Jane Doe]]` with two Jane Does) may open the wrong one in Obsidian, even though Surface resolved it correctly by type. Surface flags these with "ambiguous in other apps; pin it?"
+**Front matter links** are quoted strings: `assignee: "[[Jane Doe]]"`, or a list of them. Obsidian treats those as real links in properties, backlinks and the graph.
 
-**Remembering what a link meant.** Once a link resolves, the index stores which record ID it points to. That keeps links stable even when things change later:
-
-- **A new duplicate appears** (a second Jane Doe is created): existing links keep their stored target and are flagged *"now ambiguous; pin it?"* Pinning rewrites that link to its path form. Pinning is an edit someone chooses, so the flag-only rule still holds.
-- **A rename inside Surface:** Surface rewrites the links that point at the renamed record, using the stored IDs. A rename is something the user did in Surface, so this isn't the normalizer acting.
-- **A rename outside Surface** (Finder, another editor, git): the record's `id` in its front matter is unchanged, so the index sees the same record at a new path. Links that point to the old name are flagged *"target renamed; update N links?"* and updated only when someone accepts.
-
-The cost: the stored link → ID mapping lives in the index, not the file. If the index is rebuilt from scratch, links are resolved fresh from their text. Any link whose text is ambiguous at that moment gets flagged rather than silently reattached. That's acceptable, because writing the shortest unambiguous form keeps those cases rare.
+**Generic editors:** wikilinks show as plain text in editors that don't support them (GitHub, VS Code without an extension). Nothing breaks; there's just no click-through. That's accepted in exchange for folder-independent links.
 
 ### 7. Schema changes are migrations
 
@@ -257,11 +250,11 @@ What we give up on purpose: block-level permissions, per-block metadata, and Not
 
 1. **Source of truth:** files (A or D), database (B), or both (C)?
 2. **Strictness:** enforced field types, suggested ones, or defined but tolerant of extras?
-3. **Links:** by permanent ID (survives renames, less readable raw) or by name?
+3. ~~**Links**~~: decided. By name (wikilinks); the ID lives in front matter and the index (section 6).
 4. **Body:** one Markdown string, or blocks? If blocks, how does that survive a round trip through an external editor?
 5. **Concurrency target:** live co-typing in the same paragraph, or "different fields and paragraphs merge cleanly, same-spot collisions are rare"?
 6. **"Any app can open it":** must other apps be able to *edit* the files, or is *reading* them enough? This decides between B and C/D. (Leaning: edit. Files and YAML stay the real thing.)
 7. **Schema location:** `.surface/types/` (hidden), or a visible folder that Finder users can browse?
 8. **Extra fields:** allow, warn, or deny fields that aren't in the schema, globally or per collection?
-9. ~~**Unique names**~~: resolved. Names needn't be unique; links resolve by path, type, nearness and aliases, and ambiguity is flagged (section 6).
+9. ~~**Unique names**~~: decided. Filenames are human-readable and unique workspace-wide; links are name-only wikilinks, folder-independent (section 6).
 10. ~~**Normalizer authority**~~: decided. Warn and flag only; never rewrite (section 4).
