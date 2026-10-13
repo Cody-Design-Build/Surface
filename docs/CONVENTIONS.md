@@ -111,7 +111,15 @@ Note on option 4: Obsidian resolves links by filename only; aliases feed its lin
 
 ### Direction (Oct 12): the filename is the key, and the key carries its type
 
-David: an ID as the filename is fine. It works like a database: the folder is the table, the filename is the primary key, the file is the row, front-matter fields are columns, links are foreign keys, and `title` is just a field.
+David: an ID as the filename is fine. It works like a database:
+
+- **the filename holds both the table and the primary key:** `task_28ey28eh` means table `task`, key `28ey28eh`;
+- the file is the row;
+- front-matter fields are the columns;
+- links are foreign keys;
+- `title` is just a field.
+
+Folders play no part in the model. The type comes from the filename, not from where the file sits.
 
 **ID format (proposal):** `{type prefix}_{random}`, e.g. `task_0q8z4mkr7f2c.md`. Stripe uses the same pattern (`cus_…`, `inv_…`).
 
