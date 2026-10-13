@@ -45,6 +45,15 @@ The blocks are rows in a database. A page's body isn't one text field. It's a li
 - Block references (`^id`) exist, but they're optional and written by hand.
 - Concurrency happens at the whole-file level, via whatever syncs the folder.
 
+**Why Obsidian is weak as a database** (the gaps Surface's index fills):
+
+- **Links are filenames, not identities.** There's no record ID. A duplicate filename makes a bare `[[Name]]` ambiguous, and Obsidian simply picks one.
+- **Links have no type.** A property can hold a link, but nothing says "this field links to people," so nothing narrows by type, and there are no two-way relations.
+- **Aliases only help you search.** They feed the link picker; a bare `[[Alias]]` doesn't resolve.
+- **Renames only repair links inside Obsidian.** A rename done in Finder, another editor or git breaks every link to that note.
+- **Types are weak.** A property's type is set once for the whole vault, not per collection. There are no choice lists, no required fields and no validation.
+- **Rollups and relations are limited.** Bases can filter, sort and compute formulas over notes, but there's no first-class relation and rollup model like Notion's.
+
 ## Field-by-field comparison
 
 | | Notion | Obsidian | Decision for Surface |
