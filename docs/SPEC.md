@@ -91,6 +91,8 @@ Record
 
 `↔` marks a two-way link. Out of the box, a Project shows its tasks and contacts, and a Contact shows its projects.
 
+**Two-way links are stored on one side only (leaning).** One-to-many links are stored on the "one" side (each Task's `project`). For many-to-many, the schema names the stored side. The other side is computed. In Surface, both sides show and both are editable; editing the computed side writes the stored one. In Obsidian, the reverse appears in the backlinks pane, or in an embedded Bases view. See `docs/OBSIDIAN.md` → "Two-way links in the files."
+
 **Field types (proposed):**
 
 - text, number, date, checkbox;

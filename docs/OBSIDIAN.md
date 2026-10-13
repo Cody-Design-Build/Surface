@@ -39,6 +39,67 @@ The promise: open your Surface workspace folder in Obsidian, and it's a good Obs
 - **Team sync:** Obsidian doesn't speak Surface's sync. Visiting works through Surface; leaving ends it, or you could use Obsidian Sync or git on your own.
 - **IDs for new notes:** notes created in Obsidian have no `id:` until Surface sees them and flags them as new notes. An Obsidian template could add one.
 
+## Two-way links in the files
+
+**Question (Oct 13):** with two-way links between types (a Task's `project` mirrors a Project's `tasks`), how do they look and work in Obsidian?
+
+### What a link looks like in front matter
+
+Quoted wikilinks; lists for many. Obsidian treats these as real links: clickable in the properties panel, counted in backlinks and the graph, and usable in Bases.
+
+```yaml
+# Order cabinets (2243 Steiner).md
+---
+id: 0q8z4mkr7f2c
+type: task
+title: Order cabinets
+status: doing
+due: 2026-10-20
+assignee: "[[Jane Doe]]"
+project: "[[Kitchen Remodel (2243 Steiner)]]"
+---
+```
+
+```yaml
+# Kitchen Remodel (2243 Steiner).md
+---
+id: 0q8z3abc91xk
+type: project
+title: Kitchen Remodel
+status: active
+contacts:
+  - "[[Jane Doe]]"
+  - "[[Acme Plumbing]]"
+---
+```
+
+(`type:` appears here on the assumption that the type prefix is dropped from IDs; that's still pending in SPEC §4.)
+
+### The choice: store both sides, or one?
+
+| | A. Both sides in the files | B. One side in the files; the other computed (recommended) |
+|---|---|---|
+| Task file | `project: "[[Kitchen Remodel]]"` | `project: "[[Kitchen Remodel]]"` |
+| Project file | `tasks:` lists all 40 tasks | no `tasks:` key |
+| In Obsidian | both directions visible as properties | reverse shown by the backlinks pane, or a Bases view (below) |
+| Adding a task | rewrites the task **and** the project file | rewrites only the task |
+| Team edits | everyone adding tasks edits the same project list: churn and merge pressure | no shared list to fight over |
+| Big projects | a 300-line list in the front matter | clean |
+| Edits in Obsidian | someone edits one side and not the other: inconsistent, needs a flag and a rule about which side wins | only one place to edit, so no inconsistency |
+
+**Recommendation: B, one stored side.**
+
+- **Which side is stored:** for one-to-many links, the "one" side (Task → `project`), because each task names its project. For many-to-many links (Project ↔ Contact), the schema says which side is stored (`stored: project.contacts`).
+- **In Surface,** both sides appear as fields, and both are editable. Editing the computed side (adding a task from the project page) writes the stored side (sets that task's `project`).
+- **In Obsidian,** the reverse is visible through:
+  - **the backlinks pane:** links in properties count as backlinks, so a project's backlinks list its tasks (and anything else linking to it);
+  - **a Bases view:** Obsidian's docs say `file.hasLink(this.file)` replicates the backlinks pane. A generated `Project tasks.base`, filtered to `type == "task"` and linking to the current note, embedded in a project with `![[Project tasks.base]]`, shows a live task table on every project page. "Prepare for Obsidian" can add that embed to project notes or templates (opt-in, since it writes to the body).
+- **If someone types the computed side by hand** in Obsidian (adds `tasks:` to a project file), Surface flags it: *"`tasks` is computed from each task's `project`; apply these as links from the tasks, or remove?"*
+
+### Display names in links
+
+Filenames are unique, so links carry the qualifier: `[[Kitchen Remodel (2243 Steiner)]]`. An alias keeps it readable: `"[[Kitchen Remodel (2243 Steiner)|Kitchen Remodel]]"`. Test needed: confirm that aliased links in properties render and resolve in Obsidian.
+
 ## The big lever: compatible view syntax
 
 The app research already recommends a query format "modelled on Obsidian Bases" (APP-TECH). Taking that one step further:
