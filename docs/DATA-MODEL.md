@@ -183,7 +183,9 @@ One field per line, in fixed schema order, means two people editing different fi
 
 ### 6. Links: by name, folder-independent
 
-**Decided (Oct 12):**
+> **Reopened (Oct 12).** David is weighing an alternative: standard Markdown links, tracked by a link registry, with files kept in their type's folder. See CONVENTIONS → "Links: two candidate models". The text below describes Model A.
+
+**Previously decided (Oct 12):**
 
 - **Filenames are human-readable.**
 - **Folder location never matters.**
