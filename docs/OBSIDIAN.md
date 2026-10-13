@@ -25,7 +25,7 @@ The promise: open your Surface workspace folder in Obsidian, and it's a good Obs
 | Tags | Tags | Native |
 | Folders (user-made) | Folders | Native (see SPEC: folders alongside types) |
 | **Sidebar views** (Tasks → "Due this week") | **`.base` files** | If Surface's view format is compatible with Bases, every view opens in Obsidian as a table, cards, list or kanban |
-| Embedded ` ```surface ` views | ` ```base ` blocks, or readable code | Same idea: compatible syntax means they work in Obsidian |
+| Views (built in the app, saved in `.surface/views/`) | Converted to `.base` files on Leave, where Obsidian can show them | Embeds `![[View]]` show as links until converted |
 | Types and schemas | `.surface/types/*.yaml` (readable) + Obsidian property types | Obsidian has no per-type schemas; property types are vault-wide |
 | Callouts, to-dos, heading and paragraph links | Native | Already chosen to be Obsidian-native |
 | Attachments | Files in the vault | Native |

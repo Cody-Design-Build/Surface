@@ -41,7 +41,7 @@ My Workspace/
       SKILL.md
       references/task.md         one file per type: fields, choices, examples
       references/project.md
-    surface-views/SKILL.md       how to write view pages and live blocks
+    surface-views/SKILL.md       how to read and write view files (.surface/views/)
     surface-flags/SKILL.md       how to read and resolve flags
     surface-import/SKILL.md      tables to records, CSV, new notes
     weekly-review/SKILL.md       a team workflow (user-authored)
@@ -93,7 +93,7 @@ The hard rules (draft):
 | Totals, backlinks | Compute them from the files; nothing is hidden in the database |
 | Know whether an edit was valid | Surface reconciles the change and writes any problem to `.surface/flags/` |
 | Resolve a flag | Edit the flag file's `resolution:` field, or fix the record |
-| Make a view | Write a page with a live block (`surface-views`), and link it in the sidebar page |
+| Make a view | Write a view file in `.surface/views/` (`surface-views`); embed it in a page with `![[View name]]` |
 
 - **Live, for free:** when Surface is running, it notices file changes within moments. An agent editing files shows up live in the app and syncs to the team, with no special connection.
 - **Flags as files** make the "needs attention" view available to agents too. "Clean up my flags" becomes an agent task.
