@@ -99,23 +99,22 @@ The hard rules (draft):
 - **Flags as files** make the "needs attention" view available to agents too. "Clean up my flags" becomes an agent task.
 - **Grouped outside edits:** a burst of edits made outside Surface (for example, an agent changing 40 files) shows as one change in history: *"40 files changed outside Surface: review or undo all."*
 
-## Optional extras (not required)
+## The CLI and local MCP (headless core, SPEC §3a)
 
-- **A `surface` command-line tool,** for speed and correctness, not access:
-  - `surface new task "Order cabinets"`;
-  - `surface query`;
-  - `surface check` (validate files without the app running);
-  - `surface flags`.
-  
-  The skills say: use it if it's installed; otherwise work with the files.
-- **An MCP server or API: later, only for agents that can't see the files.** For example: Claude or ChatGPT on the web, phone assistants, or a teammate's agent working remotely. It isn't needed on the computer where the files live.
+Surface's base is a headless core with a background service (`surfaced`) and a `surface` CLI. The app is one client. So agents get more than files when they want it:
+
+- **`surface` CLI:** exact operations with immediate validation, for example:
+  - `surface new task "Order cabinets" --project "Kitchen Remodel"`;
+  - `surface query`, `surface check`, `surface flags`, `surface undo`.
+- **`surface mcp`:** the same operations as a local MCP server, for agents that prefer tools.
+- **Attribution:** edits through the CLI or MCP record who made them (`--as codex`, or `SURFACE_AGENT=codex`). Raw file edits show as "edited outside Surface".
+- **Sync without the app:** `surfaced` keeps the workspace in sync with the team, so an agent on a server can work in a team workspace with no GUI at all.
+- **The skills say:** use `surface` if it's installed; otherwise work with the files. Both paths end up in the same place.
+- **Remote MCP or API: later,** only for agents that can't see the files (Claude or ChatGPT on the web, phone assistants).
 
 ## Open
 
-1. **Knowing who edited:** a file change doesn't say who made it. Options:
-   - accept "edited outside Surface";
-   - ask agents (in the skills) to add a one-line entry to a change log;
-   - leave it to the `surface` CLI.
+1. **Knowing who edited:** solved for CLI and MCP edits. Raw file edits stay "edited outside Surface". Should the skills prefer the CLI when it's available, so most agent edits get attributed?
 2. **Agent-built surfaces beyond views:** custom interactive pages (HTML or app-like) that an agent writes and Surface renders with live data. Format, sandboxing and how they read data are all open.
 3. **Where the user's workflow skills live:** hidden `.agents/skills/` (the standard), or a visible `Skills/` folder mirrored there.
 4. **Copy or symlink for `.claude/skills/`:** symlinks are cleaner, but they may not survive Dropbox, iCloud or Windows.

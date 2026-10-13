@@ -122,6 +122,46 @@ The ledger is a product asset as well as a document. It belongs on the website: 
 - **Same app, same data model.** Sync is a switch per workspace. Personal and team workspaces sit side by side.
 - **Moving between modes (decided):** solo to team means turning on sync and uploading. Leaving a team means your local copy stays yours.
 
+## 3a. A headless core: the app is one client
+
+**Leaning (Oct 13).** Surface's base is a **core engine with command-line tools**, and the Mac app is one client of it, like Git and its GUIs, or Syncthing and its web interface. Everything Surface does works without opening the app.
+
+```
+                 surface core (Rust library)
+     file watching · three-way merge · database · sync · flags · types · queries
+                              │
+          surfaced (background service: owns the workspace)
+         ┌──────────────┬───────────────┬──────────────────┐
+     Mac app       surface CLI      surface mcp      raw file edits
+   (Tauri GUI)   (people, agents,  (agents that       (any editor,
+                    scripts)        prefer MCP)        any agent)
+```
+
+- **`surfaced`, the background service:** watches files, reconciles, keeps the database and syncs with the team, all with no window open.
+  - It runs at login on a Mac, or as a service on a Linux server.
+  - **This makes always-on setups possible:** a Mac mini or a small server running agents around the clock, keeping a team workspace in sync.
+- **`surface`, the command-line tool:** `init`, `status`, `sync`, `check`, `flags` (list and resolve), `new`, `query`, `types`, `views`, `history` and `undo`, `import`, `leave`, and `skills` (regenerate).
+- **`surface mcp`:** the same operations as a local MCP server, a thin layer over the CLI that's cheap to add.
+  - **Still optional:** files, `AGENTS.md` and skills remain the baseline (§10).
+  - A remote MCP server for web and phone assistants is a later, separate piece.
+- **The Mac app** bundles the core and service, so non-technical users never see a terminal.
+- **One owner per workspace:** only one process writes a workspace's database at a time. If the service is running, the app and CLI talk to it over a local socket. If not, the first one to start takes a lock and acts as the service.
+
+**Why:**
+
+- **Agents get exact operations,** with errors right away instead of flags later: `surface new task` validates fields and makes the ID.
+- **Edits through the CLI or MCP can say who made them** (`--as claude-code`, or an environment variable). Raw file edits stay anonymous ("edited outside Surface").
+- **Build order follows naturally:** the hard part (merge, sync, flags) is all in the core. The one-week sync test becomes the first layer of the real product, and early users who live in agents can use Surface before the app is polished.
+- **No lock-in, again:** the app is optional too.
+
+**Costs:**
+
+- **Background services add complexity:** installing, updating, starting at login, Mac permissions, and making sure they don't misbehave.
+- **The app and CLI share one engine,** so the local socket protocol becomes something we have to keep stable.
+- **CLI-first products risk neglecting the app.** The Bear-level app stays a first-class goal, not an afterthought.
+
+**Open:** should the first release be **core + CLI + service** (developers and agent users first), with the app close behind? Or should all three ship together?
+
 ## 4. The record
 
 **Decided: a record is a page.**
@@ -518,7 +558,7 @@ A fix is applied only when someone accepts it. A bulk "fix all safe notices" exi
 - **Editor: CodeMirror 6** with an Obsidian-style live preview. It edits the text itself, so files save exactly as written. It has collaborative-editing plugins for Automerge, Loro and Yjs. ProseMirror-based editors (TipTap, BlockNote) change Markdown on save.
 - **Views:** TanStack Table and TanStack Virtual for tables, dnd-kit for boards, Schedule-X or FullCalendar for calendars.
 - **Query language:** a small YAML format modelled on Obsidian Bases, turned into SQL, plus read-only SQL for agents and power users.
-- **Agents:** the Markdown files plus `AGENTS.md` and skills (required); an optional `surface` CLI; an MCP server later, only for agents that can't see the files (§10).
+- **Agents:** the Markdown files plus `AGENTS.md` and skills (the baseline); the `surface` CLI and local `surface mcp` from the headless core (§3a); a remote MCP server later (§10).
 - **First milestone:** solo workspaces on Mac only.
   - the editor;
   - file watching with three-way merge, and the flags view;
@@ -543,7 +583,7 @@ A fix is applied only when someone accepts it. A bulk "fix all safe notices" exi
 - **Users and teams write their own workflow skills** in Surface, like notes. They sync with the workspace, so every teammate's agent gets the same playbook.
 - **Flags are written as files** (`.surface/flags/`), so agents can see and resolve them.
 - **Agents never rewrite whole files.** Edits go through the same three-way merge as everyone else's. A burst of outside edits is one undoable change.
-- **Optional:** a `surface` CLI for speed and validation. An MCP server or API comes later, only for agents that can't see the files (web and phone assistants, remote teammates).
+- **The `surface` CLI and `surface mcp`** come with the headless core (§3a). They add exact operations, validation and "who edited", but aren't required. A *remote* MCP server or API comes later, for agents that can't see the files (web and phone assistants, remote teammates).
 
 ## 11. Business model
 
