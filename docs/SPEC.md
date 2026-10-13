@@ -64,32 +64,78 @@ Record
 - **Format:** `{prefix}_{time}{random}`, all lowercase Crockford base32. Example: `task_0q8z4mkr7f2c`.
   - 7 characters of creation time (seconds, good for about 1,000 years) plus 5 random characters (about 33 million per second).
   - IDs sort by creation time, and can be made offline on any device with no realistic chance of collision.
-- **The prefix is the type.** It's a short, stable code set in the type's schema (`prefix: task`), separate from the display name. Renaming "Tasks" to "To-dos" changes no IDs.
-- **Type is derived from the ID.** There's no separate `type:` field.
+- **The prefix is the type.** It's a short, stable code set in the type's schema (`prefix: task`), separate from the display name. Renaming "Tasks" to "To-dos" changes no IDs. **Being reconsidered:** see "Should IDs still carry the type?" below.
+- **Type is derived from the ID.** There's no separate `type:` field. **Being reconsidered**, as above.
 
 ### Types and schemas
 
-**Decided.**
+**Decided.** Types are created and changed by users, like Notion databases. There's a **Types** interface where people can:
 
-- **One schema per type**, defining its fields, types, options, defaults and ID prefix.
-- **Schemas are data too:** stored in the database, synced like records, and mirrored as readable YAML in `.surface/types/`.
+- **Create a type:** name, icon, colour, default folder.
+- **Add fields:** name, field type, options, default, and required or not.
+- **Edit fields:** rename them, change their type, reorder them, edit choice options.
+- **Archive or delete** fields and types.
+- **Agents can do all of this too,** from a conversation: "track my wine collection" leads the agent to propose a Wine type with fields, and you approve it.
+- **Note is built in** and can't be deleted. Starter types (Task, Person, Project) are templates, not hard-coded.
+
+**Field types (proposed):**
+
+- text, number, date, checkbox;
+- choice and multi-choice;
+- link (to a type, or to anything), with optional **two-way relations** (a "tasks" field on Job mirrors a "job" field on Task, like Notion);
+- person, URL, email, phone, file;
+- formula and rollup (computed);
+- created and updated time (automatic).
+
+**Storage:**
+
+- Schemas are data: stored in the database, synced like records, and mirrored as readable YAML in `.surface/types/`.
+- **Every field has a permanent internal ID, separate from its name.** This is the key-versus-label idea again. The database stores values by field ID, so renaming a field or a choice option is instant in Surface. The files then get their YAML key updated in one migration.
 
 ```yaml
-# .surface/types/task.yaml
+# .surface/types/task.yaml (mirror; illustrative)
 name: Task
-prefix: task
+icon: check-circle
+folder: tasks/
 fields:
-  title:    { type: text, required: true }
-  status:   { type: choice, options: [todo, doing, done], default: todo }
-  due:      { type: date }
-  assignee: { type: link, to: person }
-  estimate: { type: number, unit: hours }
-  tags:     { type: list, of: text }
+  - { id: fld_0q8z4m, name: title,    type: text, required: true }
+  - { id: fld_0q8z4n, name: status,   type: choice, options: [todo, doing, done], default: todo }
+  - { id: fld_0q8z4p, name: due,      type: date }
+  - { id: fld_0q8z4q, name: assignee, type: link, to: person }
+  - { id: fld_0q8z4r, name: job,      type: link, to: job, two_way: tasks }
 ```
 
-- **Fields not in the schema are kept and flagged** with *"add it to the schema, or remove it?"*
-- **Schema changes are migrations.** Renaming a field or an option updates every record in one operation.
-- **Computed fields are never stored as input.** Rollups and formulas are computed at view time.
+### What each schema change does
+
+| Change | In Surface | In the files | Risk |
+|---|---|---|---|
+| Add a field | Instant | Nothing until a value is set | None |
+| Rename a field or option | Instant (stored by field ID) | One migration rewrites the YAML key or value in every affected file | Offline edits with the old name: Surface keeps a list of old names and maps them on reconcile |
+| Change a field's type (e.g. text → date) | Values converted | Rewritten where conversion succeeds | Values that can't convert are **kept and flagged**, never lost |
+| Reorder fields | Instant | Canonical order applies on the next write | None |
+| Archive a field | Hidden from views; values kept | Untouched | Can be restored |
+| Delete a field | Asks first; shows how many records have values | Values removed from files in one migration | Destructive; undo through history |
+| Rename a type | Instant | `.surface/types/` mirror only | None |
+| Delete a type | Its records become Notes (or are archived); asks first | Unchanged, apart from the type | Fields that don't belong to Note are kept as extra values and flagged |
+| Change a record's type (Note → Task) | One action | Fields mapped; `type` updated | See the ID note below |
+
+**In teams:** editing types is a permission (owners and admins by default). Schema changes sync like any change. Two people changing the same field definition at once is flagged.
+
+### Reconsider: should IDs still carry the type?
+
+**Open, and important (expensive to change later).** The type prefix in IDs (`task_…`) existed so a *filename* could say what it was. Filenames are now readable titles, and types are now user-editable. That leaves the prefix with mostly costs:
+
+- **Changing a record's type means a new ID**, so every link is rewritten and history is split. With mutable types and "Note → Task" as a common action, that will happen constantly.
+- **Prefixes would be invented by users** for every new type.
+- **Merging or splitting types** would rewrite IDs.
+
+**Recommendation:**
+
+- Drop the type from the ID: `0q8z4mkr7f2c`, time-sortable plus random as before (optionally a fixed neutral prefix like `s_`).
+- Store the type explicitly: `type: task` in the database and in front matter.
+- Changing a record's type then just edits a field. The ID, links and history stay intact.
+
+This reverses the earlier decision that the type is derived from the ID, so it needs David's call.
 
 ## 5. The Markdown files
 
@@ -345,6 +391,11 @@ A fix is applied only when someone accepts it. A bulk "fix all safe notices" exi
 **App**
 
 10. The shell: is about 95% of Bear's look acceptable (Tauri), or are a real native toolbar and controls required (Swift shell)? Also confirm the editor, views and MVP scope.
+
+**Types**
+
+- Drop the type prefix from IDs and store `type:` explicitly (recommended; §4).
+- Who can edit types in a team (default: owners and admins).
 
 **Organizing and Obsidian**
 
