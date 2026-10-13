@@ -47,6 +47,31 @@ Every feature is designed into one of three tiers:
 
 The tier 3 exception is **history** (who changed what, and when). It's valuable but not authored content, so it gets an export: a git repository of snapshots, or per-note history files, on demand.
 
+### Honest trade-offs, and an easy way back
+
+**Decided.** Some features we want can't be fully expressed in plain notes. That's acceptable when three conditions hold:
+
+1. **It's justified.** The feature is worth it, and we can explain why in plain language.
+2. **It's disclosed.** It's listed in a public **trade-off ledger** saying what's less portable and why.
+3. **It degrades.** "Leave Surface" turns it into the best plain-file form available, and the ledger says exactly what that is.
+
+The rule above still holds for *authored content*: your words, fields and links are always in files. The trade-offs are about *behaviour*: things that only work while Surface is running.
+
+**Trade-off ledger (draft):**
+
+| Feature | What's less portable | Why it's worth it | What you get if you leave |
+|---|---|---|---|
+| Live co-editing and offline merge | Merge internals live in Surface's database | No conflict copies; teammates' edits merge automatically | Final text in the files; history export (git) |
+| Field validation, choice lists, required fields | Only enforced while Surface runs | A real database instead of loose YAML | Values stay as written; schemas readable in YAML |
+| Two-way links | The reverse side is computed, not written | No duplicated lists, no inconsistency | Reverse side via the Obsidian backlinks pane, or a generated Bases view |
+| Rollups and formulas | Computed only in Surface | Live totals without stale numbers in files | Formulas readable in the view files; optional snapshot of values |
+| Rich views (trees, boards, calendars, agent-built views) | Full behaviour only in Surface | Views far beyond a table | Bases files for what Obsidian can show; others as readable definitions or static snapshots |
+| Comments anchored to text | Anchoring only in Surface | Discussion without cluttering the note | Comments as readable Markdown side files, or converted to callouts |
+| Permissions and sharing | Enforced only by Surface sync | Teams and guests | Plain files; your copy is yours |
+| Rename and link repair | Automatic only in Surface | Links that never break | Links valid at the moment you left; Obsidian maintains them from there |
+
+The ledger is a product asset as well as a document. It belongs on the website: people trust a product that's honest about its trade-offs.
+
 ### What this changes
 
 - **Comments are written to files** (Markdown side files), not kept only in the database.
