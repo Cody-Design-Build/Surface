@@ -335,7 +335,7 @@ Everything degrades gracefully: it's readable in any text editor, renders in any
 
 **Views are data:** saved in the workspace, synced in teams, and written as files so they escape too.
 
-**Open:** the view format. Surface views will likely be more dynamic than Obsidian Bases tables: trees, boards, calendars, agent-built views. Options: a Bases-compatible core with extras, or Surface's own format plus a Bases *export*. See `docs/OBSIDIAN.md`.
+**Decided:** views are built in the app and saved in Surface's own simple YAML format, with a `.base` export on Leave (§5d).
 
 ### Folders
 
@@ -750,6 +750,13 @@ A fix is applied only when someone accepts it. A bulk "fix all safe notices" exi
 14. ~~View file format~~ decided: Surface's own simple YAML format, `.base` export on Leave (§5d). Remaining: the exact syntax.
 15. Should Markdown table column types be remembered, and where (§5c)?
 
+**Agents and the core**
+
+17. First release: core + CLI + service first, or everything together (§3a)?
+18. Where user workflow skills live: `.agents/skills/` or a visible `Skills/` folder; copy or symlink for `.claude/skills/` (`docs/AGENT-INTEGRATION.md`).
+19. Inline value syntax in pages (§5d).
+20. One shared sidebar, or shared plus personal (§5d)?
+
 **Parked**
 
 16. Importing existing vaults: in place or as a copy, huge vaults, the path-generation principle (`docs/IMPORT.md`).
@@ -766,7 +773,7 @@ Gaps identified Oct 13, in suggested order:
 3. **Attachments and large files** (photos, PDFs, plans): where they're stored, how they sync (CRDTs aren't for large binary files), size limits, previews.
 4. **Search:** full-text; possibly semantic search for agents; search across views.
 5. **History, undo, trash and deletion:** what users see; how deletions sync; restoring.
-6. **The view system:** layouts, query language, formulas, rollups, grouping, calendar.
+6. **The view system in detail:** the query language, formulas, rollups and each layout (format decided, §5d).
 7. **Templates, recurring items, reminders and notifications;** whether agents replace automations.
 8. **Security:** end-to-end encryption for sync, encryption at rest, secrets in notes.
 9. **Mobile:** what's possible with files on iOS and Android.
