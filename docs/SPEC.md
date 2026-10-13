@@ -477,6 +477,23 @@ columns: title, status, due, assignee
 - **Results are never written into the page** (no snapshots); they're computed (tier 3, §2a).
 - **Superseded:** the idea of a separate View type, with the query in front matter.
 
+### Alternative under discussion: views live in the app, saved as side files
+
+**Raised Oct 13: should views exist only inside Surface?**
+
+- **Inside the database only: no.** View definitions are authored content. Keeping them only in the database breaks the no-lock-in rule (§2a), means agents can't read or make views through files, and means leaving loses every view.
+- **Recommended hybrid:**
+  - **You build and edit views in the app UI.** Nobody hand-writes queries.
+  - **Each view is saved as a readable side file** (tier 2), for example `.surface/views/due-this-week.yaml`. Surface owns the format and can evolve it with a version number.
+  - **Pages show a view with a one-line embed** (`![[Due this week]]`) instead of carrying the whole query in their text.
+  - **The sidebar links to views and pages alike.**
+- **Why it may be better than queries in page bodies:**
+  - tweaking a sort doesn't rewrite someone's note;
+  - there's less clutter in prose files;
+  - the format is free to change;
+  - one view can be reused on many pages.
+- **What it costs:** a view isn't a page by itself (no text around it unless you embed it in a page), and in other editors the embed shows only a link, not the query.
+
 ### Mixing tables, prose and content from other notes
 
 **Leaning.** A view page can pull in live content from anywhere, using standard Markdown and Obsidian syntax (Obsidian renders all of it live too, except inline values):
