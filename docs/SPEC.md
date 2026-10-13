@@ -502,6 +502,7 @@ A fix is applied only when someone accepts it. A bulk "fix all safe notices" exi
   types/        schema files (mirrored from the database)
   settings      workspace settings
   comments/     comment threads as Markdown (always written; §2a)
+  flags/        open flags as readable files, so agents can resolve them (§10)
   local/        the local database, cache, base versions (this device only, never synced as files)
 ```
 
@@ -517,18 +518,13 @@ A fix is applied only when someone accepts it. A bulk "fix all safe notices" exi
 - **Editor: CodeMirror 6** with an Obsidian-style live preview. It edits the text itself, so files save exactly as written. It has collaborative-editing plugins for Automerge, Loro and Yjs. ProseMirror-based editors (TipTap, BlockNote) change Markdown on save.
 - **Views:** TanStack Table and TanStack Virtual for tables, dnd-kit for boards, Schedule-X or FullCalendar for calendars.
 - **Query language:** a small YAML format modelled on Obsidian Bases, turned into SQL, plus read-only SQL for agents and power users.
-- **Agents:** one Rust core with three ways in:
-  - the Markdown files;
-  - a `surface` command-line tool;
-  - a local MCP server, restricted to this machine and protected by a token.
-
-  Agent-built views run sandboxed, following the MCP Apps standard.
+- **Agents:** the Markdown files plus `AGENTS.md` and skills (required); an optional `surface` CLI; an MCP server later, only for agents that can't see the files (§10).
 - **First milestone:** solo workspaces on Mac only.
   - the editor;
   - file watching with three-way merge, and the flags view;
   - table and board views;
   - ` ```surface ` blocks;
-  - the CLI and the MCP server;
+  - `AGENTS.md`, the shipped skills and flags-as-files; the optional CLI;
   - baseline Mac polish.
 
 ### Visual style
@@ -537,11 +533,17 @@ A fix is applied only when someone accepts it. A bulk "fix all safe notices" exi
 
 ## 10. Agents
 
-**Leaning.**
+**Decided:** bring your own agent. Surface doesn't ship one. **Decided:** files are the interface; no MCP server or API is required. The rest is **leaning**. Full design: `docs/AGENT-INTEGRATION.md`.
 
-- **Agents can just edit the files,** with or without Surface running. Changes are reconciled like any outside edit.
-- **When Surface is running,** agents can also use the live path (an MCP server or CLI), getting instant sync, validation and permissions.
-- **Agents never rewrite whole files.** They make field edits and section-level patches through the same merge path as people.
+- **Any agent that can read and write files can work in a workspace:** Claude Code, Codex, Cursor, Gemini CLI, Copilot, Hermes and others. No agent lock-in.
+- **Agents get knowledge from files, using the two open standards they already read:**
+  - **`AGENTS.md`** at the workspace root: a short, stable entry point and five hard rules;
+  - **Agent Skills** in `.agents/skills/`, copied to `.claude/skills/` for Claude Code.
+- **Surface-shipped skills** (`surface-workspace`, `surface-types` generated from the workspace's types, `surface-views`, `surface-flags`, `surface-import`) are regenerated when the workspace changes.
+- **Users and teams write their own workflow skills** in Surface, like notes. They sync with the workspace, so every teammate's agent gets the same playbook.
+- **Flags are written as files** (`.surface/flags/`), so agents can see and resolve them.
+- **Agents never rewrite whole files.** Edits go through the same three-way merge as everyone else's. A burst of outside edits is one undoable change.
+- **Optional:** a `surface` CLI for speed and validation. An MCP server or API comes later, only for agents that can't see the files (web and phone assistants, remote teammates).
 
 ## 11. Business model
 
@@ -593,9 +595,8 @@ A fix is applied only when someone accepts it. A bulk "fix all safe notices" exi
 
 Gaps identified Oct 13, in suggested order:
 
-1. **Agents and surfaces** (pillars 2 and 3 of the thesis; currently the thinnest part of the spec):
-   - What agents do day to day, and whether Surface ships its own agent or only supports outside ones.
-   - Agent identity, permissions, approvals and undo; an audit trail of agent actions.
+1. **Agents and surfaces** (pillars 2 and 3 of the thesis). Bring-your-own-agent, the entry point and skills are now designed (§10). Still open:
+   - Knowing which agent or person made an outside edit; approvals.
    - Agent-built views: how they're requested, rendered, saved and shared, and how they get live data.
    - Model choice and privacy (local models, your own API key).
 2. **Permissions and sharing.** Constrains the sync design (one CRDT document per record), so it's expensive to change later.
