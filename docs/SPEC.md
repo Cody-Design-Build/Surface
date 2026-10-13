@@ -566,9 +566,9 @@ A fix is applied only when someone accepts it. A bulk "fix all safe notices" exi
 
 **Files**
 
-7. The filename naming rule, and filename churn (section 5).
+7. The filename naming rule, and filename churn (§5).
 8. The front matter key: `id` or `surface_id`.
-9. Where the local database lives (section 8).
+9. Where the local database lives (§8).
 
 **App**
 
@@ -576,14 +576,35 @@ A fix is applied only when someone accepts it. A bulk "fix all safe notices" exi
 
 **Types**
 
-- A fixed prefix for all IDs (e.g. `s_`), or none (minor; §4).
-- Who can edit types in a team (default: owners and admins).
+11. A fixed prefix for all IDs (e.g. `s_`), or none (minor; §4).
+12. Who can edit types in a team (default: owners and admins).
 
-**Organizing and Obsidian**
+**Organizing, tables and Obsidian**
 
-11. Where new records are created: by context, or a setting (§5a).
-12. The view format: Bases-compatible, or Surface's own plus a Bases export (§5a, `docs/OBSIDIAN.md`).
+13. Where new records are created: by context, or a setting (§5a).
+14. The view format: Bases-compatible, or Surface's own plus a Bases export (§5a, `docs/OBSIDIAN.md`).
+15. Should Markdown table column types be remembered, and where (§5c)?
 
 **Parked**
 
-13. Importing existing vaults: in place or as a copy, huge vaults, the path-generation principle (`docs/IMPORT.md`).
+16. Importing existing vaults: in place or as a copy, huge vaults, the path-generation principle (`docs/IMPORT.md`).
+
+## 13. Not yet designed
+
+Gaps identified Oct 13, in suggested order:
+
+1. **Agents and surfaces** (pillars 2 and 3 of the thesis; currently the thinnest part of the spec):
+   - What agents do day to day, and whether Surface ships its own agent or only supports outside ones.
+   - Agent identity, permissions, approvals and undo; an audit trail of agent actions.
+   - Agent-built views: how they're requested, rendered, saved and shared, and how they get live data.
+   - Model choice and privacy (local models, your own API key).
+2. **Permissions and sharing.** Constrains the sync design (one CRDT document per record), so it's expensive to change later.
+3. **Attachments and large files** (photos, PDFs, plans): where they're stored, how they sync (CRDTs aren't for large binary files), size limits, previews.
+4. **Search:** full-text; possibly semantic search for agents; search across views.
+5. **History, undo, trash and deletion:** what users see; how deletions sync; restoring.
+6. **The view system:** layouts, query language, formulas, rollups, grouping, calendar.
+7. **Templates, recurring items, reminders and notifications;** whether agents replace automations.
+8. **Security:** end-to-end encryption for sync, encryption at rest, secrets in notes.
+9. **Mobile:** what's possible with files on iOS and Android.
+10. **Performance targets:** workspace size, open time, sync time (partly covered by the spike).
+11. **Onboarding:** first run, starter content.
