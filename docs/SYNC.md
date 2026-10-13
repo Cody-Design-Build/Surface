@@ -42,7 +42,25 @@ Surface's files are the storage. Live multi-user editing needs something finer t
 | **C. Central server** | A server database is the truth; clients cache it and write files locally | ✅ | partial (Notion-like) | ❌ files are a copy |
 | **D. Database sync engine** | A local SQLite synced by an engine (ElectricSQL, PowerSync, Zero); files generated from it | ✅ | ✅ | ❌ files are a copy |
 
-**Leaning (to discuss): B.** It's the only option that keeps files as the real thing on every machine and still feels live. Field-level merging (one field per line, plus a per-field rule for edits at the same moment) avoids Notion's silent property overwrites.
+**E. GitHub (or any git remote) as the central source of truth** (David, Oct 12). The Surface app pushes and pulls.
+
+- **What it gives for free:**
+  - durable hosting and full history;
+  - accounts and repo-level permissions;
+  - backups, and offline work by default;
+  - agents already speak git;
+  - no server of our own to run;
+  - not locked to GitHub: Gitea, Forgejo or a bare git server work the same way.
+- **Fixing CDB OS's conflict stops:** git lets an app register its own *merge driver* through `.gitattributes`. Surface can install one for `.md` files that merges front matter field by field and the body paragraph by paragraph. Only the same field, or the same paragraph, changed on both sides needs a decision. That removes the "sync stops and waits for a human" failure.
+- **Limits:**
+  - **Speed:** near-live at best. Each push or pull takes about 1–3 seconds. With several people pushing, pushes get rejected and have to retry. GitHub has API and push rate limits. Realistically, others' changes appear within about 5–15 seconds for a small team. No live co-typing.
+  - **No push notifications to the app:** GitHub webhooks need a server to receive them, so clients poll.
+  - **Large files:** GitHub warns above 50 MB and blocks above 100 MB per file, and soft-limits repos to a few GB. Photos and PDFs need Git LFS (paid storage) or somewhere else.
+  - **Permissions are per repo:** everyone in a repo sees every file. Guest access to one job means a separate repo, or nothing.
+  - **Accounts:** every user needs a GitHub account, unless Surface acts through a GitHub App on users' behalf.
+- **Combining with B:** use GitHub as the durable source of truth and history, with an optional live relay for real-time editing when people are online. The relay commits to GitHub regularly. If the relay is down, Surface falls back to plain push and pull: slower, never broken.
+
+**Leaning (to discuss): E first, then E + B.** v1: GitHub as the source of truth, with a structure-aware merge driver (near-live, a few seconds). v2: add the live relay (B) on top for Notion-like co-editing, without changing the storage. B on its own is the only option that keeps files as the real thing on every machine and still feels live. Field-level merging (one field per line, plus a per-field rule for edits at the same moment) avoids Notion's silent property overwrites.
 
 ## 3. Questions to settle
 
