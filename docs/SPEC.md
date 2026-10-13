@@ -477,6 +477,28 @@ columns: title, status, due, assignee
 - **Results are never written into the page** (no snapshots); they're computed (tier 3, §2a).
 - **Superseded:** the idea of a separate View type, with the query in front matter.
 
+### Mixing tables, prose and content from other notes
+
+**Leaning.** A view page can pull in live content from anywhere, using standard Markdown and Obsidian syntax (Obsidian renders all of it live too, except inline values):
+
+| You want | In the file | Live? |
+|---|---|---|
+| A link to another note | `[[Kitchen Remodel]]` | Always; links survive renames (§5) |
+| Another note's whole text | `![[Site meeting notes]]` | Yes; editing it in place edits the source note |
+| One section of another note | `![[Kitchen Remodel#Scope]]` | Yes |
+| One paragraph of another note | `![[Kitchen Remodel#^scope-1]]` | Yes, but needs a `^id` marker on that paragraph, added only when someone embeds it (a ledger item) |
+| Another view (a table from elsewhere) | `![[Due this week]]` | Yes; views are reused rather than copied |
+| A table of records | a live block (above) | Yes |
+| One field's value in a sentence | `` `= [[Kitchen Remodel]].status` `` | In Surface; other editors show the readable expression |
+
+**Rules:**
+
+- **Embeds stop at a few levels deep** and never loop (A embeds B embeds A).
+- **A missing or renamed target** is rewritten like any link, or flagged if the target is gone.
+- **Prefer embedding a section (heading)** over a paragraph, so no `^id` markers are needed.
+
+**Open:** the inline value syntax (Dataview-style `` `= …` `` or something else).
+
 ### The sidebar is a page too (proposal)
 
 - **The sidebar is an outline of links** in a Markdown file (for example `Sidebar.md`):
