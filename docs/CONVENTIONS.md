@@ -134,6 +134,15 @@ David: an ID as the filename is fine. It works like a database: the folder is th
 
 Either way, folder location carries no meaning the system depends on.
 
+### The fork this exposes (Oct 12)
+
+David: without readable names and folders, Obsidian is mostly unusable. So ID-only filenames mean Obsidian stops being a real surface. The decision underneath is whether Obsidian is a requirement:
+
+- **Path 1, Obsidian-native.** Readable filenames, type folders, and the ID in front matter. Surface's index does the database work. Within this path:
+  - **1a. Unique readable names** (`Order cabinets - 2243 Steiner.md`): fully native, but uniqueness needs discipline, and renames done outside Surface and Obsidian break links (flagged).
+  - **1b. Name plus key** (`Order cabinets ~task_0q8z.md`): readable in Obsidian and Finder, with a short tag. Always unique, and Surface can always identify the file from its tag.
+- **Path 2, Surface-native.** ID filenames (`task_0q8z4mkr7f2c.md`). Files are the storage format: agent-friendly, portable, yours. Surface is the real interface. Obsidian and other editors are for reading and emergency edits only.
+
 ### Why files at all, if filenames become keys?
 
 Readable filenames are only one of the things files provide. The rest survive every option above:
