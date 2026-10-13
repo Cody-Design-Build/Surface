@@ -18,6 +18,21 @@ Apps and SaaS aren't the future. People need three things:
 2. **Agents:** they replace much of the app. Like a real assistant, an agent works with the data and acts on it.
 3. **Surfaces:** the human interface. Fluid and often temporary, much like Notion. A surface can be the Surface app, a Markdown file, or a view an agent builds on request (like Claude's dashboards) showing live data.
 
+### Why Surface and not just Obsidian
+
+**Decided (positioning).** Obsidian's properties are loose: a status can be `Done`, `done`, `complete` or a typo, a date can be any text, and nothing checks them. That drift is fine for personal notes, but **it makes Obsidian mostly unusable as a business app**, because views, totals and agents can't trust the data.
+
+**Surface's difference is structured data on top of plain files:**
+
+- types with typed fields and validation;
+- drift is flagged, never silently accepted or silently fixed;
+- two-way links and totals;
+- a real database for speed;
+- team sync;
+- agents that can rely on the data.
+
+Views over properties are the same idea as Obsidian Bases. The trust in the data underneath them is what's different.
+
 ## 2. Principles
 
 1. **Data is the foundation.** The surface is just where a human touches it.
@@ -514,7 +529,7 @@ In Surface this isn't a separate feature. It's case 1 or case 2:
 
 **Open:**
 
-1. The view file format: Surface's own (versioned), or a superset of Obsidian's `.base` format.
+1. **View file format, leaning: build on Obsidian's `.base` format** (a superset), so simple views work in Obsidian unchanged. Still to test: does Obsidian tolerate keys it doesn't know? If it doesn't, use Surface's own format and convert to `.base` on Leave.
 2. One sidebar for the whole team, or a shared one plus personal additions?
 3. Should a quick filter be shareable as a link without saving it as a view?
 
@@ -698,7 +713,7 @@ A fix is applied only when someone accepts it. A bulk "fix all safe notices" exi
 **Organizing, tables and Obsidian**
 
 13. Where new records are created: by context, or a setting (§5a).
-14. The view file format: Surface's own, or a superset of Obsidian's `.base` (§5d).
+14. The view file format: leaning towards a superset of Obsidian's `.base`; test that Obsidian tolerates extra keys (§5d).
 15. Should Markdown table column types be remembered, and where (§5c)?
 
 **Parked**
