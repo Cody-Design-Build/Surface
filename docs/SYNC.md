@@ -146,6 +146,46 @@ If the database is the truth and the local files are built from it, the files ca
 3. **Filename churn.** A title change renames the file. That's fine for Obsidian, but noisy in git history and breaks outside bookmarks.
 4. **Cloud truth and offline.** The cloud database is the truth; each device keeps a local replica for offline work and speed, and the mirror is written from that replica.
 
+## Local-first workspaces, sync optional (Oct 12)
+
+David: different users want different things. Some only want local work on their own machine; others want to sync with a team, which needs the cloud. Could Surface keep the source of truth in a local database and sync to the cloud only when needed?
+
+**Yes. That's the local-first model** (Anytype; Obsidian with its paid Sync; Linear's client database).
+
+- **Every workspace is a local database on the device** (likely SQLite), and the Markdown mirror is written from it.
+- **Solo workspace:** the local database is the source of truth. No account, no cloud and no network needed. Everything works: the app, agents, views and the mirror.
+- **Synced workspace:** the same local database, plus a connection to a sync server. Each device keeps a full local replica: it works offline and merges on reconnect. The server stores every change (so people needn't be online at the same time), passes changes between members, and enforces permissions.
+- **Same app, same data model.** The only difference between solo and team is whether sync is switched on for that workspace.
+- **Several workspaces side by side:** a personal local workspace and a team workspace in the same app (Anytype calls them spaces; Obsidian calls them vaults).
+- **Moving between modes:**
+  - Solo to team: turn on sync and upload the workspace.
+  - Leaving a team: the local copy stays yours (the exit guarantee).
+
+### Built sync-ready from day one
+
+So that turning sync on later is just "ship the history":
+
+- **Globally unique IDs.** The time-sortable random IDs already decided work across devices with no coordination.
+- **Every change is recorded** as a small operation (or a CRDT change), not just the latest state. Sync later means sending those changes.
+- **Field-level changes,** so two people editing different fields of the same record never conflict.
+- **Text bodies** as mergeable text (a CRDT per body), so offline text edits merge automatically.
+
+### Who decides in a team?
+
+- **Server-arbitrated** (Linear, Figma): devices apply changes instantly, and the server decides the final order. Permissions are easy to enforce. Recommended.
+- **All peers equal** (Anytype): every device merges independently, and the server only stores and relays. More decentralized; permissions are harder.
+
+### Candidate technology (to research)
+
+- SQLite plus a CRDT layer: cr-sqlite, Automerge or Loro documents per record.
+- Sync engines with an offline local database: PowerSync, ElectricSQL, Zero, Triplit, InstantDB. Check which ones work fully local with no server, and which need Postgres on the server.
+- Turso / libSQL embedded replicas (offline writes).
+- Anytype's any-sync (open source).
+
+### Business model fit
+
+A free local app plus a paid sync service is the Obsidian and Anytype model. It also echoes an earlier Surface insight: the billable part is the sync layer, plus agent labor. Self-hosting the sync server could be an option for teams that want it.
+
 ## 3. Questions to settle
 
 **Feel**
