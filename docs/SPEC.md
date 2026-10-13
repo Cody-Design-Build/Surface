@@ -22,7 +22,7 @@ Apps and SaaS aren't the future. People need three things:
 
 1. **Data is the foundation.** The surface is just where a human touches it.
 2. **Local-first.** Your workspace lives on your device, works offline, and needs no account. The cloud is optional, for teams.
-3. **Files are first-class.** Every record is also a plain Markdown file. People and agents can edit those files in any editor, even when Surface is closed. They're also the exit: your data is always readable without Surface.
+3. **Files are first-class.** Every record is also a plain Markdown file. People and agents can edit those files in any editor, even when Surface is closed. They're also the exit: your data is always readable without Surface. **Files are real Markdown that looks good in any text editor:** no hidden IDs in the body, no HTML, no custom layout syntax. Block-style editing is a UI feature (§5b).
 4. **Surface is the tool; other editors are welcome guests.** Obsidian and any Markdown editor can read and edit the files, but compatibility is best effort, not a design constraint.
 5. **Flag, don't silently fix.** When outside changes can't be merged safely, or drift from the schema, Surface flags them and a person or agent chooses what happens. Surface never quietly rewrites or discards someone's edit.
 6. **Agents are users.** Their edits travel the same paths as a person's, and get the same merging, history and permissions.
@@ -307,7 +307,9 @@ Everything degrades gracefully: it's readable in any text editor, renders in any
 
 ## 5b. Block-like editing on plain Markdown
 
-**Leaning.** The question (Oct 13): are Bear or Margin block-based, and can Surface have block-based editing without breaking the files?
+**Decided (Oct 13): real Markdown only, with the block feel added in the UI.** Files must always look good and be readable in any text editor. There are no real blocks, no per-paragraph IDs, and no HTML or custom syntax for layout.
+
+Background: The question (Oct 13): are Bear or Margin block-based, and can Surface have block-based editing without breaking the files?
 
 - **Neither is block-based.**
   - **Margin** is a text editor (CodeMirror 6) with live preview. Its block-like behaviour (drag lines, fold headings, `/` menu, Tab to indent) is done as text operations on one Markdown document. Verified from the author's post on the CodeMirror forum.
@@ -322,7 +324,7 @@ Everything degrades gracefully: it's readable in any text editor, renders in any
 | Files stay clean Markdown | ✅ It's all text operations | ❌ Needs an ID on every paragraph, or a separate block store |
 | Who does it | Margin, Obsidian, Typora, Craft-like editors | Notion, Anytype |
 
-**Recommendation: full block *feel*, on plain text *data*.** The editor behaves like a block editor; the file stays ordinary Markdown.
+**Decided: full block *feel*, on plain text *data*.** The editor behaves like a block editor; the file stays ordinary Markdown.
 
 ### What maps cleanly to Markdown (and works in Obsidian)
 
@@ -338,8 +340,8 @@ Everything degrades gracefully: it's readable in any text editor, renders in any
 
 ### What doesn't map, and how to handle it
 
-- **Columns or side-by-side layouts:** there's no Markdown standard. Skip them, or allow a small HTML fallback (readable but ugly elsewhere). Ledger item if added.
-- **Per-block colours or backgrounds:** skip, or use callout types.
+- **Columns or side-by-side layouts:** not supported. There's no Markdown standard, and HTML would hurt readability.
+- **Per-block colours or backgrounds:** not supported. Callout types cover most of the need.
 - **Per-block permissions and per-block metadata:** not supported. If something needs fields, it's a record (existing rule).
 - **Comments anchored to a paragraph:** inside Surface, anchors ride on the text CRDT (Automerge supports cursors and marks that survive edits). After outside edits, anchors are re-found by quoted text and surrounding context. Comments live in side files (§2a).
 
