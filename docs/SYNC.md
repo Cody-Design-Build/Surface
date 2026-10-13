@@ -62,6 +62,34 @@ Surface's files are the storage. Live multi-user editing needs something finer t
 
 **Leaning (to discuss): E first, then E + B.** v1: GitHub as the source of truth, with a structure-aware merge driver (near-live, a few seconds). v2: add the live relay (B) on top for Notion-like co-editing, without changing the storage. B on its own is the only option that keeps files as the real thing on every machine and still feels live. Field-level merging (one field per line, plus a per-field rule for edits at the same moment) avoids Notion's silent property overwrites.
 
+### Clarification: B's relay is always on
+
+David's concern: if A edits, then closes the laptop, and B opens theirs while A is offline, does B miss the update?
+
+- **Pure peer-to-peer** has exactly that problem: changes move only when both machines are online at the same time.
+- **B's relay is a server that's always on.** It stores every change it receives (store-and-forward). A's edits reach the relay before A goes offline, and B gets them from the relay later. A never needs to be online again.
+- **General rule:** any setup where people aren't online at the same time needs **something always on** that holds the latest state. That can be a server, GitHub, a cloud bucket, or a Mac mini at the office. Anytype handles this with backup nodes in its network.
+
+### The full menu
+
+Every option is a combination of three choices:
+
+1. **What's always on:** GitHub, a cloud bucket, our own server, or a machine at the office.
+2. **What travels:** whole files, or small changes.
+3. **How conflicts merge:** whole-file copies, line merge, field/paragraph merge, or automatic merging of every edit (CRDTs).
+
+| Option | Always-on store | What travels | Merging | Feel | Notes |
+|---|---|---|---|---|---|
+| Dropbox / iCloud / Google Drive | their cloud | whole files | none (conflict copies) | minutes | Easy, but no merging at all |
+| Syncthing | an always-on peer (office Mac mini) | whole files | none (conflict copies) | seconds to minutes | P2P; needs one machine always on |
+| **E. Git remote** (GitHub, Gitea) | GitHub | commits | Surface's field/paragraph merge driver | ~5–15 s | History, accounts and no server, for free |
+| Cloud bucket + change log (S3, Cloudflare R2) | the bucket | files plus a manifest of changes | Surface's merge | seconds | Cheap, our own format; we build the sync logic |
+| **B. Change relay with storage** (y-sweet, Automerge sync server, Loro, PartyKit, Liveblocks) | a relay server (ours or hosted) | small changes | automatic (CRDT) | live, under 1 s | Notion-like; a server to run or pay for |
+| Database sync engine (ElectricSQL, PowerSync, Zero, Triplit, InstantDB) | a Postgres server | rows | the engine's rules | live | Strong, but the database becomes the truth and files become a copy |
+| SQLite replication (Turso embedded replicas, cr-sqlite) | a primary database | database pages or rows | last-write-wins or CRDT | seconds | Same trade-off: files become a copy |
+| Anytype's any-sync (open source) | sync and backup nodes | changes | CRDT | live | Built around Anytype's object model; heavy to adopt |
+| Office hub (Mac mini or VPS running relay + git) | that machine | changes (live) + commits (history) | CRDT + merge driver | live | Self-hosted version of E + B |
+
 ## 3. Questions to settle
 
 **Feel**
