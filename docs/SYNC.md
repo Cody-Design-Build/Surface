@@ -90,6 +90,44 @@ Every option is a combination of three choices:
 | Anytype's any-sync (open source) | sync and backup nodes | changes | CRDT | live | Built around Anytype's object model; heavy to adopt |
 | Office hub (Mac mini or VPS running relay + git) | that machine | changes (live) + commits (history) | CRDT + merge driver | live | Self-hosted version of E + B |
 
+## Full circle: database vs. files first (Oct 12)
+
+David: we've come full circle; a real database has to be weighed against the files-first idea.
+
+**What B really is.** With a change relay, the actual source of truth is the change log (a CRDT store), which is a database. The `.md` files become a projection that's continuously written and also accepts edits. Live multi-user editing for people who aren't online at the same time needs an always-on store of changes, and at that point there's a database underneath whichever way we go. The real question is whether the files are the *truth* or a *guarantee*.
+
+**What files still buy us,** after we've given up readable filenames, folder meaning and Obsidian as the main tool:
+
+1. **Exit and ownership:** a full copy of your data as plain text, always.
+2. **Agents read files natively** (grep, Claude Code, Codex).
+3. **Other apps can edit the files.**
+4. **Plain-text history** (git).
+
+**Which of these need files to be the truth?** Only #3. #1, #2 and #4 are equally well served by an always-current Markdown mirror written from a database.
+
+**Local-first ≠ files.** Local-first means a full copy on your device that works offline and syncs. A local database replica gives you that too. Anytype is local-first without files. The thesis ("data is the foundation, multi-user editable, like any app") doesn't require files; files were the hunch for how to get local-first.
+
+### The two real choices
+
+**1. Files are the truth** (B, or E + B)
+
+- Edits from any app are first-class.
+- Costs:
+  - The hardest engineering in the whole system: two-way bridging between the files and the change log, and diffing external edits back in.
+  - Weaker queries and constraints, and no row-level permissions.
+
+**2. Database first, with a live Markdown mirror**
+
+- The truth is a local-first database: a local replica on each device, synced through an always-on server.
+- The data model designed so far carries over unchanged. Records are pages, type-prefixed IDs are row keys, schemas are tables, front-matter fields are columns, and the flat Markdown body is a text column.
+- Every record is continuously written to disk as `.md` + YAML. That's the exit, the agent read surface, and plain-text history.
+- Agents write through Surface's CLI or MCP, the same live path humans use.
+- Edits made to the mirror in other apps can be read back as *proposed changes* that are flagged and accepted, which matches the flag-only rule, or simply ignored.
+- Wins: live multi-user editing (existing sync engines do this), real queries, constraints and permissions, mobile, and much less custom engineering.
+- Possible bonus: because the mirror isn't the truth, its filenames could be readable names that Surface generates and keeps unique, which brings back much of the Obsidian experience for reading.
+
+**Leaning: choice 2,** unless "other apps can edit the files as first-class" (#3) is a must.
+
 ## 3. Questions to settle
 
 **Feel**
