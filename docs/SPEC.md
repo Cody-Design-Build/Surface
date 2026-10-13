@@ -305,6 +305,44 @@ Everything degrades gracefully: it's readable in any text editor, renders in any
   - A bulk "import all as Note" is available for many files at once.
 - **Changing a Note into a Task later** is one action, and it keeps the same ID, links and history (§4). Notes becoming typed records will be the common case.
 
+## 5b. Block-like editing on plain Markdown
+
+**Leaning.** The question (Oct 13): are Bear or Margin block-based, and can Surface have block-based editing without breaking the files?
+
+- **Neither is block-based.**
+  - **Margin** is a text editor (CodeMirror 6) with live preview. Its block-like behaviour (drag lines, fold headings, `/` menu, Tab to indent) is done as text operations on one Markdown document. Verified from the author's post on the CodeMirror forum.
+  - **Bear** is also text-first: one Markdown-style document per note with rich rendering. It keeps notes in its own database rather than as files on disk. From knowledge, not verified.
+- **Notion is block-based in its data:** every paragraph is a database row with an ID.
+
+### Two meanings of "block-based"
+
+| | Block *feel* (how editing behaves) | Block *data* (how it's stored) |
+|---|---|---|
+| What it is | `/` menu, drag handles, move, fold, "turn into", a hover menu per paragraph | Every paragraph is a record with a permanent ID and its own metadata |
+| Files stay clean Markdown | ✅ It's all text operations | ❌ Needs an ID on every paragraph, or a separate block store |
+| Who does it | Margin, Obsidian, Typora, Craft-like editors | Notion, Anytype |
+
+**Recommendation: full block *feel*, on plain text *data*.** The editor behaves like a block editor; the file stays ordinary Markdown.
+
+### What maps cleanly to Markdown (and works in Obsidian)
+
+| Block | Markdown |
+|---|---|
+| Headings, lists, to-dos, quotes, code, dividers, tables, images | Standard Markdown / GFM |
+| Callouts | `> [!NOTE]` |
+| Toggles (collapsible blocks) | Foldable callouts `> [!NOTE]-` (Obsidian syntax), or a folded heading |
+| Highlight | `==text==` (Obsidian) |
+| Embed a note, or part of one (like a synced block) | `![[Note]]`, `![[Note#Heading]]`, `![[Note#^id]]` (Obsidian embeds) |
+| Live database view in a page | ` ```surface ` block |
+| Link to a paragraph | `^id`, added only when something links to it (already decided) |
+
+### What doesn't map, and how to handle it
+
+- **Columns or side-by-side layouts:** there's no Markdown standard. Skip them, or allow a small HTML fallback (readable but ugly elsewhere). Ledger item if added.
+- **Per-block colours or backgrounds:** skip, or use callout types.
+- **Per-block permissions and per-block metadata:** not supported. If something needs fields, it's a record (existing rule).
+- **Comments anchored to a paragraph:** inside Surface, anchors ride on the text CRDT (Automerge supports cursors and marks that survive edits). After outside edits, anchors are re-found by quoted text and surrounding context. Comments live in side files (§2a).
+
 ## 6. Keeping files and the database in step
 
 **Decided.**
