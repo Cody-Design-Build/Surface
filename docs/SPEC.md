@@ -76,7 +76,20 @@ Record
 - **Edit fields:** rename them, change their type, reorder them, edit choice options.
 - **Archive or delete** fields and types.
 - **Agents can do all of this too,** from a conversation: "track my wine collection" leads the agent to propose a Wine type with fields, and you approve it.
-- **Note is built in** and can't be deleted. Starter types (Task, Person, Project) are templates, not hard-coded.
+- **Note is built in** and can't be deleted.
+- **Shipped types (decided): Note, Task, Project, Contact.** Except for Note, they're ordinary editable types, set up on a new workspace, not hard-coded.
+- **More types, one click away:** a type gallery (for example Meeting, Company, Event, Document, Bookmark, Decision). Adding one creates an ordinary editable type.
+
+**Starter fields (proposed; kept minimal so people add rather than delete):**
+
+| Type | Fields |
+|---|---|
+| Note | title, tags |
+| Task | title, status (todo / doing / done), due, assignee → Contact, project ↔ Project |
+| Project | title, status (planned / active / done), start, end, tasks ↔ Task, contacts ↔ Contact |
+| Contact | title (name), email, phone, company (text, until a Company type is added), projects ↔ Project |
+
+`↔` marks a two-way link. Out of the box, a Project shows its tasks and contacts, and a Contact shows its projects.
 
 **Field types (proposed):**
 
