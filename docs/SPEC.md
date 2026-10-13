@@ -444,6 +444,66 @@ In Surface this isn't a separate feature. It's case 1 or case 2:
 
 - Should Markdown table column types be **remembered** (and where, without adding syntax to the file)?
 
+## 5d. Views are pages
+
+**Leaning (Oct 13).** There's no separate "view" object. **A view is just a page:** a normal Markdown note with text, plus one or more live blocks (§5c) that show records as a table, board, list or calendar.
+
+```markdown
+---
+id: 0q8z9tq1mvd3
+type: note
+title: Due this week
+---
+Tasks due in the next 7 days, by job. We go through this every Monday.
+
+```surface
+from: task
+where: status != done and due <= today + 7d
+sort: due
+group: project
+show: table
+columns: title, status, due, assignee
+```
+```
+
+- **One concept instead of two:** views get text and context for free, and a dashboard is just a page with several blocks.
+- **Agents make views by writing a page.** No new format to learn beyond the block (taught by `surface-views`).
+- **Plain Markdown:** a fenced code block is standard, and any editor shows the query as readable text.
+- **A full-page view:** when a page's body is only one live block, Surface shows it full-window, like a Notion full-page database.
+- **Editing a view in the UI** (changing a sort, adding a column) rewrites the block, because the block *is* the definition, shared with the team.
+  - Temporary search and quick filters stay local until you choose "save to view".
+  - Personal display state (column widths, collapsed groups) is never written to the file; it lives in this device's database.
+- **Default views:** creating a type also creates a page for it ("Tasks", showing all tasks). It's a normal page you can edit or delete.
+- **Results are never written into the page** (no snapshots); they're computed (tier 3, §2a).
+- **Superseded:** the idea of a separate View type, with the query in front matter.
+
+### The sidebar is a page too (proposal)
+
+- **The sidebar is an outline of links** in a Markdown file (for example `Sidebar.md`):
+  - indenting a link nests it, which gives the twirl-downs;
+  - the same page can be linked under as many headings as you like.
+
+  ```markdown
+  - Tasks
+    - [[Due this week]]
+    - [[Waiting on others]]
+    - [[Tasks by job]]
+  - Jobs
+    - [[Active jobs]]
+    - [[Kitchen Remodel (2243 Steiner)]]
+  ```
+- **Folders** appear as their own section below it (§5a).
+- **Readable in any editor,** and in Obsidian it's just a note of links.
+
+**Open:**
+
+1. **Block syntax: ` ```surface ` (Surface's own), or ` ```base ` (Obsidian's)?** Obsidian renders ` ```base ` blocks live inside notes, so with that syntax views would keep working after leaving.
+   - The catch: Bases syntax is more verbose, and views richer than Bases would need extra settings.
+   - To test: does Obsidian ignore keys it doesn't know, or show an error?
+   - A middle path: Surface's own syntax in the file, with ` ```base ` written on "Leave Surface".
+2. **One sidebar for the whole team, or one per person** (a shared default, plus personal additions)?
+3. **Should temporary filters be shareable** as a link without saving them to the page?
+
 ## 6. Keeping files and the database in step
 
 **Decided.**
@@ -624,7 +684,7 @@ A fix is applied only when someone accepts it. A bulk "fix all safe notices" exi
 **Organizing, tables and Obsidian**
 
 13. Where new records are created: by context, or a setting (§5a).
-14. The view format: Bases-compatible, or Surface's own plus a Bases export (§5a, `docs/OBSIDIAN.md`).
+14. The live block syntax: ` ```surface ` or ` ```base ` (Obsidian renders those live); see §5d.
 15. Should Markdown table column types be remembered, and where (§5c)?
 
 **Parked**
