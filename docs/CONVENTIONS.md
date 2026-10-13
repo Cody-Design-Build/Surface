@@ -75,6 +75,25 @@ Still open: whether records may later move out of their folder, and which link s
 | Moves outside Surface | safe | break until Surface repairs |
 | Surface must rewrite files to keep links working | no | yes (link repair) |
 
+### A catch that applies to both: names repeat within a type
+
+A folder can't hold two files with the same name, so uniqueness *within a type* is required in both models. Model B only removes collisions *across* types. Row-like records collide constantly: "Order cabinets" exists on every job.
+
+Proposed answer for both models: **the filename is unique and readable, and the display name lives in front matter.**
+
+- `title: Order cabinets` in front matter is what Surface shows.
+- The filename adds human context to stay unique: `Order cabinets - 2243 Steiner.md`. Surface generates it on create from the title plus a key field (job, date, organization), and the user can override it.
+- Links show the title: `[[Order cabinets - 2243 Steiner|Order cabinets]]` (Model A) or `[Order cabinets](Order%20cabinets%20-%202243%20Steiner.md)` (Model B).
+- Finder stays readable, because filenames carry their own context.
+
+### Finder browsing
+
+The system doesn't need folders. The index plus `type:` and `id` are enough. Folders are for people, and Finder is the **escape hatch**, not the main interface:
+
+- Relationship browsing ("tasks for this job") is a Surface view, not a folder. A flat folder of 400 tasks is a jumble either way.
+- The Finder goal is modest: type folders plus self-describing filenames, so a person without Surface can still find things.
+- Subfolders inside a type folder (for example `jobs/2243 Steiner/`) can be allowed for people's convenience, as long as they carry no meaning. That's free in Model A; in Model B every move rewrites links.
+
 ### Either way
 
 - A permanent `id` in front matter is each record's identity.
