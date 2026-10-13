@@ -1,6 +1,10 @@
 # Conventions
 
-Working draft. Surface's files must stay plain, portable Markdown. A small set of conventions makes Surface's database features work without breaking Obsidian or any generic Markdown editor.
+Working draft.
+
+> **Note (Oct 12):** if Surface goes database-first (see SYNC → "Full circle"), files become a generated mirror. Filenames, folders and links can then be readable and always Obsidian-correct, and the ID-as-filename conventions below apply to the database keys rather than to filenames.
+
+Surface's files must stay plain, portable Markdown. A small set of conventions makes Surface's database features work without breaking Obsidian or any generic Markdown editor.
 
 ## Principle: degrade gracefully
 

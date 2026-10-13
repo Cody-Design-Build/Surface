@@ -128,6 +128,24 @@ David: we've come full circle; a real database has to be weighed against the fil
 
 **Leaning: choice 2,** unless "other apps can edit the files as first-class" (#3) is a must.
 
+### David's insight: a generated mirror can be built for Obsidian
+
+If the database is the truth and the local files are built from it, the files can be laid out however we want. Filenames, folders and links can always work in Obsidian, because Surface writes all of them, and writes them correctly, every time:
+
+- **Readable filenames** (`Order cabinets.md`), kept unique by a stable rule Surface applies, e.g. `Order cabinets (2243 Steiner).md`.
+- **Meaningful folders,** generated from relationships: `Jobs/2243 Steiner/Tasks/Order cabinets.md`. That's useful for browsing in Finder and Obsidian, and costs nothing, because the folder layout is output, not truth.
+- **Plain `[[Order cabinets (2243 Steiner)]]` links** that are always correct. A rename in Surface regenerates the file and rewrites every link to it at once.
+- **Generated Obsidian Bases files** (`.base`) for the standard views, so tables work in Obsidian too.
+- **`id:` stays in front matter,** so any edit made in Obsidian can be traced back to its database row.
+- **Permissions carry over:** each person's mirror contains only what they're allowed to see.
+
+**Things to decide**
+
+1. **Edits made in Obsidian.** Either the mirror is read-only (Surface regenerates it, and outside edits are overwritten), or Surface reads outside edits back as changes to the row with that `id:`. Reading back field and body edits is manageable now, because the database decides conflicts. Renames done in Obsidian are messy: Obsidian renames the file *and* rewrites links in other files, so Surface has to read that as "title changed" and ignore the link rewrites.
+2. **Name stability.** A new duplicate shouldn't rename existing files. Options: always qualify types prone to duplicates (every task gets its job in the name), or qualify only the newcomer.
+3. **Filename churn.** A title change renames the file. That's fine for Obsidian, but noisy in git history and breaks outside bookmarks.
+4. **Cloud truth and offline.** The cloud database is the truth; each device keeps a local replica for offline work and speed, and the mirror is written from that replica.
+
 ## 3. Questions to settle
 
 **Feel**
