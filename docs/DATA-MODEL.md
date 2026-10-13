@@ -100,6 +100,105 @@ Record
 
 Each collection gets a small definition file listing its fields and their types, like a Notion database's properties. Whether records may carry extra fields is open.
 
+## Direction under exploration (Oct 12)
+
+David's leaning:
+
+- **Keep YAML front matter intact.** It's a tradition and it keeps files portable. Add typed data *on top of* it rather than replacing it, and give Surface built-in tools to normalize front matter when user edits make it drift.
+- **Keep the body as one flat Markdown file.** Give up some advantages of a block-based editor, and solve the problems that choice creates.
+
+That's roughly option D, and possibly D with a rebuildable index (see below). The two sections below are proposals, not decisions.
+
+## Proposal: typed data on top of YAML
+
+The file is the record. A schema says what the record *should* look like. An index makes it queryable. A normalizer keeps files and schema in agreement.
+
+### 1. Schemas live in plain files too
+
+Each collection has a definition file in the workspace, for example `.surface/types/task.yaml`:
+
+```yaml
+name: Task
+folder: tasks/            # default home; optional
+fields:
+  status:   { type: choice, options: [todo, doing, done], default: todo }
+  due:      { type: date }
+  assignee: { type: link, to: person }
+  estimate: { type: number, unit: hours }
+  tags:     { type: list, of: text }
+extra_fields: allow       # allow | warn | deny
+```
+
+- It's readable and editable in any editor, and it's versioned with the data.
+- Prior art: **Astro content collections** (schemas validate Markdown front matter at build time), **Obsidian's Metadata Menu plugin** ("fileClass" schemas per note type), **Obsidian Properties** (vault-wide types in `.obsidian/types.json`), and **Git-based CMSs** like TinaCMS and Decap (schema-driven forms that write Markdown front matter).
+
+### 2. How a file knows its type
+
+An explicit `type: task` field in front matter, with the folder as a fallback default. Being explicit survives moves and makes every file self-describing in any app.
+
+### 3. A rebuildable typed index
+
+On load and whenever a file changes, Surface parses the front matter, coerces it against the schema, and writes typed rows to a local index (likely SQLite). Every view, query, filter, sort and rollup runs against the index.
+
+- The files stay the source of truth. Delete the index and it rebuilds from the files.
+- This is where it behaves like a real database without the files becoming one.
+
+### 4. The normalizer: lenient in, strict out
+
+Accept what humans and other apps write; write back one canonical form.
+
+| Drift | Example | Fix |
+|---|---|---|
+| Format | `due: Oct 12`, `due: 10/12/26` | Rewrite to `due: 2026-10-12` (safe, automatic) |
+| Choice casing or typos | `status: Done`, `status: dnoe` | `done` (casing: automatic; typo: suggest) |
+| Booleans and numbers | `billable: yes`, `cost: $1,200` | `true`, `1200` (safe) |
+| Unknown key | `stauts: done` | Suggest `status`; never guess silently |
+| Missing required field | no `status` | Fill in the default if defined, otherwise flag |
+| Value not in options | `status: blocked` | Flag; offer to add it to the schema |
+| Link by name | `assignee: "[[Jane Doe]]"` | Resolve to that record's ID; flag if missing or ambiguous |
+| Key order and quoting | random order, mixed quotes | Rewrite in schema order, one canonical style |
+
+Rules:
+
+- **Safe fixes apply automatically**: formatting, casing, ISO dates, key order.
+- **Ambiguous fixes are never guessed.** They go to a "needs attention" view where a human, or the agent, resolves them.
+- **Problems are never written into the file.** They live in the index and in views, so the file stays clean.
+- **It runs in three places**: on every Surface save (always canonical), when an outside edit is detected, and as a batch `normalize` / lint command over the whole workspace.
+
+### 5. Canonical YAML is also merge-friendly
+
+One field per line, in fixed schema order, means two people editing different fields change different lines, and those merge cleanly. Long free text (descriptions, notes) belongs in the body, or in block-style YAML, so a long value never shares a line with anything else.
+
+### 6. Links stay readable
+
+Store the readable `"[[Jane Doe]]"` in the file for portability. Resolve it to the permanent `id` in the index. Rewrite every mention on rename, as Margin and CDB OS do. That requires unique record names within a collection (or the whole workspace), which the normalizer enforces.
+
+### 7. Schema changes are migrations
+
+Renaming a field, or a choice option, in the schema rewrites every affected file in one operation (the way `links.py rename` handles links). The index is rebuilt afterwards. Nobody hand-edits 400 files.
+
+### 8. Computed fields are never stored
+
+Formulas and rollups (task count on a job, days overdue) are computed in the index at view time. If one is written into a file for portability, it's marked read-only and regenerated, never trusted as input.
+
+## Proposal: a flat Markdown body
+
+The body stays one Markdown string per file. Here's what that costs and how to recover most of it:
+
+| Problem | Solution |
+|---|---|
+| **Two people editing the same body** | Three-way merge at paragraph level against the last common version. Edits to different paragraphs merge; only same-paragraph collisions need resolution. For live co-editing inside the Surface app, run a temporary shared-editing session (a Yjs or Loro text document) while people have the note open. It writes back to the plain file and keeps its state out of the file. Edits from other apps are diffed into the session. |
+| **Agents overwriting human edits** | Agents never rewrite a whole file. They make section-level patches (replace the contents under a heading, append to a list) through the same merge path humans use. |
+| **Presence and collisions** | Show who's in a note and which section they're editing. An optional soft lock per section is a lighter version of the old checkout idea. |
+| **Linking to part of a page** | Headings are natural anchors (`[[Note#Heading]]`). Add Obsidian-style `^block-id` markers only when something actually links to that paragraph, never everywhere. |
+| **Comments anchored to text** | Store comments in a side file (or the index), anchored by the quoted text plus its surrounding context (the W3C Web Annotation approach). They survive edits without cluttering the file. |
+| **Live record views inside a page** | Use a fenced code block (` ```surface ` with a query inside), as Obsidian Bases does with ` ```base `. Surface renders a live table; other editors show readable query text. |
+| **Tasks inside a body** | Plain `- [ ]` checkboxes for simple to-dos. Rule: **if it needs fields, it's a record.** It gets its own file, and the body links to or embeds it. |
+| **Moving and reordering** | The editor handles drag and fold as text operations (Margin-style); the result is still plain Markdown. |
+| **History and undo** | File history from git or snapshots, plus the merge base kept for three-way merges. |
+
+What we give up on purpose: block-level permissions, per-block metadata, and Notion-grade live co-typing as the default. Simultaneous editing of the same paragraph should be rare for a small team, and the live session covers it when it happens inside Surface.
+
 ## Open questions
 
 1. **Source of truth:** files (A or D), database (B), or both (C)?
@@ -107,4 +206,8 @@ Each collection gets a small definition file listing its fields and their types,
 3. **Links:** by permanent ID (survives renames, less readable raw) or by name?
 4. **Body:** one Markdown string, or blocks? If blocks, how does that survive a round trip through an external editor?
 5. **Concurrency target:** live co-typing in the same paragraph, or "different fields and paragraphs merge cleanly, same-spot collisions are rare"?
-6. **"Any app can open it":** must other apps be able to *edit* the files, or is *reading* them enough? This decides between B and C/D.
+6. **"Any app can open it":** must other apps be able to *edit* the files, or is *reading* them enough? This decides between B and C/D. (Leaning: edit. Files and YAML stay the real thing.)
+7. **Schema location:** `.surface/types/` (hidden), or a visible folder that Finder users can browse?
+8. **Extra fields:** allow, warn, or deny fields that aren't in the schema, globally or per collection?
+9. **Unique names:** must record names be unique across the workspace, or only within a collection?
+10. **Normalizer authority:** may Surface auto-rewrite files edited in other apps (safe fixes only), or must it only flag them?
