@@ -43,7 +43,12 @@ The promise: open your Surface workspace folder in Obsidian, and it's a good Obs
 
 The app research already recommends a query format "modelled on Obsidian Bases" (APP-TECH). Taking that one step further:
 
-**Proposal: Surface views use Obsidian Bases syntax** (a compatible subset, plus Surface-only extras that Obsidian ignores).
+**Open (Oct 13): David expects Surface views to be more dynamic than Bases tables** (trees from links, calendars, agent views), so the format stays open. The two options:
+
+- **A. A Bases-compatible core plus extras.** Views open natively in Obsidian.
+- **B. Surface's own format, plus a Bases export.** Surface writes `.base` files for whatever Bases can show, and its own format isn't tied to Obsidian's.
+
+Option A in more detail: **Surface views use Obsidian Bases syntax** (a compatible subset, plus Surface-only extras that Obsidian ignores).
 
 - Every sidebar view is saved as a `.base` file, and every embedded view as a ` ```base ` block. Both open natively in Obsidian.
 - Bases already has filters, sorts, formulas and grouping, plus table, cards, list and kanban layouts. These cover most Surface views.
@@ -64,7 +69,7 @@ For people leaving, or visiting often:
 
 ## Open questions
 
-1. Adopt Bases syntax for Surface views (compatible subset plus extras)?
+1. View format: Bases-compatible core (A), or our own format plus a Bases export (B)?
 2. Where do view files live: a visible `Views/` folder, or hidden?
 3. How much should "Prepare for Obsidian" write into `.obsidian/`, if anything?
 4. A test vault to confirm the details: Bases parsing extra keys, property behaviour, and rename handling.

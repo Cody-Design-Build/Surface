@@ -135,31 +135,46 @@ Everything degrades gracefully: it's readable in any text editor, renders in any
 | Live record view in a page | ` ```surface ` fenced block containing a query (like Obsidian's ` ```base `) |
 | Comments, presence | in Surface's database, never inside the file |
 
-## 5a. Organizing: views, not folders (and folders if you like)
+## 5a. Organizing: views and folders, side by side
 
-### The sidebar is views
+### The sidebar has both
 
-**Decided.** Unlike Obsidian, Bear and Margin, Surface's sidebar is not a folder tree. It's a set of views over the records.
+**Leaning.** The sidebar has two kinds of sections:
 
-- A **Tasks** section twirls down to as many saved views as you like: "Due this week", "By job", "Waiting on others", "Done". Each view is a filter, a sort and a layout (list, table, board, calendar).
-- The same record can appear in many views. Where its file sits on disk doesn't matter to any of them.
-- **Notes are no longer locked into folders, but they're still Markdown files on your disk,** and nobody has to use the sync service.
-- **Views are data:** saved in the workspace, synced in teams, and written as files so they escape too (see `docs/OBSIDIAN.md`). Proposal: view files use Obsidian Bases syntax.
+- **Views** (by type): a **Tasks** section twirls down to as many saved views as you like: "Due this week", "By job", "Waiting on others". Each view is a query: a filter, a sort and a layout.
+- **Folders:** the real folder tree on disk, for people who think in folders (Zettelkasten, atomic notes, plain filing). It's also part of the escape hatch.
+- Possibly **Pinned**, for favourite records and views.
 
-### Folders alongside types
+**One record, many places.** A record lives in exactly one folder on disk, but it can appear in as many views as you like. A view can also be a *tree* built from links: Job → its Tasks → their notes. So a page can be "nested" under several parents at once. Notion allows only one parent per page; the closest prior art is Tana, where a node can live in many places.
 
-**Leaning.** Some note-takers think in folders: Zettelkasten, atomic notes, or old-fashioned filing. That's also part of the escape hatch. So folders are allowed as a second, optional way to organize:
+**Views are queries, not containers.** A record appears in a view because it matches. You can't "remove it from a view" except by changing the record, or the view. Hand-picked lists, if wanted later, would be a separate feature (a record with a list of links).
 
-- **Folders are the user's, not Surface's.** Surface never invents folders or moves files on its own. New records go where you create them, or into the type's default folder.
-- **The sidebar shows the real folder tree** in its own "Folders" section, beside the type views. You can create folders, and drag notes into them, in Surface, Finder or Obsidian.
-- **A record's folder is just another attribute.** Views can use it ("tasks in Projects/Kitchen"). Typed records can live in any folder.
-- **Moving a file is an ordinary change,** not a flag. It's recorded and synced like any edit. *(This changes the earlier "renames and moves are flagged" decision for moves.)*
-- **Untyped notes are first-class.** A plain note needs no type and no fields: just a title, a body, links and tags. Zettelkasten and atomic-note users can live entirely in folders, notes and links.
+**Views are data:** saved in the workspace, synced in teams, and written as files so they escape too.
 
-**Open:**
+**Open:** the view format. Surface views will likely be more dynamic than Obsidian Bases tables: trees, boards, calendars, agent-built views. Options: a Bases-compatible core with extras, or Surface's own format plus a Bases *export*. See `docs/OBSIDIAN.md`.
 
-- **Renames in Finder or Obsidian:** treat a filename change as a title change (natural for folder users), or keep flagging it?
-- **Team folders:** is the folder tree shared by the whole team (it lives in the files, so yes by default), or personal per person?
+### Folders
+
+**Decided:**
+
+- **Folders are the user's.** Surface never invents folders or moves files on its own.
+- **Moving a file between folders is an ordinary change:** recorded and synced, never flagged. A record's folder is just another attribute that views can use ("tasks in Projects/Kitchen").
+
+**Open: where new records are created.** Recommendation, decided by context with no prompt:
+
+- Creating from inside a **folder** puts the record in that folder (what Finder and Obsidian do).
+- Creating from a **view**, or anywhere else, puts it in the type's default folder.
+- A workspace setting can change this: always the type folder, always ask, or a fixed inbox folder.
+
+### Notes and types
+
+**Decided:**
+
+- **Every record has a type. The default is Note.** A Note has a title, a body, links and tags, and no required fields. Folder and Zettelkasten users can live entirely in Notes.
+- **New files found on disk are flagged for import,** defaulting to Note and asking for the type.
+  - Refinement: if the file sits in a type's default folder (for example `tasks/`), suggest that type.
+  - A bulk "import all as Note" is available for many files at once.
+- **Changing a Note into a Task later** is a type change, which is a migration: a new ID, with links rewritten. Notes to typed records will be the common case, so it must be easy (one action) and safe.
 
 ## 6. Keeping files and the database in step
 
@@ -180,8 +195,8 @@ Like `git status` plus merge conflicts:
 |---|---|
 | New file without an ID | Flags *new note*; asks whether to import it (and as which type) or ignore it |
 | File deleted outside Surface | Flags it; asks whether to allow the deletion or restore the file |
-| File renamed outside Surface | Flags it (leaning: treat as a title change instead; §5a) |
-| File moved to another folder | Ordinary change, synced (leaning; §5a) |
+| File renamed outside Surface | Flags it: *"Renamed to X. Make that the new title and update N links, or restore the old name?"* Surface itself doesn't break, because it identifies files by `id:`; but links written in other files by name would. |
+| File moved to another folder | Ordinary change, synced, never flagged (§5a) |
 | Broken or invalid YAML | Flags it; keeps the database values until it's resolved |
 | The same field changed in the file and the database | Flags a conflict |
 | Values that drift from the schema | Reads them leniently for display, and flags them (see below) |
@@ -333,8 +348,8 @@ A fix is applied only when someone accepts it. A bulk "fix all safe notices" exi
 
 **Organizing and Obsidian**
 
-11. Folders alongside types: confirm moves are ordinary changes, and decide on rename handling (§5a).
-12. View files in Obsidian Bases syntax, and where they live (`docs/OBSIDIAN.md`).
+11. Where new records are created: by context, or a setting (§5a).
+12. The view format: Bases-compatible, or Surface's own plus a Bases export (§5a, `docs/OBSIDIAN.md`).
 
 **Parked**
 
