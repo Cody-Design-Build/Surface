@@ -85,6 +85,7 @@ Conflicts are about *how finely changes are merged*, not about the file format. 
 - **Logseq**: started file-based, then built a database version, because the files approach ran into these exact limits. A warning worth reading closely.
 - **Anytype**: local-first objects with typed relations, shared-editing sync, and Markdown export (option B, local-first).
 - **Obsidian live-collaboration plugins** (e.g. Relay): shared-editing sync layered on a files vault (a version of option D).
+- **Margin** (gomargin.app): a pure option A done well. The app is just a fast view over a folder of `.md` files. A `margin_id` in each note's front matter keeps its identity through renames. A file watcher picks up outside edits (vim, VS Code, git pull) and ignores Margin's own saves. A note beside a same-named folder is its parent. Extensions stay plain Markdown that reads fine anywhere (callouts are GitHub-style blockquotes, footnotes are `[^1]`). It has no typed fields, no database views, no sync and no multi-user editing.
 - **CDB OS**: Markdown + YAML in a git repo, with `id` in front matter so links survive renames. Its sync stops on conflicts.
 
 ## Draft record shape (independent of storage)
