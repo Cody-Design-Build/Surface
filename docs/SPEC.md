@@ -27,6 +27,61 @@ Apps and SaaS aren't the future. People need three things:
 5. **Flag, don't silently fix.** When outside changes can't be merged safely, or drift from the schema, Surface flags them and a person or agent chooses what happens. Surface never quietly rewrites or discards someone's edit.
 6. **Agents are users.** Their edits travel the same paths as a person's, and get the same merging, history and permissions.
 
+## 2a. No lock-in
+
+**Decided (principle).** This is a big part of why Obsidian is popular: your notes are yours, and you can leave any time. Surface must feel the same. It isn't about Obsidian. It's about people knowing there's no vendor lock-in. Obsidian, or any other notes app, is always an option if you want to leave.
+
+### The rule
+
+**Everything a person or agent authors exists in open, readable files at all times. The database adds speed, history and collaboration, but it never holds the only copy of anything you wrote.**
+
+Every feature is designed into one of three tiers:
+
+| Tier | What | Where | If Surface disappeared |
+|---|---|---|---|
+| **1. In the note** | fields, body, links, tags, to-dos, callouts, heading and paragraph links | the `.md` file: YAML front matter plus Markdown | Works in any Markdown app; native in Obsidian |
+| **2. In a readable side file** | type schemas, saved views, comments, workspace settings | plain YAML or Markdown files in the workspace | Readable in any editor; views can also be written as Obsidian `.base` files |
+| **3. Computed or temporary** | the search index, rollups, backlinks, presence, sync state, merge internals | the local database only | Nothing authored is lost; all of it can be rebuilt from tiers 1 and 2 |
+
+**Not allowed:** authored data that exists only in the database, or only in a format nobody else can read.
+
+The tier 3 exception is **history** (who changed what, and when). It's valuable but not authored content, so it gets an export: a git repository of snapshots, or per-note history files, on demand.
+
+### What this changes
+
+- **Comments are written to files** (Markdown side files), not kept only in the database.
+- **Views and schemas are always written to files** (already the plan).
+- **Sync has no lock-in either:**
+  - the sync server can be self-hosted;
+  - the protocol is open;
+  - and since the files are plain, teams can always fall back to git, Dropbox or Obsidian Sync on their own.
+- **Agents have no lock-in either:** any agent (Claude Code, Codex, Hermes, anything with a terminal) can work directly on the files.
+
+### Proving it
+
+- **The "delete Surface" test**, run automatically on every build:
+  1. Build a workspace using every feature.
+  2. Delete Surface's local database.
+  3. Check that every authored thing is still present and readable in the files, and that it opens cleanly in Obsidian and in a plain text editor.
+  4. Rebuild the database from the files, and check that nothing changed.
+- **A published, open file format spec** ("Surface Markdown"): how records, fields, links, types, views and comments are written. Anyone can build a tool that reads or writes it. People trust the format more than any promise.
+- **"Leave Surface" is a feature,** not a support article. One action makes a workspace fully standalone:
+  - views become `.base` files;
+  - comments become visible notes;
+  - history can be exported to git;
+  - a "Start here" note explains the layout.
+- **Arriving is as easy as leaving:** importing an existing vault (parked; `docs/IMPORT.md`) is the other half of the same promise.
+
+### Marketing lines (drafts)
+
+- *Your notes are files. Leave any time.*
+- *Surface is a way of working with your files, not a place they're locked away.*
+- *Obsidian, VS Code, or any text editor is always an option.*
+- *No account needed. No cloud needed. Sync if you want it.*
+- *Bring your own agent.*
+
+(Naming other products in marketing is generally fine when it's factual, but check before launch.)
+
 ## 3. Architecture: three layers, with Surface as the manager
 
 **Decided.** Surface works like a git client that merges continuously on its own:
@@ -194,7 +249,8 @@ Everything degrades gracefully: it's readable in any text editor, renders in any
 | Link to a heading | `[[Note#Heading]]` |
 | Link to a paragraph | Obsidian `^block-id`, added only when something links to it |
 | Live record view in a page | ` ```surface ` fenced block containing a query (like Obsidian's ` ```base `) |
-| Comments, presence | in Surface's database, never inside the file |
+| Comments | Markdown side files (tier 2; §2a), never inside the note itself |
+| Presence | in Surface's database only (temporary; tier 3) |
 
 ## 5a. Organizing: views and folders, side by side
 
@@ -334,7 +390,7 @@ A fix is applied only when someone accepts it. A bulk "fix all safe notices" exi
 .surface/
   types/        schema files (mirrored from the database)
   settings      workspace settings
-  comments/     comment threads (if mirrored to files)
+  comments/     comment threads as Markdown (always written; §2a)
   local/        the local database, cache, base versions (this device only, never synced as files)
 ```
 

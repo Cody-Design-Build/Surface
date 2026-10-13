@@ -20,6 +20,10 @@ The model is something like Claude's dashboards. The user asks to see a view, wi
 
 Local-first. Each workspace is a local database on your device, with every record also kept as a plain Markdown file that any editor or agent can work with. Teams can switch on sync. Surface keeps the files, the local database and the team's shared copy in step, flagging anything it can't merge safely.
 
+## No lock-in
+
+Your notes are files. Everything you write lives in open, readable Markdown and YAML on your disk. Surface adds speed, views, agents and collaboration, but you can leave any time, to Obsidian, VS Code or any text editor.
+
 ## Docs
 
 - [`docs/SPEC.md`](docs/SPEC.md): the current design, consolidated.
