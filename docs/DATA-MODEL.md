@@ -111,7 +111,7 @@ That's roughly option D, and possibly D with a rebuildable index (see below). Th
 
 ## Proposal: typed data on top of YAML
 
-The file is the record. A schema says what the record *should* look like. An index makes it queryable. A normalizer keeps files and schema in agreement.
+The file is the record. A schema says what the record *should* look like. An index makes it queryable. A normalizer flags where files drift from the schema.
 
 ### 1. Schemas live in plain files too
 
@@ -143,35 +143,66 @@ On load and whenever a file changes, Surface parses the front matter, coerces it
 - The files stay the source of truth. Delete the index and it rebuilds from the files.
 - This is where it behaves like a real database without the files becoming one.
 
-### 4. The normalizer: lenient in, strict out
+### 4. The normalizer: read leniently, flag, never rewrite
 
-Accept what humans and other apps write; write back one canonical form.
+**Decided (Oct 12): the normalizer only warns and flags.** It never rewrites a file on its own.
 
-| Drift | Example | Fix |
-|---|---|---|
-| Format | `due: Oct 12`, `due: 10/12/26` | Rewrite to `due: 2026-10-12` (safe, automatic) |
-| Choice casing or typos | `status: Done`, `status: dnoe` | `done` (casing: automatic; typo: suggest) |
-| Booleans and numbers | `billable: yes`, `cost: $1,200` | `true`, `1200` (safe) |
-| Unknown key | `stauts: done` | Suggest `status`; never guess silently |
-| Missing required field | no `status` | Fill in the default if defined, otherwise flag |
-| Value not in options | `status: blocked` | Flag; offer to add it to the schema |
-| Link by name | `assignee: "[[Jane Doe]]"` | Resolve to that record's ID; flag if missing or ambiguous |
-| Key order and quoting | random order, mixed quotes | Rewrite in schema order, one canonical style |
+Surface reads whatever humans and other apps write, interprets it as leniently as it safely can for the index, and flags anything that drifts from the schema.
+
+| Drift | Example | How the index reads it | Flag |
+|---|---|---|---|
+| Format | `due: Oct 12`, `due: 10/12/26` | `2026-10-12` | Notice: non-canonical format |
+| Choice casing | `status: Done` | `done` | Notice |
+| Choice typo | `status: dnoe` | unresolved | Warning; suggest `done` |
+| Booleans and numbers | `billable: yes`, `cost: $1,200` | `true`, `1200` | Notice |
+| Unknown key | `stauts: done` | kept as an extra field | Warning; suggest `status` |
+| Missing required field | no `status` | schema default, if one is defined | Warning |
+| Value not in options | `status: blocked` | unresolved | Warning; offer to add it to the schema |
+| Link | `assignee: "[[Jane Doe]]"` | resolved to an ID (see section 6) | Warning if missing or ambiguous |
+| Key order and quoting | random order, mixed quotes | no effect | none, or a notice |
 
 Rules:
 
-- **Safe fixes apply automatically**: formatting, casing, ISO dates, key order.
-- **Ambiguous fixes are never guessed.** They go to a "needs attention" view where a human, or the agent, resolves them.
-- **Problems are never written into the file.** They live in the index and in views, so the file stays clean.
-- **It runs in three places**: on every Surface save (always canonical), when an outside edit is detected, and as a batch `normalize` / lint command over the whole workspace.
+- **Files are never changed by the normalizer.** A flag lives in the index and shows in a "needs attention" view. The file stays exactly as its author left it.
+- **Fixes happen only when someone chooses one.** From a flag, a human or the agent can accept a suggested fix, which then saves like any other edit. A bulk "fix all safe notices" command is possible, but only when someone runs it.
+- **Surface's own editor writes canonical form.** When a record is edited in Surface, Surface is the author, so its save uses the canonical layout. This doesn't touch files edited elsewhere.
+- **It runs in two places**: whenever a file changes (from anywhere), and as an on-demand lint across the whole workspace.
 
 ### 5. Canonical YAML is also merge-friendly
 
 One field per line, in fixed schema order, means two people editing different fields change different lines, and those merge cleanly. Long free text (descriptions, notes) belongs in the body, or in block-style YAML, so a long value never shares a line with anything else.
 
-### 6. Links stay readable
+### 6. Links without forcing unique names
 
-Store the readable `"[[Jane Doe]]"` in the file for portability. Resolve it to the permanent `id` in the index. Rewrite every mention on rename, as Margin and CDB OS do. That requires unique record names within a collection (or the whole workspace), which the normalizer enforces.
+Same pattern as the typed fields: **the file keeps a readable link, the index resolves it to an ID, and anything ambiguous gets flagged.** Names don't have to be unique.
+
+**The file always stays readable and Obsidian-compatible**, in one of three forms:
+
+| Form | Example | When to use it |
+|---|---|---|
+| Name | `[[Jane Doe]]` | The name is unique in context (the usual case) |
+| Path | `[[contacts/Jane Doe]]` | Two records share a name. The filesystem already guarantees paths are unique. |
+| Path + display name | `[[contacts/smith/Jane Doe\|Jane Doe]]` | A long path, shown as the plain name |
+
+Obsidian resolves all three natively. Its "shortest path when possible" link setting does the same thing.
+
+**How the index resolves a link**, in order:
+
+1. **Explicit path.** If the link has a path, it's unambiguous.
+2. **Narrow by type.** A typed link field in the schema (`assignee: { type: link, to: person }`) only looks at person records. A task named "Jane Doe" and a contact named "Jane Doe" never collide in that field.
+3. **Narrow by nearness** (body links, which have no type): a match in the same folder, then the same parent, before anywhere else.
+4. **Aliases.** Match names listed in a record's `aliases:` front-matter field (an existing Obsidian convention).
+5. **Still more than one match, or none:** flag it. Nothing is guessed, and the link shows as unresolved until someone picks.
+
+**Writing links.** When Surface or the agent creates a link, it writes the shortest form that's unambiguous right now: the plain name if it's unique, otherwise a path.
+
+**Remembering what a link meant.** Once a link resolves, the index stores which record ID it points to. That keeps links stable even when things change later:
+
+- **A new duplicate appears** (a second Jane Doe is created): existing links keep their stored target and are flagged *"now ambiguous; pin it?"* Pinning rewrites that link to its path form. Pinning is an edit someone chooses, so the flag-only rule still holds.
+- **A rename inside Surface:** Surface rewrites the links that point at the renamed record, using the stored IDs. A rename is something the user did in Surface, so this isn't the normalizer acting.
+- **A rename outside Surface** (Finder, another editor, git): the record's `id` in its front matter is unchanged, so the index sees the same record at a new path. Links that point to the old name are flagged *"target renamed; update N links?"* and updated only when someone accepts.
+
+The cost: the stored link → ID mapping lives in the index, not the file. If the index is rebuilt from scratch, links are resolved fresh from their text. Any link whose text is ambiguous at that moment gets flagged rather than silently reattached. That's acceptable, because writing the shortest unambiguous form keeps those cases rare.
 
 ### 7. Schema changes are migrations
 
@@ -209,5 +240,5 @@ What we give up on purpose: block-level permissions, per-block metadata, and Not
 6. **"Any app can open it":** must other apps be able to *edit* the files, or is *reading* them enough? This decides between B and C/D. (Leaning: edit. Files and YAML stay the real thing.)
 7. **Schema location:** `.surface/types/` (hidden), or a visible folder that Finder users can browse?
 8. **Extra fields:** allow, warn, or deny fields that aren't in the schema, globally or per collection?
-9. **Unique names:** must record names be unique across the workspace, or only within a collection?
-10. **Normalizer authority:** may Surface auto-rewrite files edited in other apps (safe fixes only), or must it only flag them?
+9. ~~**Unique names**~~: resolved. Names needn't be unique; links resolve by path, type, nearness and aliases, and ambiguity is flagged (section 6).
+10. ~~**Normalizer authority**~~: decided. Warn and flag only; never rewrite (section 4).
