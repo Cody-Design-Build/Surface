@@ -345,6 +345,40 @@ Background: The question (Oct 13): are Bear or Margin block-based, and can Surfa
 - **Per-block permissions and per-block metadata:** not supported. If something needs fields, it's a record (existing rule).
 - **Comments anchored to a paragraph:** inside Surface, anchors ride on the text CRDT (Automerge supports cursors and marks that survive edits). After outside edits, anchors are re-found by quoted text and surrounding context. Comments live in side files (§2a).
 
+## 5c. Tables in a page
+
+**Leaning.** There are three different things people mean by "a table in a page." Surface supports all three, each written as real Markdown.
+
+### 1. Plain Markdown tables (content that belongs to this page)
+
+- A standard GFM pipe table, written in the body.
+- **Edited cell by cell** in Surface (as Margin does). The file stays a normal table that looks fine in any editor.
+- **Typed in the UI only (proposal):** Surface can treat a column as a number, date or choice, based on its contents or a choice in the UI. It can then sort, validate and show totals in a footer. Totals are displayed, never written into the file.
+- **Use when** the rows only matter inside this page: a quick comparison, a materials list, a meeting agenda.
+
+### 2. Live views (records shown in a page)
+
+- A ` ```surface ` block containing a query: for example, "tasks where project is this page, sorted by due date."
+- Surface renders it as a live table, board or list. **Editing a cell edits the record it came from,** and that record's own file.
+- **In other editors** you see the query as readable text, not the data. That's a ledger item (§2a).
+- **Not done by default:** writing a snapshot of the results into the page. It would go stale, and it would rewrite the page every time a task changes, adding noise to sync and merging.
+- **Leaving Surface** converts each live view into a Bases embed (if Obsidian can show it) or a snapshot table.
+- **Use when** the rows are records that matter across the workspace: tasks, contacts, projects.
+
+### 3. Notion-style "inline databases" (rows that belong to this page)
+
+In Surface this isn't a separate feature. It's case 1 or case 2:
+
+- **Rows that need to be linked, queried across pages, or have a body of their own** are records (a type), and the page shows them with a live view (case 2).
+- **Rows that only live in this page** are a plain Markdown table (case 1). This avoids hundreds of tiny files for things like line items.
+
+**Rule of thumb:** if a row needs to be found, linked or reported on from elsewhere, it's a record. Otherwise it's a table row.
+
+**Open:**
+
+- Should Surface offer **"convert table to records"** (each row becomes a record of a chosen type, and the table becomes a live view), and the reverse?
+- Should Markdown table column types be **remembered** (and where, without adding syntax to the file)?
+
 ## 6. Keeping files and the database in step
 
 **Decided.**
