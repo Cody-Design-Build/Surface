@@ -374,9 +374,34 @@ In Surface this isn't a separate feature. It's case 1 or case 2:
 
 **Rule of thumb:** if a row needs to be found, linked or reported on from elsewhere, it's a record. Otherwise it's a table row.
 
+### Converting a table to records
+
+**Leaning.** The hard part is that rows must become records of a type with matching fields. It works like a CSV import into Notion or Airtable: a mapping step with a preview.
+
+1. **Pick the target type:** an existing type, or **"new type from this table"** (each column becomes a field).
+2. **Map the columns.** Each column becomes one of:
+   - **an existing field,** auto-matched by name ("Due date" → `due`);
+   - **a new field** added to the type, with its field type guessed from the values (all dates → date; a few repeated words → choice);
+   - **the body** of each record;
+   - **ignored.**
+   
+   One column must become the `title` (the first column by default).
+3. **Convert the values, with a preview:**
+   - dates and numbers are parsed;
+   - new choice values are offered as new options;
+   - cells matching an existing record's title can become links ("Jane" → `[[Jane Doe]]`);
+   - **values that don't fit are kept as text and flagged, never dropped.**
+4. **Check for duplicates.** Rows matching an existing record can be linked to it, merged, or created anyway.
+5. **Link the records back to this page** (for example, each new task's `project` is set to this project), so the live view can find them.
+6. **Replace the table with a live view** of those records, or keep the table as well.
+7. **Undo** reverses the whole conversion in one step.
+
+- **Agents can do the same:** "turn this table into tasks." The agent proposes the mapping, and you approve it.
+- **The reverse** (live view → plain table) is easy: write the current results as a static Markdown table. The records stay as they are.
+- **One import engine:** the same mapping-and-preview step serves table conversion, CSV import, new notes found on disk, vault import (parked) and future imports from other apps.
+
 **Open:**
 
-- Should Surface offer **"convert table to records"** (each row becomes a record of a chosen type, and the table becomes a live view), and the reverse?
 - Should Markdown table column types be **remembered** (and where, without adding syntax to the file)?
 
 ## 6. Keeping files and the database in step
