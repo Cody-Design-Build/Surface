@@ -194,7 +194,21 @@ Obsidian resolves all three natively. Its "shortest path when possible" link set
 4. **Aliases.** Match names listed in a record's `aliases:` front-matter field (an existing Obsidian convention).
 5. **Still more than one match, or none:** flag it. Nothing is guessed, and the link shows as unresolved until someone picks.
 
-**Writing links.** When Surface or the agent creates a link, it writes the shortest form that's unambiguous right now: the plain name if it's unique, otherwise a path.
+Steps 2–4 are **Surface-only**. Obsidian doesn't know about types, Surface's nearness rule or alias resolution. It resolves a bare `[[Name]]` by filename only, and an alias doesn't resolve a bare link there (aliases only feed its link picker). So these steps help Surface read links that humans typed loosely, but they must never be what a written link *depends* on.
+
+**Writing links (Obsidian-safe rule).** When Surface or the agent creates or fixes a link, it writes the shortest form that **Obsidian would resolve to the same file**:
+
+- the plain `[[Name]]` only if that filename is unique across the whole workspace;
+- otherwise a path, `[[contacts/Jane Doe]]`, or a path plus display name.
+
+Uniqueness here is judged the way Obsidian judges it (by filename across the vault), not by Surface's type narrowing. A link Surface writes therefore points to the same record in both apps.
+
+**Compatibility notes:**
+
+- Links in front matter must be quoted strings (`assignee: "[[Jane Doe]]"`), or lists of them. Obsidian treats those as real links in properties, backlinks and the graph.
+- Heading links (`[[Note#Heading]]`) and block links (`[[Note#^id]]`) are native Obsidian syntax.
+- Renames done *in Obsidian* are handled by Obsidian's own "update links" setting, and Surface just sees the updated files. Renames done in Finder or git break the links in Obsidian until someone accepts Surface's "update N links?" flag.
+- A loose bare link a human typed (`[[Jane Doe]]` with two Jane Does) may open the wrong one in Obsidian, even though Surface resolved it correctly by type. Surface flags these with "ambiguous in other apps; pin it?"
 
 **Remembering what a link meant.** Once a link resolves, the index stores which record ID it points to. That keeps links stable even when things change later:
 
