@@ -94,7 +94,33 @@ The system doesn't need folders. The index plus `type:` and `id` are enough. Fol
 - The Finder goal is modest: type folders plus self-describing filenames, so a person without Surface can still find things.
 - Subfolders inside a type folder (for example `jobs/2243 Steiner/`) can be allowed for people's convenience, as long as they carry no meaning. That's free in Model A; in Model B every move rewrites links.
 
-### Either way
+### The root problem: one string doing two jobs (Oct 12)
+
+In a database, the **key** (unique, permanent, meaningless) and the **label** (human, changeable, can repeat) are separate. A filename tries to be both. Every link problem comes from that: readable names collide and get renamed; unique permanent names aren't readable.
+
+The spectrum of answers:
+
+| | Filename | Links point at | Links work in Obsidian | Finder readable | Collisions | Renames |
+|---|---|---|---|---|---|---|
+| 1. Key only | `a7f3c2.md` | filename (= key) | ✅ always | ❌ | impossible | label is in front matter, so renames never touch the file |
+| 2. Label + key | `Order cabinets ~a7f3.md` | filename | ✅ | mostly | impossible | a rename changes the label part; Surface still matches by the key suffix |
+| 3. Unique label (Model A) | `Order cabinets - 2243 Steiner.md` | filename | ✅ | ✅ | must be prevented by hand or by Surface | renames outside Surface and Obsidian break links (flagged) |
+| 4. Free label, ID links | `Order cabinets.md` (may repeat) | front-matter `id` | ❌ Obsidian can't resolve an ID that isn't a filename | ✅ | allowed | free |
+
+Note on option 4: Obsidian resolves links by filename only; aliases feed its link picker, not resolution. So links by front-matter ID are dead outside Surface.
+
+### Why files at all, if filenames become keys?
+
+Readable filenames are only one of the things files provide. The rest survive every option above:
+
+- **Agents work natively with files.** Claude Code, Codex, Hermes and grep all read and edit them with no API.
+- **Ownership and longevity.** The data outlives the app; leaving is free.
+- **History, diff, backup and sync come for free** (git, Dropbox, Time Machine).
+- **Readable content.** The front matter and body are plain text in any editor, whatever the filename.
+- **Merge-friendly** at line, field and paragraph level.
+
+What changes with key-like filenames: Finder browsing, readable raw links, and some of the "feels like Obsidian" quality.
+
 
 - A permanent `id` in front matter is each record's identity.
 - The index knows which record every link points to.
