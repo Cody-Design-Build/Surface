@@ -529,7 +529,7 @@ In Surface this isn't a separate feature. It's case 1 or case 2:
 
 **Open:**
 
-1. **View file format, leaning: build on Obsidian's `.base` format** (a superset), so simple views work in Obsidian unchanged. Still to test: does Obsidian tolerate keys it doesn't know? If it doesn't, use Surface's own format and convert to `.base` on Leave.
+1. **View file format, leaning: build on Obsidian's `.base` format** (a superset), so simple views work in Obsidian unchanged. **Bases doesn't depend on folders:** filters can use any property (`type == "task"`), so a base can gather tasks from every folder. `file.inFolder()` is just one optional filter. The real question is whether Bases can express enough (relations, totals, Gantt), not folders. **Term:** Surface is *folder-optional*. Still to test: does Obsidian tolerate keys it doesn't know? If it doesn't, use Surface's own format and convert to `.base` on Leave.
 2. One sidebar for the whole team, or a shared one plus personal additions?
 3. Should a quick filter be shareable as a link without saving it as a view?
 
