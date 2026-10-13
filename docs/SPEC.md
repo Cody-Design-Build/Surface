@@ -529,7 +529,21 @@ In Surface this isn't a separate feature. It's case 1 or case 2:
 
 **Open:**
 
-1. **View file format, leaning: build on Obsidian's `.base` format** (a superset), so simple views work in Obsidian unchanged. **Bases doesn't depend on folders:** filters can use any property (`type == "task"`), so a base can gather tasks from every folder. `file.inFolder()` is just one optional filter. The real question is whether Bases can express enough (relations, totals, Gantt), not folders. **Term:** Surface is *folder-optional*. Still to test: does Obsidian tolerate keys it doesn't know? If it doesn't, use Surface's own format and convert to `.base` on Leave.
+1. **View file format, leaning (Oct 13): Surface's own format, converted to `.base` on Leave.** Bases was checked against Obsidian's docs:
+   - **Power:**
+     - **Has:** filters (and, or, not, functions), JavaScript-like formulas, summaries, multiple sorts, and table, cards, list, Kanban (1.14) and map layouts.
+     - **Missing:**
+       - typed fields and validation (it reads loose properties);
+       - first-class two-way relations;
+       - totals across linked records;
+       - Gantt, calendar and dependencies;
+       - more than one level of grouping.
+   - **Openness:** documented in Obsidian's help, and "simple formats anyone can build editors for" (kepano). But it has **no formal open spec, licence, versioning or governance** (unlike JSON Canvas). One company changes it on its own schedule.
+   - **Folders:** not an issue; filters can use any property. Surface is *folder-optional*.
+   - **So:**
+     - Surface's view format is versioned and published as an open spec (§2a);
+     - its simple views (filter, sort, one group, table, cards, list or Kanban) are designed to map cleanly onto `.base`;
+     - "Leave Surface" writes those as `.base` files.
 2. One sidebar for the whole team, or a shared one plus personal additions?
 3. Should a quick filter be shareable as a link without saving it as a view?
 
@@ -713,7 +727,7 @@ A fix is applied only when someone accepts it. A bulk "fix all safe notices" exi
 **Organizing, tables and Obsidian**
 
 13. Where new records are created: by context, or a setting (§5a).
-14. The view file format: leaning towards a superset of Obsidian's `.base`; test that Obsidian tolerates extra keys (§5d).
+14. The view file format: leaning towards Surface's own open format, with `.base` export on Leave (§5d).
 15. Should Markdown table column types be remembered, and where (§5c)?
 
 **Parked**
