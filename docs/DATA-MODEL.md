@@ -128,7 +128,7 @@ Each collection has a definition file in the workspace, for example `.surface/ty
 
 ```yaml
 name: Task
-folder: tasks/            # suggested home for new files only; never used for meaning
+folder: tasks/            # the type's home; created with the type; every new task is created here
 fields:
   status:   { type: choice, options: [todo, doing, done], default: todo }
   due:      { type: date }
@@ -143,7 +143,9 @@ extra_fields: allow       # allow | warn | deny
 
 ### 2. How a file knows its type
 
-An explicit `type: task` field in front matter, always. Folder location never determines type (or anything else), so files can be moved freely. Being explicit also makes every file self-describing in any app. A file without `type:` is an untyped note, not an error.
+An explicit `type: task` field in front matter, always. A file without `type:` is an untyped note, not an error.
+
+**Decided (Oct 12): every type has a home folder.** Creating a new type creates its folder, and every new record of that type is always created in that folder. The explicit `type:` field still makes each file self-describing, so a file that ends up elsewhere still knows what it is. Still open: whether records may be moved out of their type folder later, and whether a record outside its folder gets flagged.
 
 ### 3. A rebuildable typed index
 

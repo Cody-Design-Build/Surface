@@ -36,7 +36,12 @@ Note: wikilinks didn't come from Obsidian. They come from wikis (WikiWikiWeb, Me
 
 ## Links: two candidate models (reopened Oct 12)
 
-Fixed requirement: **filenames are human-readable.** Still open: whether folders carry meaning, and which link syntax Surface writes.
+Fixed requirements:
+
+- **Filenames are human-readable.**
+- **Every type has a home folder.** Creating a type creates its folder, and new records of that type are always created there.
+
+Still open: whether records may later move out of their folder, and which link syntax Surface writes.
 
 ### Model A: name links, folders are free
 
