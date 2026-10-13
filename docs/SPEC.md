@@ -656,6 +656,59 @@ A fix is applied only when someone accepts it. A bulk "fix all safe notices" exi
 - **Dropbox / iCloud / Syncthing:** whole-file sync with conflict copies and no merging.
 - **The cloud as the only truth (Notion-style):** offline is partial.
 
+## 7a. Permissions and sharing
+
+**Leaning (Oct 13).** Surface is for **small teams with high trust**, not large organisations. **The workspace is the permission boundary.** There are no Notion-style per-page permissions.
+
+### Why the workspace is the natural boundary
+
+- **In a local-first app, whatever syncs to your device is on your disk as readable files.** You can't hide part of a workspace from someone whose computer holds it.
+- **So read permission is really "what syncs to you."** Per-page read permissions would mean partial sync of the workspace, and complicated rules about links and views that cross the boundary. That's the hard, expensive part, and small teams don't need it.
+- **The same model** is used by Git repositories, shared Obsidian vaults and Anytype spaces.
+
+### Multiple workspaces
+
+- **You can belong to several workspaces,** shown together in one app (like Slack teams or Anytype spaces), for example:
+  - "Cody Design Build" (the whole team);
+  - "Office" (the owners only);
+  - "Smith Kitchen, with client";
+  - your own **personal workspace**, created automatically for private notes.
+- **"Private" means a different workspace,** not a hidden page.
+- **Links between workspaces** work as plain links (open it if you have access). There are no live views or totals across workspaces.
+- **Moving or copying a record to another workspace** is one action, for when something needs to be shared more widely or more privately.
+
+### Roles within a workspace
+
+| Role | Can do |
+|---|---|
+| Owner | Everything, plus members, billing, and deleting the workspace |
+| Admin | Edit types, shared views, the sidebar and team skills |
+| Member | Create and edit all records |
+| Viewer | Read only |
+
+- **Write permissions can be enforced:** every change is signed by the user who made it, and the sync server rejects changes from people without the right role.
+  - A viewer can still edit their local files, but Surface flags the edit and never syncs it.
+  - Later, peers can check signatures themselves (Ink & Switch's Keyhive research explores this for Automerge).
+- **Agents act with their user's role.** A remote agent (the later MCP server) gets a token for one workspace with a chosen role.
+
+### Clients and outside people
+
+- **Rather than per-page permissions, share outward:**
+  - **Publish a page or view** as a read-only web link (live or snapshot), like Notion's "share to web." Clients get what they need without joining.
+  - Or create a small shared workspace for that client or sub.
+- **Not planned:** per-page or per-field permissions.
+
+### Honest limits (trade-off ledger)
+
+- **Removing someone doesn't erase what's already on their computer,** just as with email or a shared Dropbox folder. They stop receiving new changes. With end-to-end encryption (§13), the workspace key is rotated.
+- **Trust is assumed within a workspace.** Anything a member can see, they can copy.
+
+**Open:**
+
+1. Is the four-role set right, or is Member + Viewer enough to start?
+2. Should publishing to the web come with the first team release?
+3. How does a record move between workspaces with its links and history?
+
 ## 8. The `.surface/` folder
 
 **Decided.** A hidden folder at the workspace root, beside `.obsidian/`. Hidden in Finder (Cmd+Shift+. shows it) and not listed in Obsidian.
@@ -722,8 +775,8 @@ A fix is applied only when someone accepts it. A bulk "fix all safe notices" exi
 
 **Sharing and permissions**
 
-4. Can everyone in a workspace see everything? Or are there per-record permissions?
-5. Guests: can a client or sub see a single job without receiving the whole workspace?
+4. ~~Per-record permissions~~ leaning: the workspace is the boundary, with roles; multiple workspaces (§7a).
+5. Guests and clients: publish a page or view to the web, or use a small shared workspace (§7a).
 
 **Feel**
 
@@ -769,7 +822,7 @@ Gaps identified Oct 13, in suggested order:
    - Knowing which agent or person made an outside edit; approvals.
    - Agent-built views: how they're requested, rendered, saved and shared, and how they get live data.
    - Model choice and privacy (local models, your own API key).
-2. **Permissions and sharing.** Constrains the sync design (one CRDT document per record), so it's expensive to change later.
+2. ~~Permissions and sharing~~ now designed as a leaning (§7a); remaining: signed changes and server checks in detail.
 3. **Attachments and large files** (photos, PDFs, plans): where they're stored, how they sync (CRDTs aren't for large binary files), size limits, previews.
 4. **Search:** full-text; possibly semantic search for agents; search across views.
 5. **History, undo, trash and deletion:** what users see; how deletions sync; restoring.
