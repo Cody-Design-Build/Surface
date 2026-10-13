@@ -482,6 +482,26 @@ In Surface this isn't a separate feature. It's case 1 or case 2:
 - **Agents can read and write view files** (taught by `surface-views`), and leaving keeps them. On "Leave Surface", views that Obsidian can show are converted to `.base` files.
 - **Personal display state** (column widths, collapsed groups, a quick search) stays on this device and is never written.
 
+### View file sketch (illustrative, not final)
+
+```yaml
+# .surface/views/due-this-week.yaml
+surface_view: 1          # format version
+title: Due this week
+from: task
+where: status != done and due <= today + 7d
+sort: due
+group: project
+layouts:
+  - show: table
+    columns: [title, status, due, assignee]
+  - show: board
+    by: status
+  - show: gantt
+    start: start
+    end: due
+```
+
 ### Views on pages
 
 - **A page shows a view with a one-line embed:** `![[Due this week]]`. A dashboard is a page with text plus a few embeds.
@@ -529,7 +549,7 @@ In Surface this isn't a separate feature. It's case 1 or case 2:
 
 **Open:**
 
-1. **View file format, leaning (Oct 13): Surface's own format, converted to `.base` on Leave.** Bases was checked against Obsidian's docs:
+1. **View file format, decided (Oct 13): Surface's own format, plain YAML text like `.base`, as simple as possible, growing only when a feature needs it. Converted to `.base` on Leave.** Bases was checked against Obsidian's docs:
    - **Power:**
      - **Has:** filters (and, or, not, functions), JavaScript-like formulas, summaries, multiple sorts, and table, cards, list, Kanban (1.14) and map layouts.
      - **Missing:**
@@ -727,7 +747,7 @@ A fix is applied only when someone accepts it. A bulk "fix all safe notices" exi
 **Organizing, tables and Obsidian**
 
 13. Where new records are created: by context, or a setting (§5a).
-14. The view file format: leaning towards Surface's own open format, with `.base` export on Leave (§5d).
+14. ~~View file format~~ decided: Surface's own simple YAML format, `.base` export on Leave (§5d). Remaining: the exact syntax.
 15. Should Markdown table column types be remembered, and where (§5c)?
 
 **Parked**
