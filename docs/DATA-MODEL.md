@@ -124,7 +124,7 @@ The file is the record. A schema says what the record *should* look like. An ind
 
 ### 1. Schemas live in plain files too
 
-Each collection has a definition file in the workspace, for example `.surface/types/task.yaml`:
+Each type has a schema file in the workspace's `.surface/types/` folder, for example `.surface/types/task.yaml`:
 
 ```yaml
 name: Task
@@ -135,7 +135,7 @@ fields:
   assignee: { type: link, to: person }
   estimate: { type: number, unit: hours }
   tags:     { type: list, of: text }
-extra_fields: allow       # allow | warn | deny
+prefix: task              # ID prefix; stable, never renamed
 ```
 
 - It's readable and editable in any editor, and it's versioned with the data.
@@ -256,9 +256,9 @@ What we give up on purpose: block-level permissions, per-block metadata, and Not
 2. **Strictness:** enforced field types, suggested ones, or defined but tolerant of extras?
 3. ~~**Links**~~: decided. By name (wikilinks); the ID lives in front matter and the index (section 6).
 4. **Body:** one Markdown string, or blocks? If blocks, how does that survive a round trip through an external editor?
-5. **Concurrency target:** live co-typing in the same paragraph, or "different fields and paragraphs merge cleanly, same-spot collisions are rare"?
+5. **Concurrency target:** moved to its own deep dive. David wants it to feel like Notion desktop or Anytype's new version, both still to be researched.
 6. **"Any app can open it":** must other apps be able to *edit* the files, or is *reading* them enough? This decides between B and C/D. (Leaning: edit. Files and YAML stay the real thing.)
-7. **Schema location:** `.surface/types/` (hidden), or a visible folder that Finder users can browse?
-8. **Extra fields:** allow, warn, or deny fields that aren't in the schema, globally or per collection?
+7. ~~**Schema location**~~: decided. `.surface/types/` in the workspace's `.surface/` folder (CONVENTIONS).
+8. ~~**Extra fields**~~: decided. Kept and indexed as untyped, and flagged.
 9. ~~**Unique names**~~: decided. Filenames are human-readable and unique workspace-wide; links are name-only wikilinks, folder-independent (section 6).
 10. ~~**Normalizer authority**~~: decided. Warn and flag only; never rewrite (section 4).

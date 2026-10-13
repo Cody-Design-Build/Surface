@@ -150,6 +150,35 @@ Folders play no part in the model. The type comes from the filename, not from wh
 
 Either way, folder location carries no meaning the system depends on.
 
+### Decided (Oct 12): ID format, the `id:` field, the Surface folder
+
+**Time-sortable IDs.** Format `{prefix}_{time}{random}`, all lowercase Crockford base32:
+
+- **7 characters of creation time**, in seconds. That covers about a thousand years.
+- **5 random characters**: about 33 million combinations per second, so IDs made offline by several people at once won't collide.
+- **Example:** `task_0q8z4mkr7f2c`, 12 characters after the prefix.
+- Files sort in creation order in any file list.
+
+**Keep `id:` in front matter.** It's just as editable as the filename, so it's no protection against someone deliberately changing it. It guards against *accidental* renames, which are far more common and almost never touch the file's contents:
+
+- a Finder rename, or editing the title in Obsidian;
+- sync conflict copies (`task_0q8z… (conflicted copy).md` from Dropbox);
+- duplicates (`task_0q8z… copy.md`).
+
+When the filename and `id:` disagree, the file is flagged. When two files carry the same `id:`, both are flagged as a likely copy or conflict. The cost is one line per file.
+
+**The `.surface/` folder.** Each workspace has a `.surface/` folder at its root, alongside `.obsidian/`. It holds things people don't normally browse. A dot-folder is hidden in Finder by default (Cmd+Shift+. shows it), and Obsidian doesn't list it.
+
+```
+.surface/
+  types/        schema files, one per type (synced)
+  settings      workspace settings (synced)
+  comments/     comment threads, anchored to text (synced)
+  cache/        index, link → ID map (local to each machine; never synced, always rebuildable)
+```
+
+**Fields not in the schema are flagged.** They're kept and indexed as untyped values, and flagged with *"not in the schema: add it to the schema, or remove it?"* The flag-only rule applies, so nothing is removed automatically.
+
 ### The fork this exposes (Oct 12)
 
 David: without readable names and folders, Obsidian is mostly unusable. So ID-only filenames mean Obsidian stops being a real surface. The decision underneath is whether Obsidian is a requirement:
