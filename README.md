@@ -18,10 +18,15 @@ The model is something like Claude's dashboards. The user asks to see a view, wi
 
 ## Data
 
-Hunch: local-first is something people want in an agentic world.
+Local-first. Each workspace is a local database on your device, with every record also kept as a plain Markdown file that any editor or agent can work with. Teams can switch on sync. Surface keeps the files, the local database and the team's shared copy in step, flagging anything it can't merge safely.
 
-A GitHub repo as storage has been tried before (CDB OS), and it's an option again, but nothing is decided. Designing how data is stored is the first major piece of work.
+## Docs
+
+- [`docs/SPEC.md`](docs/SPEC.md): the current design, consolidated.
+- [`docs/research/`](docs/research/): technology research (sync, app).
+- [`docs/notes/`](docs/notes/): working notes showing how decisions were reached (design history).
+- [`docs/IMPORT.md`](docs/IMPORT.md): importing existing vaults (parked).
 
 ## Status
 
-Blank slate. This is the starting thesis; the spec gets built up from here.
+Design phase. The data model, file conventions and reconciliation rules are largely decided. Sync technology and the app itself are being researched.

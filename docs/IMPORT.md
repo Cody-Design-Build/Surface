@@ -1,5 +1,7 @@
 # Importing an Existing Vault
 
+> **Parked (Oct 13).** Flagged for later; not part of the current design work. See `docs/SPEC.md` §12.
+
 Working draft, Oct 12. Question: if someone already has a vault (Obsidian, or any folder of Markdown), can Surface import it and make it work?
 
 Yes. Surface's normal behaviour already covers most of it: an existing vault is just a large batch of "new notes" to reconcile.

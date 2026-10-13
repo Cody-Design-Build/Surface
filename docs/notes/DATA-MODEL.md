@@ -1,3 +1,5 @@
+> **Design history.** This working doc is superseded by [`docs/SPEC.md`](../SPEC.md), which holds the current design. It is kept to show how decisions were reached; some sections here are outdated.
+
 # Data Model
 
 Working design doc. This is the most important decision in Surface, and we're still exploring. Nothing here is final.

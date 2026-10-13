@@ -1,3 +1,5 @@
+> **Design history.** This working doc is superseded by [`docs/SPEC.md`](../SPEC.md), which holds the current design. It is kept to show how decisions were reached; some sections here are outdated.
+
 # Multi-user Editing, Sync, and the App
 
 Deep-dive working doc, started Oct 12. These three are linked: the feel we want decides the sync design, and the sync design decides what the app has to be.
