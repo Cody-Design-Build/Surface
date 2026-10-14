@@ -66,6 +66,20 @@ So the real question isn't "database or files." It's **where the truth lives and
   - "leave any time" (pull everything, walk away).
 - **Why it's much simpler:** optimistic checks ("has it changed since you pulled?") replace CRDTs and the continuous reconcile engine. Agents handle a pull, edit, push loop well.
 
+#### Solo work under B2
+
+**Three options:**
+
+1. **A cloud workspace for solo users too** (free tier). One system, but it needs an account and a connection.
+2. **The same database, running locally:** SQLite or PGlite (Postgres running locally), with the same `types` / `records` / `links` schema, inside the desktop app. Same code paths. Going team = upload.
+3. **Files are the truth for solo work** (recommended to explore):
+   - The Markdown files *are* the workspace, and a local index is rebuilt from them for fast views and queries.
+   - Type definitions live in `.surface/types/`. The CLI validates and flags drift.
+   - No pull and push: you, Obsidian and agents edit files directly. The only clashes are on one machine, and they're rare.
+   - **Going team** = `surface push` uploads the files into a cloud workspace. **Leaving a team** = pull everything and disconnect.
+   - **It's CDB OS plus Surface's type system and CLI.** It fits the people who care most about files (solo, Obsidian-style users), while teams get the web app they need.
+   - **The cost:** two engines (files as truth for solo, the database as truth for teams). The solo one is small: an index and a validator, not a sync engine. Both share the same file format, type definitions and CLI commands.
+
 ### C. Git itself
 
 - Files in a Git repository, with a central remote; Surface commits, pulls and pushes automatically.
