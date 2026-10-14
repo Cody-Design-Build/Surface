@@ -885,12 +885,12 @@ Gaps identified Oct 13 (updated Oct 14), in suggested order:
 
 ## 14. Build plan
 
-**MVP: built Oct 14** (`docs/MVP.md`). It's a Supabase types engine plus the `surface` CLI, used from Obsidian, with an 11-step end-to-end test.
+**MVP: built Oct 14** (`docs/MVP.md`). It's a Supabase types engine plus the `surface` CLI, used from Obsidian. The end-to-end test now has 15 steps.
 
 **Next, in order (agreed Oct 14):**
 
-1. **CLI: the `link:` layout and folder commands** (`surface mv`, folder rename, move by query).
-2. **The `parent` field, `.surface/views/sidebar.yaml` and `surface tree`,** so agents can build and read the Views tree.
+1. ✅ **CLI: the `link:` layout and folder commands** (`surface layout`, `surface mv`, `surface folder rename`, `surface folders`, move by query). Built Oct 14.
+2. ✅ **The `parent` field, `.surface/views/sidebar.yaml` and `surface tree`,** so agents can build and read the Views tree. Built Oct 14 (migration 0004: `records.parent_id`, the `views` table, `save_view`, `rename_folder`).
 3. **The Obsidian plugin: the Views panel.**
 4. **Composite pages:** live ` ```surface ` blocks and saved-view embeds in the plugin.
 5. **Push on save** in the plugin, so Obsidian users never need the terminal.

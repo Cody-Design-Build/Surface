@@ -2,7 +2,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import { type Checkout, saveCheckout } from "./config.ts";
-import { fetchRecords, fetchTypes, pushRecord, type RecordRow, type TypeRow } from "./db.ts";
+import YAML from "yaml";
+import { fetchRecords, fetchTypes, fetchViews, pushRecord, saveView, type RecordRow, type TypeRow } from "./db.ts";
+import { validateTree } from "./tree.ts";
 import { basename, hash, isBuiltinKey, parse, planPaths, render } from "./markdown.ts";
 import { normalize, type Resolver } from "./normalize.ts";
 import { writeAgentFiles } from "./skills.ts";
@@ -63,16 +65,39 @@ export function localEdits(co: Checkout): Set<string> {
 export interface Snapshot {
   types: TypeRow[];
   typeMap: Map<string, TypeRow>;
+  /** Records in this checkout (all, or the `only` types). */
   records: RecordRow[];
+  /** Every live record in the workspace, for links that point outside a partial checkout. */
+  all: RecordRow[];
   byId: Map<string, RecordRow>;
 }
 
 export async function snapshot(co: Checkout): Promise<Snapshot> {
   const types = await fetchTypes(co.config.workspace);
   const typeMap = new Map(types.map((t) => [t.id, t]));
-  const only = co.config.only?.length ? types.filter((t) => co.config.only!.includes(t.key)).map((t) => t.id) : undefined;
-  const records = await fetchRecords(co.config.workspace, { typeIds: only });
-  return { types, typeMap, records, byId: new Map(records.map((r) => [r.id, r])) };
+  const all = await fetchRecords(co.config.workspace);
+  const only = co.config.only?.length ? new Set(types.filter((t) => co.config.only!.includes(t.key)).map((t) => t.id)) : null;
+  const records = only ? all.filter((r) => only.has(r.type_id)) : all;
+  return { types, typeMap, records, all, byId: new Map(all.map((r) => [r.id, r])) };
+}
+
+const VIEWS_DIR = path.join(".surface", "views");
+const viewPath = (key: string) => path.join(VIEWS_DIR, `${key}.yaml`);
+
+/** View files edited since Surface last wrote them, plus new ones. */
+export function localViewEdits(co: Checkout): string[] {
+  const dir = path.join(co.root, VIEWS_DIR);
+  if (!fs.existsSync(dir)) return [];
+  const known = co.state.views ?? {};
+  return fs
+    .readdirSync(dir)
+    .filter((f) => f.endsWith(".yaml"))
+    .map((f) => f.slice(0, -5))
+    .filter((key) => hash(fs.readFileSync(path.join(dir, `${key}.yaml`), "utf8")) !== known[key]?.hash);
+}
+
+export function renderView(name: string, definition: Record<string, unknown>): string {
+  return `# Surface view. Edit, then run \`surface push\`. Format: see \`surface tree --help\`.\n${YAML.stringify({ surface_view: 1, name, ...definition }, { lineWidth: 0 })}`;
 }
 
 export interface PullReport {
@@ -90,7 +115,7 @@ export async function pull(co: Checkout, opts: { force?: boolean } = {}): Promis
   const report: PullReport = { written: [], removed: [], moved: [], skipped: [] };
   const linkName = (id: string) => {
     const p = paths.get(id);
-    return p ? basename(p) : id;
+    return p ? basename(p) : (snap.byId.get(id)?.title ?? id);
   };
   const next: typeof co.state.records = {};
 
@@ -129,10 +154,78 @@ export async function pull(co: Checkout, opts: { force?: boolean } = {}): Promis
   }
 
   co.state.records = next;
+
+  // Saved views → .surface/views/<key>.yaml
+  const views = await fetchViews(co.config.workspace);
+  const editedViews = new Set(localViewEdits(co));
+  const nextViews: NonNullable<typeof co.state.views> = {};
+  for (const v of views) {
+    const rel = viewPath(v.key);
+    if (editedViews.has(v.key) && !opts.force && fs.existsSync(path.join(co.root, rel))) {
+      report.skipped.push(rel);
+      if (co.state.views?.[v.key]) nextViews[v.key] = co.state.views[v.key];
+      continue;
+    }
+    const text = renderView(v.name, v.definition);
+    const abs = path.join(co.root, rel);
+    if (!fs.existsSync(abs) || fs.readFileSync(abs, "utf8") !== text) {
+      writeFile(co, rel, text);
+      report.written.push(rel);
+    }
+    nextViews[v.key] = { rev: v.rev, hash: hash(text) };
+  }
+  for (const key of Object.keys(co.state.views ?? {})) {
+    if (nextViews[key] || editedViews.has(key)) continue;
+    const abs = path.join(co.root, viewPath(key));
+    if (fs.existsSync(abs)) fs.rmSync(abs);
+    report.removed.push(viewPath(key));
+  }
+  co.state.views = nextViews;
+
   co.state.pulledAt = new Date().toISOString();
   saveCheckout(co);
   writeAgentFiles(co, snap.types);
   return report;
+}
+
+/** Send edited or new view files. */
+export async function pushViews(co: Checkout, types: TypeRow[], opts: { dryRun?: boolean; only?: string[] } = {}): Promise<FileResult[]> {
+  const results: FileResult[] = [];
+  const keys = localViewEdits(co).filter((k) => !opts.only || opts.only.includes(k));
+  for (const key of keys) {
+    const rel = viewPath(key);
+    let def: Record<string, unknown>;
+    try {
+      def = YAML.parse(fs.readFileSync(path.join(co.root, rel), "utf8")) ?? {};
+    } catch (e) {
+      results.push({ path: rel, status: "error", notices: [], errors: [`broken YAML: ${(e as Error).message.split("\n")[0]}`] });
+      continue;
+    }
+    if (!/^[a-z0-9][a-z0-9_-]*$/.test(key)) {
+      results.push({ path: rel, status: "error", notices: [], errors: ["view file names must be lowercase letters, digits, - or _"] });
+      continue;
+    }
+    const { surface_view: _v, name, ...definition } = def as Record<string, unknown>;
+    const errors = "items" in definition || key === "sidebar" ? validateTree(definition, types) : [];
+    if (errors.length) {
+      results.push({ path: rel, status: "rejected", notices: [], errors });
+      continue;
+    }
+    const isNew = !co.state.views?.[key];
+    if (opts.dryRun) {
+      results.push({ path: rel, status: isNew ? "created" : "pushed", notices: [], errors: [] });
+      continue;
+    }
+    const res = await saveView(co.config.workspace, key, typeof name === "string" ? name : key, definition, co.state.views?.[key]?.rev ?? null);
+    if (!res.ok) {
+      results.push({ path: rel, status: res.kind === "conflict" ? "conflict" : "rejected", notices: [], errors: [res.message] });
+      continue;
+    }
+    // mark clean, so the pull afterwards rewrites it in canonical form
+    co.state.views = { ...(co.state.views ?? {}), [key]: { rev: res.view.rev, hash: hash(fs.readFileSync(path.join(co.root, rel), "utf8")) } };
+    results.push({ path: rel, status: isNew ? "created" : "pushed", notices: [], errors: [] });
+  }
+  return results;
 }
 
 /** Map link labels to record ids: checkout filenames first, then titles. */
@@ -149,7 +242,7 @@ export function makeResolver(co: Checkout, snap: Snapshot): Resolver {
       if (snap.byId.has(label)) return ok(label);
       const viaFile = byBase.get(label.toLowerCase());
       if (viaFile && ok(viaFile)) return viaFile;
-      const byTitle = snap.records.filter(
+      const byTitle = snap.all.filter(
         (r) => r.title.toLowerCase() === label.toLowerCase() && (!target || r.type_id === target),
       );
       return byTitle.length === 1 ? byTitle[0].id : null;
@@ -174,6 +267,8 @@ export interface Prepared {
   fields: Record<string, unknown>;
   body: string;
   folder: string | null;
+  /** "" = no parent, otherwise the parent's id */
+  parent: string;
   notices: string[];
   errors: string[];
 }
@@ -218,13 +313,23 @@ export function prepare(co: Checkout, snap: Snapshot, rel: string, resolver: Res
   for (const def of type.fields) {
     if (def.required && (fields[def.key] === null || fields[def.key] === undefined)) errors.push(`${def.key}: is required`);
   }
+  let parent = "";
+  if (fm.parent != null && String(fm.parent).trim() !== "") {
+    const n = normalize({ id: "parent", key: "parent", name: "Parent", kind: "link" }, fm.parent, resolver);
+    if (n.error) errors.push(`parent: ${n.error}`);
+    else {
+      if (n.notice) notices.push(`parent: ${n.notice}`);
+      parent = String(n.value ?? "");
+      if (parent && parent === id) errors.push("parent: a record can't be its own parent");
+    }
+  }
   const rev = fm.rev == null ? null : Number(fm.rev);
   let folder: string | null = null;
   if (co.config.layout === "folder") {
     const dir = path.dirname(rel);
     folder = dir === "." ? "" : dir;
   }
-  return { path: rel, id, rev: Number.isFinite(rev) ? rev : null, type, title, fields, body: parsed.body, folder, notices, errors };
+  return { path: rel, id, rev: Number.isFinite(rev) ? rev : null, type, title, fields, body: parsed.body, folder, parent, notices, errors };
 }
 
 const isPrepared = (x: Prepared | FileResult): x is Prepared => "type" in x;
@@ -248,10 +353,18 @@ export async function push(
 ): Promise<FileResult[]> {
   let snap = await snapshot(co);
   const results: FileResult[] = [];
-  const files = candidates(co, opts.files);
+  const given = opts.files?.length ? opts.files.map((f) => path.relative(co.root, path.resolve(f))) : undefined;
+  const isView = (f: string) => f.startsWith(VIEWS_DIR + path.sep);
+  const viewFiles = given?.filter(isView) ?? [];
+  const mdFiles = given?.filter((f) => !isView(f));
+  const files = given ? (mdFiles!.length ? candidates(co, mdFiles) : []) : candidates(co, undefined);
+  if (!given || viewFiles.length) {
+    const vr = await pushViews(co, snap.types, { dryRun: opts.dryRun, only: viewFiles.length ? viewFiles.map((f) => path.basename(f, ".yaml")) : undefined });
+    results.push(...vr);
+  }
+  let changed = results.some((r) => r.status === "pushed" || r.status === "created") && !opts.dryRun;
   const resolver = makeResolver(co, snap);
   const tracked = new Set(Object.keys(co.state.records));
-  let changed = false;
 
   // New files first, so tracked files can link to them. Files whose links point at
   // records created later in the same push get a second pass.
@@ -308,6 +421,7 @@ export async function push(
       fields: p.fields,
       body: p.body,
       folder: p.folder,
+      parent: p.parent,
     });
     if (!res.ok) {
       results.push({ path: rel, status: res.kind === "conflict" ? "conflict" : "rejected", id: p.id ?? undefined, notices: p.notices, errors: [res.message] });
@@ -343,6 +457,7 @@ function isTrackedPath(co: Checkout, rel: string) {
 function sameContent(r: RecordRow, p: Prepared): boolean {
   if (r.title !== p.title || r.type_id !== p.type.id || r.body !== p.body) return false;
   if (p.folder !== null && (r.folder ?? "") !== p.folder) return false;
+  if ((r.parent_id ?? "") !== p.parent) return false;
   for (const def of p.type.fields) {
     const a = r.fields[def.id] ?? null;
     const b = p.fields[def.key] ?? null;
@@ -373,6 +488,7 @@ export async function status(co: Checkout): Promise<StatusReport> {
     else if (r.rev !== st.rev) rep.behind.push(st.path);
   }
   for (const rel of listMarkdown(co.root)) if (!trackedPaths.has(rel)) rep.untracked.push(rel);
+  for (const key of localViewEdits(co)) rep.edited.push(viewPath(key));
   rep.remoteNew = snap.records.filter((r) => !co.state.records[r.id]).length;
   return rep;
 }

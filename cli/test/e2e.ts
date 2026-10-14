@@ -140,6 +140,68 @@ try {
   assert.match(run(["history", "Loose note"]), /delete[\s\S]*restore/);
   ok("delete, restore, history");
 
+  run(["new", "page", "Estimating guide"]);
+  run(["new", "page", "Pricing", "--parent", "Estimating guide"]);
+  assert.match(read("Pages/Pricing.md"), /title: Pricing\nparent: "\[\[Estimating guide\]\]"/);
+  edit("Pages/Loose note.md", (s) => s.replace("title: Loose note", 'title: Loose note\nparent: "[[Pricing]]"'));
+  assert.match(run(["push"]), /1 pushed/);
+  assert.match(run(["set", "Estimating guide", "parent=Loose note"], { fail: true }), /inside itself/);
+  const top = run(["query", "page", "--where", "parent="]);
+  assert.match(top, /Estimating guide/);
+  assert.doesNotMatch(top, /Pricing/);
+  assert.match(run(["query", "--where", "parent=this", "--this", "Pricing"]), /Loose note/);
+  run(["set", "Loose note", "parent="]);
+  assert.doesNotMatch(read("Pages/Loose note.md"), /parent:/);
+  ok("nesting: parent field, cycles rejected, query parent= and parent=this, clear parent");
+
+  const linked = path.join(tmp, "linked");
+  run(["init", linked, "--workspace", wsName, "--layout", "link:project,parent"], { cwd: tmp });
+  assert.ok(fs.existsSync(path.join(linked, "Projects/Steiner Kitchen.md")));
+  assert.ok(fs.existsSync(path.join(linked, "Projects/Steiner Kitchen/Tasks/Order cabinets.md")));
+  assert.ok(fs.existsSync(path.join(linked, "Projects/Bathroom/Tasks/Demo.md")));
+  assert.ok(fs.existsSync(path.join(linked, "Pages/Estimating guide/Pricing.md")));
+  assert.match(run(["layout", "type"], { cwd: linked }), /moved/);
+  assert.ok(fs.existsSync(path.join(linked, "Tasks/Order cabinets.md")));
+  ok("link layout: tasks under their project, pages under their parent; switch layout moves files");
+
+  const fold = path.join(tmp, "fold");
+  run(["init", fold, "--workspace", wsName, "--layout", "folder"], { cwd: tmp });
+  run(["mv", "Order cabinets", "Demo", "Jobs/Active"], { cwd: fold });
+  assert.ok(fs.existsSync(path.join(fold, "Jobs/Active/Order cabinets.md")));
+  run(["folder", "rename", "Jobs", "Work"], { cwd: fold });
+  assert.ok(fs.existsSync(path.join(fold, "Work/Active/Demo.md")));
+  assert.match(run(["folders"], { cwd: fold }), /Work\/[\s\S]*Active\/\s+2/);
+  run(["mv", "--type", "task", "--where", "project=Bathroom", "--to", "Archive"], { cwd: fold });
+  assert.ok(fs.existsSync(path.join(fold, "Archive/Demo.md")));
+  ok("folders: mv records, mv by query, rename a folder, list folders");
+
+  run(["tree", "init"]);
+  assert.ok(fs.existsSync(path.join(vault, ".surface/views/sidebar.yaml")));
+  assert.match(run(["tree"]), /Pages\/[\s\S]*Estimating guide\n│   └── Pricing/);
+  write(".surface/views/sidebar.yaml", [
+    "name: Sidebar",
+    "items:",
+    "  - group: Jobs",
+    "    items:",
+    "      - query: { from: project, sort: title }",
+    "        each:",
+    "          - query: { from: task, where: \"project=this\", label: Tasks }",
+    "  - record: \"[[Estimating guide]]\"",
+    "",
+  ].join("\n"));
+  assert.match(run(["status"]), /sidebar\.yaml/);
+  assert.match(run(["tree", "check"]), /valid/);
+  assert.match(run(["push"]), /pushed\s+\.surface\/views\/sidebar\.yaml/);
+  const tree = run(["tree", "--paths"]);
+  assert.match(tree, /Jobs\/\n├── Bathroom[\s\S]*Tasks\/[\s\S]*Demo[\s\S]*Steiner Kitchen[\s\S]*Order cabinets  \(Tasks\/Order cabinets\.md\)/);
+  assert.match(tree, /Estimating guide[\s\S]*Pricing/);
+  assert.match(read(".surface/views/sidebar.yaml"), /surface_view: 1/);
+  edit(".surface/views/sidebar.yaml", (s) => s.replace("from: task", "from: tsak"));
+  assert.match(run(["push"], { fail: true }), /rejected[\s\S]*no type "tsak"/);
+  run(["pull", "--force"]);
+  assert.match(run(["status"]), /Clean/);
+  ok("views tree: init, edit the YAML, check, push, draw with paths; invalid tree rejected");
+
   const flat = path.join(tmp, "flat");
   run(["init", flat, "--workspace", wsName, "--layout", "flat", "--only", "task"], { cwd: tmp });
   assert.deepEqual(fs.readdirSync(flat).filter((f) => f.endsWith(".md")).sort(), ["AGENTS.md", "Demo.md", "Order cabinets.md"]);

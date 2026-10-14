@@ -3,13 +3,15 @@
 import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline";
-import { findCheckout, saveCheckout, type Checkout, type Layout } from "./config.ts";
+import { checkLayout, findCheckout, saveCheckout, type Checkout, type Layout } from "./config.ts";
 import { clearSession, dbError, requireUser, sb, UserError } from "./client.ts";
 import {
-  fetchRecord, fetchRecords, fetchTypes, fieldByKey, KINDS, pushRecord, typeByKey,
+  fetchRecord, fetchRecords, fetchTypes, fetchViews, fieldByKey, KINDS, pushRecord, saveView, typeByKey,
   type FieldDef, type Kind, type RecordRow, type TypeRow,
 } from "./db.ts";
-import { localEdits, makeResolver, pull, push, snapshot, status, prepare, type FileResult } from "./checkout.ts";
+import { localEdits, localViewEdits, makeResolver, pull, push, snapshot, status, prepare, type FileResult } from "./checkout.ts";
+import { matches, parseWhere, sortRows, type QueryCtx } from "./query.ts";
+import { asTreeDef, defaultTree, drawTree, resolveTree, validateTree, type TreeNode } from "./tree.ts";
 import { cliValue, normalize } from "./normalize.ts";
 import { basename, parse, render } from "./markdown.ts";
 import { writeAgentFiles } from "./skills.ts";
@@ -17,7 +19,7 @@ import { writeAgentFiles } from "./skills.ts";
 // ---------------------------------------------------------------------------
 // Arguments
 // ---------------------------------------------------------------------------
-const BOOL = new Set(["force", "dry-run", "new", "json", "multiple", "single", "required", "optional", "deleted", "yes", "help", "all"]);
+const BOOL = new Set(["force", "dry-run", "new", "json", "multiple", "single", "required", "optional", "deleted", "yes", "help", "all", "paths"]);
 
 interface Args {
   _: string[];
@@ -215,7 +217,8 @@ const commands: Record<string, Cmd> = {
       console.log(green(`Created workspace "${create}" (${ws}).`));
     } else ws = await workspaceId(a);
     const layout = (flag(a, "layout") ?? "type") as Layout;
-    if (!["type", "flat", "folder"].includes(layout)) throw new UserError("--layout must be type, flat or folder");
+    const bad = checkLayout(layout);
+    if (bad) throw new UserError(bad);
     if (fs.existsSync(path.join(dir, ".surface", "config.json")) && !a.flags.force) throw new UserError(`${dir} is already a checkout (use --force to re-initialise).`);
     const { data: w } = await sb().from("workspaces").select("name").eq("id", ws).single();
     const co: Checkout = { root: dir, config: { workspace: ws, workspaceName: w?.name, layout, only: list(flag(a, "only")) }, state: { records: {} } };
@@ -236,6 +239,22 @@ const commands: Record<string, Cmd> = {
     for (const p of rep.removed) console.log(`${yellow("removed")} ${p}`);
     for (const p of rep.skipped) console.log(`${yellow("kept")}    ${p} ${dim("(unpushed edits: push them, or pull --force to discard)")}`);
     if (!rep.written.length && !rep.moved.length && !rep.removed.length) console.log("Up to date.");
+  },
+
+  async layout(a) {
+    await requireUser();
+    const co = requireCheckout();
+    const layout = a._[0];
+    if (!layout) return void console.log(`This checkout uses the "${co.config.layout}" layout${co.config.only?.length ? ` (only: ${co.config.only.join(", ")})` : ""}.`);
+    const bad = checkLayout(layout);
+    if (bad) throw new UserError(bad);
+    const edited = localEdits(co);
+    if (edited.size) throw new UserError(`${edited.size} file(s) have unpushed edits. Push them first (or pull --force to discard).`);
+    co.config.layout = layout;
+    if (flag(a, "only") !== undefined) co.config.only = list(flag(a, "only"));
+    saveCheckout(co);
+    const rep = await pull(co);
+    console.log(green(`Now using the "${layout}" layout: ${rep.moved.length} file(s) moved.`));
   },
 
   async push(a) {
@@ -452,8 +471,10 @@ const commands: Record<string, Cmd> = {
     if (!typeKey || !title) throw new UserError('Usage: surface new <type> "Title" [field=value …] [--body "text"] [--folder A/B]');
     const types = await fetchTypes(ws);
     const t = typeByKey(types, typeKey);
-    const { fields, notices } = await applyAssignments(ws, co, t, {}, assigns);
-    const res = await pushRecord({ workspace: ws, id: null, baseRev: null, type: t.key, title, fields, body: flag(a, "body") ?? "", folder: flag(a, "folder") ?? null });
+    const parentRef = flag(a, "parent") ?? assigns.find((x) => x.startsWith("parent="))?.slice(7);
+    const { fields, notices } = await applyAssignments(ws, co, t, {}, assigns.filter((x) => !x.startsWith("parent=")));
+    const parent = parentRef ? (await findRecord(ws, parentRef, co)).id : null;
+    const res = await pushRecord({ workspace: ws, id: null, baseRev: null, type: t.key, title, fields, body: flag(a, "body") ?? "", folder: flag(a, "folder") ?? null, parent });
     if (!res.ok) throw new UserError(res.message);
     for (const n of notices) console.log(dim(`  ${n}`));
     await refreshCheckout(co);
@@ -466,7 +487,7 @@ const commands: Record<string, Cmd> = {
     const ws = await workspaceId(a);
     const co = findCheckout();
     const [ref, ...assigns] = a._;
-    if (!ref || !assigns.length) throw new UserError("Usage: surface set <id or name> field=value … (title=…, type=…, body=…, folder=… also work)");
+    if (!ref || !assigns.length) throw new UserError("Usage: surface set <id or name> field=value … (title=…, type=…, body=…, folder=…, parent=… also work)");
     const r = await findRecord(ws, ref, co);
     if (co && localEdits(co).has(r.id)) throw new UserError(`${co.state.records[r.id].path} has unpushed edits. Push them first, or pull --force to discard.`);
     const types = await fetchTypes(ws);
@@ -474,19 +495,21 @@ const commands: Record<string, Cmd> = {
     let title = r.title;
     let body = r.body;
     let folder = r.folder;
+    let parent: string | null = null; // null = keep
     const rest: string[] = [];
     for (const s of assigns) {
       const [k, v = ""] = s.split(/=(.*)/s, 2);
       if (k === "title") title = v;
       else if (k === "body") body = v;
       else if (k === "folder") folder = v;
+      else if (k === "parent") parent = v.trim() ? (await findRecord(ws, v.replace(/^\[\[|\]\]$/g, ""), co)).id : "";
       else if (k === "type") t = typeByKey(types, v);
       else rest.push(s);
     }
     const prevType = types.find((x) => x.id === r.type_id)!;
     const base = t.id === prevType.id ? fieldsByKey(r, t) : carryFields(r, prevType, t);
     const { fields, notices } = await applyAssignments(ws, co, t, base, rest);
-    const res = await pushRecord({ workspace: ws, id: r.id, baseRev: r.rev, type: t.key, title, fields, body, folder });
+    const res = await pushRecord({ workspace: ws, id: r.id, baseRev: r.rev, type: t.key, title, fields, body, folder, parent });
     if (!res.ok) throw new UserError(res.message);
     for (const n of notices) console.log(dim(`  ${n}`));
     await refreshCheckout(co);
@@ -511,52 +534,17 @@ const commands: Record<string, Cmd> = {
     const ws = await workspaceId(a);
     const types = await fetchTypes(ws);
     const t = a._[0] ? typeByKey(types, a._[0]) : null;
-    let rows = await fetchRecords(ws, { typeIds: t ? [t.id] : undefined, includeDeleted: !!a.flags.deleted });
+    const all = await fetchRecords(ws, { includeDeleted: !!a.flags.deleted });
+    let rows = all.filter((r) => !t || r.type_id === t.id);
     if (a.flags.deleted) rows = rows.filter((r) => r.deleted_at);
-    const titles = new Map((t ? await fetchRecords(ws) : rows).map((r) => [r.id, r.title]));
+    const titles = new Map(all.map((r) => [r.id, r.title]));
     const typeOf = new Map(types.map((x) => [x.id, x]));
-    const wheres = ([] as string[]).concat((a.flags.where as string | undefined) ?? []).flatMap((w) => w.split(/\s*&&\s*/));
-    for (const w of wheres) {
-      const m = w.match(/^([a-z_][a-z0-9_]*)\s*(!=|>=|<=|=|>|<|~)\s*(.*)$/);
-      if (!m) throw new UserError(`Can't read --where "${w}". Use key=value, key!=value, key>value, key<value or key~text.`);
-      const [, k, op, want] = m;
-      rows = rows.filter((r) => {
-        const rt = typeOf.get(r.type_id)!;
-        let v: unknown;
-        if (k === "title") v = r.title;
-        else if (k === "type") v = rt.key;
-        else {
-          const f = rt.fields.find((f) => f.key === k);
-          if (!f) return false;
-          v = r.fields[f.id];
-          if (f.kind === "link" && v != null) v = (Array.isArray(v) ? v : [v]).map((id) => titles.get(id as string) ?? id).join(", ");
-        }
-        const s = v == null ? "" : Array.isArray(v) ? v.join(", ") : String(v);
-        const num = (x: string) => (x !== "" && !isNaN(Number(x)) ? Number(x) : x);
-        switch (op) {
-          case "=": return s.toLowerCase() === want.toLowerCase() || (Array.isArray(v) && v.map(String).map((x) => x.toLowerCase()).includes(want.toLowerCase()));
-          case "!=": return s.toLowerCase() !== want.toLowerCase();
-          case "~": return s.toLowerCase().includes(want.toLowerCase());
-          case ">": return s !== "" && num(s) > num(want);
-          case "<": return s !== "" && num(s) < num(want);
-          case ">=": return s !== "" && num(s) >= num(want);
-          case "<=": return s !== "" && num(s) <= num(want);
-        }
-        return false;
-      });
-    }
-    const sortKey = flag(a, "sort");
-    if (sortKey) {
-      const desc = sortKey.startsWith("-");
-      const k = sortKey.replace(/^-/, "");
-      const val = (r: RecordRow) => {
-        if (k === "title") return r.title;
-        const f = typeOf.get(r.type_id)!.fields.find((f) => f.key === k);
-        const v = f ? r.fields[f.id] : undefined;
-        return v == null ? "" : String(v);
-      };
-      rows.sort((x, y) => (val(x) < val(y) ? -1 : val(x) > val(y) ? 1 : 0) * (desc ? -1 : 1));
-    }
+    let thisId: string | null = null;
+    if (flag(a, "this")) thisId = (await findRecord(ws, flag(a, "this")!, findCheckout())).id;
+    const ctx: QueryCtx = { typeOf, titles, thisId };
+    const conds = parseWhere(flag(a, "where"));
+    rows = rows.filter((r) => matches(r, conds, ctx));
+    rows = sortRows(rows, flag(a, "sort"), ctx);
     const limit = flag(a, "limit") ? Number(flag(a, "limit")) : undefined;
     if (limit) rows = rows.slice(0, limit);
     if (a.flags.json) {
@@ -608,6 +596,131 @@ const commands: Record<string, Cmd> = {
     table([["REV", "OP", "WHEN", "TITLE"], ...data.map((h) => [String(h.rev), h.op, new Date(h.changed_at).toLocaleString(), h.title])]);
   },
 
+  async mv(a) {
+    await requireUser();
+    const ws = await workspaceId(a);
+    const co = findCheckout();
+    const to = flag(a, "to") ?? (a._.length >= 2 ? a._[a._.length - 1] : undefined);
+    if (to === undefined) throw new UserError('Usage: surface mv <record> [<record> …] <folder>   or   surface mv --type task --where "project=Steiner" --to <folder>');
+    const folder = to.replace(/^\/+|\/+$/g, "");
+    let targets: RecordRow[];
+    if (flag(a, "where") || flag(a, "type")) {
+      const types = await fetchTypes(ws);
+      const t = flag(a, "type") ? typeByKey(types, flag(a, "type")!) : null;
+      const all = await fetchRecords(ws);
+      const ctx: QueryCtx = { typeOf: new Map(types.map((x) => [x.id, x])), titles: new Map(all.map((r) => [r.id, r.title])) };
+      const conds = parseWhere(flag(a, "where"));
+      targets = all.filter((r) => (!t || r.type_id === t.id) && matches(r, conds, ctx));
+    } else {
+      const refs = flag(a, "to") ? a._ : a._.slice(0, -1);
+      if (!refs.length) throw new UserError("Name at least one record to move.");
+      targets = [];
+      for (const ref of refs) targets.push(await findRecord(ws, ref, co));
+    }
+    if (co) {
+      const edited = localEdits(co);
+      const blocked = targets.filter((r) => edited.has(r.id));
+      if (blocked.length) throw new UserError(`Unpushed edits in: ${blocked.map((r) => co.state.records[r.id].path).join(", ")}. Push them first.`);
+    }
+    const types = await fetchTypes(ws);
+    let moved = 0;
+    for (const r of targets) {
+      if ((r.folder ?? "") === folder) continue;
+      const t = types.find((x) => x.id === r.type_id)!;
+      const res = await pushRecord({ workspace: ws, id: r.id, baseRev: r.rev, type: t.key, title: r.title, fields: fieldsByKey(r, t), body: r.body, folder });
+      if (!res.ok) throw new UserError(`Couldn't move "${r.title}": ${res.message}`);
+      moved++;
+    }
+    await refreshCheckout(co);
+    console.log(green(`Moved ${moved} record(s) to "${folder || "(top level)"}".`));
+    if (co && co.config.layout !== "folder") console.log(dim(`This checkout uses the "${co.config.layout}" layout, so files don't follow folders here. \`surface layout folder\` switches it.`));
+  },
+
+  async folders(a) {
+    await requireUser();
+    const ws = await workspaceId(a);
+    const rows = await fetchRecords(ws);
+    const counts = new Map<string, number>();
+    for (const r of rows) {
+      const f = r.folder ?? "";
+      const parts = f ? f.split("/") : [];
+      counts.set("", (counts.get("") ?? 0) + (parts.length ? 0 : 1));
+      for (let i = 1; i <= parts.length; i++) {
+        const k = parts.slice(0, i).join("/");
+        counts.set(k, (counts.get(k) ?? 0) + (i === parts.length ? 1 : 0));
+      }
+    }
+    const keys = [...counts.keys()].filter((k) => k).sort();
+    if (a.flags.json) return console.log(JSON.stringify(keys.map((k) => ({ folder: k, records: counts.get(k) })), null, 2));
+    if (counts.get("")) console.log(`(top level)  ${counts.get("")}`);
+    for (const k of keys) console.log(`${"  ".repeat(k.split("/").length - 1)}${k.split("/").pop()}/  ${dim(String(counts.get(k)))}`);
+  },
+
+  async folder(a) {
+    await requireUser();
+    const ws = await workspaceId(a);
+    const co = findCheckout();
+    const [sub, from, to] = a._;
+    if (sub === "rename" || sub === "mv") {
+      if (!from || to === undefined) throw new UserError("Usage: surface folder rename <folder> <new folder>");
+      if (co && localEdits(co).size) throw new UserError("Some files have unpushed edits. Push them first.");
+      const { data, error } = await sb().rpc("rename_folder", { p_workspace: ws, p_old: from, p_new: to });
+      if (error) throw dbError(error);
+      await refreshCheckout(co);
+      console.log(green(`Moved ${data} record(s) from "${from}" to "${to || "(top level)"}".`));
+      return;
+    }
+    throw new UserError("Usage: surface folder rename <folder> <new folder>   (list folders with `surface folders`)");
+  },
+
+  async tree(a) {
+    await requireUser();
+    const ws = await workspaceId(a);
+    const co = findCheckout();
+    const sub = a._[0];
+    const types = await fetchTypes(ws);
+    const views = await fetchViews(ws);
+    const key = flag(a, "view") ?? "sidebar";
+    const existing = views.find((v) => v.key === key);
+    if (sub === "init") {
+      if (existing && !a.flags.force) throw new UserError(`The "${key}" view already exists. Edit .surface/views/${key}.yaml and push, or use --force to reset it.`);
+      const def = defaultTree(types);
+      const res = await saveView(ws, key, key === "sidebar" ? "Sidebar" : key, def as unknown as Record<string, unknown>, existing?.rev ?? null);
+      if (!res.ok) throw new UserError(res.message);
+      await refreshCheckout(co);
+      console.log(green(`Created the "${key}" tree${co ? ` (.surface/views/${key}.yaml)` : ""}. Edit it, then \`surface push\`.`));
+      return;
+    }
+    if (sub === "check") {
+      if (!co) throw new UserError("Run inside a checkout to check .surface/views files.");
+      const file = path.join(co.root, ".surface", "views", `${key}.yaml`);
+      const YAML = (await import("yaml")).default;
+      const { surface_view: _v, name: _n, ...def } = YAML.parse(fs.readFileSync(file, "utf8")) ?? {};
+      const errors = validateTree(def, types);
+      if (errors.length) {
+        for (const e of errors) console.log(red(`✗ ${e}`));
+        process.exitCode = 1;
+      } else console.log("The tree is valid.");
+      return;
+    }
+    if (sub) throw new UserError("Usage: surface tree [init [--force] | check] [--view key] [--json] [--paths]");
+    if (!existing) throw new UserError(`No "${key}" tree yet. Create a starting one with \`surface tree init\`.`);
+    const records = await fetchRecords(ws);
+    const nodes = resolveTree(asTreeDef(existing.definition), records, types);
+    if (a.flags.json) return console.log(JSON.stringify(nodes, null, 2));
+    const pathOf = a.flags.paths && co ? (id: string) => co.state.records[id]?.path : undefined;
+    console.log(drawTree(nodes, pathOf));
+    if (co && localViewEdits(co).includes(key)) console.log(yellow(`\n.surface/views/${key}.yaml has unpushed edits (shown above is the pushed version).`));
+  },
+
+  async views(a) {
+    await requireUser();
+    const ws = await workspaceId(a);
+    const views = await fetchViews(ws);
+    if (!views.length) return console.log("No saved views yet. `surface tree init` creates the sidebar tree.");
+    table([["KEY", "NAME", "REV", "UPDATED"], ...views.map((v) => [v.key, v.name, String(v.rev), new Date(v.updated_at).toLocaleString()])]);
+  },
+
   async skills() {
     await requireUser();
     const co = requireCheckout();
@@ -647,7 +760,7 @@ async function applyAssignments(ws: string, co: Checkout | null, t: TypeRow, bas
       const records = await fetchRecords(ws);
       const byId = new Map(records.map((r) => [r.id, r]));
       resolver = co
-        ? makeResolver(co, { types: [], typeMap: new Map(), records, byId })
+        ? makeResolver(co, { types: [], typeMap: new Map(), records, all: records, byId })
         : { link: (label, target) => {
             if (byId.has(label)) return !target || byId.get(label)!.type_id === target ? label : null;
             const hits = records.filter((r) => r.title.toLowerCase() === label.toLowerCase() && (!target || r.type_id === target));
@@ -697,9 +810,13 @@ Account
   workspace [list | create <name> | delete <name> --yes]
 
 Checkout
-  init <folder> [--workspace <id|name> | --create <name>] [--layout type|flat|folder] [--only type,type]
+  init <folder> [--workspace <id|name> | --create <name>] [--layout <layout>] [--only type,type]
+  layout [<layout>] [--only type,type]  show or change this checkout's layout (files move)
+      layouts: type (a folder per type, default) | folder (your folders) | flat
+               link:<field> (under the linked record, e.g. link:project; link:parent nests pages)
   pull [--force]                      database → files (keeps files with unpushed edits)
   push [files] [--new] [--dry-run]    files → database: normalize, validate, check rev
+                                      (also sends edited .surface/views/*.yaml)
   status | diff [files] | check       what's changed, and whether it's valid
   skills                              regenerate AGENTS.md and agent skills
 
@@ -714,11 +831,24 @@ Types
   kinds: ${KINDS.join(", ")}
 
 Records
-  new <type> "Title" [field=value …] [--body text] [--folder A/B]
-  set <id|name> field=value …         (also title=, type=, body=, folder=)
+  new <type> "Title" [field=value …] [--body text] [--folder A/B] [--parent <record>]
+  set <id|name> field=value …         (also title=, type=, body=, folder=, parent= ; parent= clears)
   show <id|name> [--json]
-  query [type] [--where "status=doing && due<2026-11-01"] [--sort -due] [--limit n] [--json]
+  query [type] [--where "status=doing && due<2026-11-01"] [--sort -due] [--limit n] [--this <record>] [--json]
+      where keys: any field, title, type, folder, parent; "parent=" means no parent; "project=this" uses --this
   rm <id|name> | restore <id|name> | history <id|name>
+
+Folders (where files live, in the folder layout)
+  folders                             list folders with record counts
+  mv <record> [<record> …] <folder>   move records (or: mv --type task --where "…" --to <folder>)
+  folder rename <folder> <new>        move everything under a folder
+
+Views tree (navigation; never moves files)
+  tree [--paths] [--json]             show the sidebar tree
+  tree init [--force]                 create a starting tree (one group per type)
+  tree check                          validate .surface/views/sidebar.yaml before pushing
+  views                               list saved views
+  Edit .surface/views/sidebar.yaml, then \`surface push\`. Items: group / record / query (+ each, items, nested).
 
 Options: --workspace <id|name> works with any command outside a checkout.
 `;

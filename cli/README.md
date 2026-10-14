@@ -90,6 +90,46 @@ New files: write front matter with `type:` (or none, for a page), then `surface 
 
 Layouts: `surface init <dir> --layout type|flat|folder [--only task,project]`. Each checkout can differ.
 
+## Folders, nesting and the Views tree
+
+Files are storage; the Views tree is navigation. Neither one changes the other.
+
+```sh
+surface layout                         # show this checkout's layout
+surface layout link:project,parent     # tasks under their project, pages under their parent page (files move)
+surface layout folder                  # your own folders (each record's folder value)
+
+surface mv "Order cabinets" "Jobs/Active"                        # folder layout: move records
+surface mv --type task --where "project=Bathroom" --to Archive   # move by query
+surface folder rename Jobs Work                                  # everything under a folder
+surface folders                                                  # list folders with counts
+
+surface new page "Pricing" --parent "Estimating guide"           # nest a page (front matter: parent: "[[…]]")
+surface set "Loose note" parent=                                 # un-nest
+surface query --where "parent=this" --this "Pricing"             # children of a record
+
+surface tree init                      # starting tree: a group per type
+surface tree --paths                   # draw it, with file paths
+# edit .surface/views/sidebar.yaml, then:
+surface tree check && surface push
+```
+
+`.surface/views/sidebar.yaml`:
+
+```yaml
+name: Sidebar
+items:
+  - group: Jobs                          # a virtual folder
+    items:
+      - query: { from: project, where: "status!=Done", sort: title }
+        each:                            # children of every matching project
+          - query: { from: task, where: "project=this", label: Tasks }
+  - record: "[[How We Estimate]]"        # one record, with its nested pages
+  - query: { from: page, where: "folder= && parent=", label: Inbox }
+```
+
+Every record in the tree also shows the records nested under it (`nested: false` turns that off).
+
 ## For agents
 
 Every pull writes `AGENTS.md`, `.agents/skills/surface/SKILL.md` (also copied to `.claude/skills/`), and a read-only copy of each type in `.surface/types/`.

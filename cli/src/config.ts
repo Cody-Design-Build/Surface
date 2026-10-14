@@ -24,7 +24,14 @@ export function writeJson(file: string, data: unknown, mode = 0o644) {
   fs.writeFileSync(file, JSON.stringify(data, null, 2) + "\n", { mode });
 }
 
-export type Layout = "type" | "flat" | "folder";
+/** "type" | "flat" | "folder" | "link:<field>[,<field>…]" (e.g. "link:project", "link:parent") */
+export type Layout = string;
+
+export function checkLayout(layout: string): string | null {
+  if (["type", "flat", "folder"].includes(layout)) return null;
+  if (/^link:[a-z][a-z0-9_]*(,[a-z][a-z0-9_]*)*$/.test(layout)) return null;
+  return `layout must be type, flat, folder or link:<field> (e.g. link:project, link:parent); got "${layout}"`;
+}
 
 export interface CheckoutConfig {
   workspace: string;
@@ -41,6 +48,7 @@ export interface FileState {
 
 export interface CheckoutState {
   records: Record<string, FileState>;
+  views?: Record<string, { rev: number; hash: string }>;
   pulledAt?: string;
 }
 

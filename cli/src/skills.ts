@@ -25,7 +25,7 @@ function typesSection(types: TypeRow[]): string {
     .join("\n");
 }
 
-const SKILL = (types: TypeRow[]) => `---
+const SKILL = (types: TypeRow[], layout: string) => `---
 name: surface
 description: Use when reading or changing records in this Surface checkout (Markdown files backed by the Surface database).
 ---
@@ -45,7 +45,18 @@ Every file is one record: front matter = typed fields, body = notes.
 4. New files: give them front matter with \`type:\` and \`title:\` (no \`id\`), then \`surface push --new\`.
 5. Links between records are \`"[[File Name]]"\` in front matter. Filenames are unique in the checkout.
 6. Never invent fields. To add one: \`surface field add <type> <key> --kind <kind>\`.
-7. Don't edit \`.surface/\`. Types are readable in \`.surface/types/\` but are changed only with \`surface type …\` / \`surface field …\`.
+7. Don't edit \`.surface/\` except \`.surface/views/*.yaml\` (saved views; push them like records).
+   Types are readable in \`.surface/types/\` but are changed only with \`surface type …\` / \`surface field …\`.
+8. Every record can have one \`parent\` (\`parent: "[[Page]]"\`): Notion-style nesting. It never moves the file.
+
+## Files, folders and views
+
+- **Files are storage.** Each record is one file in one folder. This checkout's layout: \`${layout}\`
+  (\`surface layout\` shows or changes it: type, folder, flat, link:<field>).
+- **Folders** (folder layout) are the record's \`folder\` value: \`surface mv <record> <folder>\`, \`surface folder rename\`, \`surface folders\`.
+- **The Views tree is navigation** (\`surface tree\`), defined in \`.surface/views/sidebar.yaml\`:
+  \`group\` (virtual folder), \`record\` (one record and its nested pages), \`query\` (\`from\`, \`where\`, \`sort\`, \`label\`, and \`each\` for
+  children of every match, where \`this\` = that match). Check with \`surface tree check\`, then \`surface push\`.
 
 ## Useful commands
 
@@ -59,6 +70,8 @@ Every file is one record: front matter = typed fields, body = notes.
 | \`surface new <type> "Title" key=value …\` | Create a record |
 | \`surface set <id or name> key=value …\` | Change fields |
 | \`surface types\` / \`surface type show <key>\` | The schema |
+| \`surface new page "Title" --parent "Other page"\` | Nest a page inside another |
+| \`surface tree --paths\` | The Views tree, with file paths |
 
 ## Types in this workspace
 
@@ -85,7 +98,7 @@ export function writeAgentFiles(co: Checkout, types: TypeRow[]) {
     if (!fs.existsSync(abs) || fs.readFileSync(abs, "utf8") !== text) fs.writeFileSync(abs, text);
   };
   put("AGENTS.md", AGENTS(co, types));
-  const skill = SKILL(types);
+  const skill = SKILL(types, co.config.layout);
   put(".agents/skills/surface/SKILL.md", skill);
   put(".claude/skills/surface/SKILL.md", skill); // Claude Code reads .claude/skills, not .agents/skills
 

@@ -37,6 +37,7 @@ export interface RecordRow {
   fields: Record<string, unknown>; // keyed by field id
   body: string;
   folder: string | null;
+  parent_id: string | null;
   rev: number;
   created_at: string;
   updated_at: string;
@@ -92,6 +93,8 @@ export interface PushArgs {
   fields: Record<string, unknown>; // keyed by field key
   body: string;
   folder?: string | null;
+  /** undefined/null = keep, "" = clear, id = set */
+  parent?: string | null;
 }
 
 export type PushResult =
@@ -108,6 +111,7 @@ export async function pushRecord(a: PushArgs): Promise<PushResult> {
     p_fields: a.fields,
     p_body: a.body,
     p_folder: a.folder ?? null,
+    p_parent: a.parent ?? null,
   });
   if (error) {
     if (error.message.startsWith("conflict: ")) return { ok: false, kind: "conflict", message: error.message.slice(10) };
@@ -115,4 +119,32 @@ export async function pushRecord(a: PushArgs): Promise<PushResult> {
     return { ok: false, kind: "invalid", message: dbError(error).message };
   }
   return { ok: true, record: data as RecordRow };
+}
+
+// ---------------------------------------------------------------------------
+// Saved views (the Views tree is the view with key "sidebar")
+// ---------------------------------------------------------------------------
+export interface ViewRow {
+  id: string;
+  workspace_id: string;
+  key: string;
+  name: string;
+  definition: Record<string, unknown>;
+  rev: number;
+  updated_at: string;
+}
+
+export async function fetchViews(ws: string): Promise<ViewRow[]> {
+  const { data, error } = await sb().from("views").select("*").eq("workspace_id", ws).order("key");
+  if (error) throw dbError(error);
+  return data as ViewRow[];
+}
+
+export async function saveView(ws: string, key: string, name: string | null, definition: Record<string, unknown>, baseRev: number | null): Promise<{ ok: true; view: ViewRow } | { ok: false; kind: "conflict" | "invalid"; message: string }> {
+  const { data, error } = await sb().rpc("save_view", { p_workspace: ws, p_key: key, p_name: name, p_definition: definition, p_base_rev: baseRev });
+  if (error) {
+    if (error.message.startsWith("conflict: ")) return { ok: false, kind: "conflict", message: error.message.slice(10) };
+    return { ok: false, kind: "invalid", message: dbError(error).message };
+  }
+  return { ok: true, view: data as ViewRow };
 }
