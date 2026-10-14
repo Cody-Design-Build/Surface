@@ -5,18 +5,29 @@ Supabase is the source of truth; the folder is a checkout. See `../docs/MVP.md`.
 
 ## Install
 
+Copy the commands without comments: zsh treats a pasted `# …` as arguments.
+
 ```sh
-cd cli && npm install && npm link      # puts `surface` on your PATH
+cd cli && npm install && npm link
 ```
 
-Needs Node 23.6 or newer (it runs the TypeScript source directly).
+Needs Node 23.6 or newer (it runs the TypeScript source directly). `npm link` puts `surface` on your PATH; if it fails with `EACCES`, see the fallback below.
+
+Fallback without `npm link`:
+
+```sh
+mkdir -p ~/.local/bin
+ln -sf "$PWD/bin/surface" ~/.local/bin/surface
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
+```
 
 ## Start
 
 ```sh
-surface signup                                  # or: surface login
+surface signup
 surface init ~/Surface --create "Cody Design Build"
-cd ~/Surface                                    # open this folder as an Obsidian vault
+cd ~/Surface
 ```
 
 Every workspace starts with one built-in type, **page** (title and body only).
@@ -31,7 +42,7 @@ surface type add material --name "Material"
 surface field add material supplier
 surface field add material cost --kind number
 surface field add material project --kind link --target project
-surface types                                   # list them
+surface types
 surface type show material
 ```
 
@@ -53,7 +64,7 @@ From the CLI:
 ```sh
 surface new project "Steiner Kitchen" status=Estimating budget='$45,000'
 surface new material "Shaker cabinets" cost=12000 project="Steiner Kitchen"
-surface new page "Punch List" --folder Reference     # --folder places it (folder layout)
+surface new page "Punch List" --folder Reference
 surface set "Shaker cabinets" cost=12500
 surface query material --where "cost>10000" --sort -cost
 surface show "Steiner Kitchen"
@@ -86,7 +97,7 @@ Every pull writes `AGENTS.md`, `.agents/skills/surface/SKILL.md` (also copied to
 ## Test
 
 ```sh
-npm test      # end-to-end against the real project, with a test account; cleans up after itself
+npm test
 ```
 
 ## Database
