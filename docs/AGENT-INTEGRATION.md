@@ -64,11 +64,11 @@ My Workspace/
 
 The hard rules (draft):
 
-1. Edit files in place. Change only the fields and sections you mean to change. Never reformat or rewrite a whole file.
+1. Prefer the `surface` CLI for changes. If you edit a file, change only what you mean to, then run `surface push`. Unpushed edits are overwritten. Never reformat or rewrite a whole file.
 2. Every record needs `id` and `type` in its front matter. New IDs follow the recipe in `surface-workspace`.
 3. Never delete a record without the user's approval. (Surface flags deletions anyway.)
 4. Never touch `.surface/local/`.
-5. After editing, check `.surface/flags/` for anything your change caused.
+5. After pushing, fix anything `surface push` rejected or flagged.
 
 ### Skills Surface ships
 
@@ -91,7 +91,7 @@ The hard rules (draft):
 | Find records | Search the files (grep), filtering on front matter |
 | Create, edit, link | Write files following the skills |
 | Totals, backlinks | Compute them from the files; nothing is hidden in the database |
-| Know whether an edit was valid | Surface reconciles the change and writes any problem to `.surface/flags/` |
+| Know whether an edit was valid | Run `surface push` (Stage 1, SPEC §6): it validates, applies, or rejects with the reason; problems also go to `.surface/flags/` |
 | Resolve a flag | Edit the flag file's `resolution:` field, or fix the record |
 | Make a view | Write a view file in `.surface/views/` (`surface-views`); embed it in a page with `![[View name]]` |
 

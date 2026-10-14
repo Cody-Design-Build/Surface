@@ -9,7 +9,7 @@ The promise: open your Surface workspace folder in Obsidian, and it's a good Obs
 | | Visit | Leave |
 |---|---|---|
 | What it is | Use Obsidian alongside Surface, for a day or for good | Stop using Surface entirely |
-| Edits made in Obsidian | Reconciled the next time Surface runs: merged, or flagged (SPEC §6) | Just files; nothing to reconcile |
+| Edits made in Obsidian | Applied with `surface push` (an Obsidian command, button or agent), validated, or rejected if the record changed (SPEC §6, Stage 1) | Just files; nothing to push |
 | Team sync | Continues through Surface; Obsidian edits sync once Surface sees them | Ends; your local copy is yours |
 | What you need | Nothing; open the folder as a vault | Nothing; optionally run "Prepare for Obsidian" once (below) |
 

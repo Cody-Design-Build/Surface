@@ -606,7 +606,43 @@ layouts:
 
 ## 6. Keeping files and the database in step
 
-**Decided.**
+**Decided (Oct 13): staged.** Surface plus its CLI can be used entirely from Obsidian or any editor, without continuous two-way merging.
+
+### Stage 1: generated files, plus an explicit push
+
+- **Surface writes every record as Markdown,** and rewrites the file whenever the record changes. Agents and people read, search, back up and leave at any time.
+- **Edits go through Surface:**
+  - the app;
+  - the CLI (`surface new`, `surface set`);
+  - MCP;
+  - or **editing a file and then running `surface push`** (from a terminal, an agent, or an Obsidian command or button).
+- **`surface push` works like `git push`:**
+  - Each file carries a revision in its front matter.
+  - Push validates the fields, checks the revision, and applies the change.
+  - If the record changed since the file was written, that file is **rejected:** Surface shows the differences, and you (or the agent) re-apply the edit on the fresh version.
+  - Body text changed on both sides gets a three-way text merge; if that fails, it's flagged.
+- **No file watcher and no continuous reconcile.** Edits that are never pushed are overwritten the next time Surface rewrites that file, after a warning listing unpushed edits (`surface status` shows them too).
+- **Effort and risk:** small. Most of the data-loss risk is in Stage 2.
+
+### Files can be laid out any way we like
+
+Because the files are generated, **the folder layout is a rendering choice, not where the data lives:**
+
+- **Layouts:**
+  - by project (`Projects/2243 Steiner/Tasks/...`);
+  - by type (`Tasks/`, `Contacts/`);
+  - by person;
+  - flat;
+  - or the user's own folders (§5a).
+- **Partial checkout:** render only my projects, or only one job for a sub.
+- **Per-machine choice:** each checkout picks its own layout. An agent's checkout can differ from yours.
+- **Push still works in any layout,** because files are matched by `id`, not by path.
+- **One rule:** within one checkout, each record appears **once**. Duplicate copies would make Obsidian links ambiguous.
+- **Folders the user organizes** (§5a) become a `folder` field on the record. In Stage 1 you move a note with the app or `surface move`. Moving a file in Finder or Obsidian is picked up on the next push.
+
+### Stage 2 (later, only if people ask): live two-way files
+
+The original design below: a file watcher, a stored base version, continuous three-way merge and flags. The data model doesn't change, so it can be added on top of Stage 1.
 
 - **Surface stores a base version.** For every record, the database keeps the exact file contents it last wrote or read.
 - **It checks on startup and live.** Surface scans the files when it starts, and a file watcher catches changes while it runs.
@@ -617,7 +653,7 @@ layouts:
 
 ### Flags (the "needs attention" view)
 
-Like `git status` plus merge conflicts:
+Like `git status` plus merge conflicts. In Stage 1 they're raised by `surface push`; in Stage 2, by the watcher:
 
 | Situation | What Surface does |
 |---|---|
