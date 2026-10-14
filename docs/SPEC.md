@@ -33,6 +33,28 @@ Apps and SaaS aren't the future. People need three things:
 
 Views over properties are the same idea as Obsidian Bases. The trust in the data underneath them is what's different.
 
+### Lessons from CDB OS
+
+**Context (Oct 13).** CDB OS (`Cody-Design-Build/CDB-OS`) already proved most of Surface's data and agent ideas, with no app at all:
+
+- plain Markdown records with `document_type` and `id` front matter;
+- `AGENTS.md` as the entry point, plus skills in `.agents/skills/`;
+- a checker (`check.py`) for broken links, IDs and duplicates;
+- a link-safe rename tool (`links.py`);
+- saved views as `.base` files;
+- templates;
+- background Git sync every 2 minutes.
+
+**It works for agents and for David:** 207 commits, all from David and two agents. **It didn't work for the rest of the team:** GitHub, Git, Finder and Obsidian don't feel team-like to non-technical people.
+
+**So Surface's real job isn't the data model or the agent layer; CDB OS has those.** It's what's missing:
+
+1. **An app that feels like Notion to non-technical people,** with no Git, Finder or Obsidian required.
+2. **Sync you never see.**
+3. **Structure that doesn't drift.** CDB OS's "Finder test" deliberately forbids required fields.
+4. **Phone and field use.**
+5. **Sharing with clients and subs.**
+
 ## 2. Principles
 
 1. **Data is the foundation.** The surface is just where a human touches it.
