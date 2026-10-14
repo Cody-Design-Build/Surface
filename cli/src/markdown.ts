@@ -35,7 +35,7 @@ export function planPaths(records: RecordRow[], types: Map<string, TypeRow>, lay
     taken.set(base.toLowerCase(), r.id);
     let dir = "";
     if (layout === "type") dir = safeFolder(t.folder || t.name);
-    else if (layout === "folder") dir = safeFolder(r.folder || t.folder || t.name);
+    else if (layout === "folder") dir = r.folder != null ? safeFolder(r.folder) : safeFolder(t.folder || t.name);
     out.set(r.id, dir ? `${dir}/${base}.md` : `${base}.md`);
   }
   return out;

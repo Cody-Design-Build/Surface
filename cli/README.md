@@ -53,6 +53,7 @@ From the CLI:
 ```sh
 surface new project "Steiner Kitchen" status=Estimating budget='$45,000'
 surface new material "Shaker cabinets" cost=12000 project="Steiner Kitchen"
+surface new page "Punch List" --folder Reference     # --folder places it (folder layout)
 surface set "Shaker cabinets" cost=12500
 surface query material --where "cost>10000" --sort -cost
 surface show "Steiner Kitchen"

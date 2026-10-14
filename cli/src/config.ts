@@ -9,7 +9,7 @@ const project = JSON.parse(fs.readFileSync(new URL("./project.json", import.meta
 export const SUPABASE_URL = process.env.SURFACE_SUPABASE_URL ?? project.url;
 export const PUBLISHABLE_KEY = process.env.SURFACE_PUBLISHABLE_KEY ?? project.publishableKey;
 
-export const CONFIG_DIR = process.env.SURFACE_CONFIG_DIR ?? path.join(os.homedir(), ".config", "surface");
+export const CONFIG_DIR = process.env.SURFACE_CONFIG_DIR ?? path.join(os.homedir(), ".config", "surface-cli"); // ~/.config/surface holds an older, unrelated tool
 
 export function readJson<T>(file: string, fallback: T): T {
   try {

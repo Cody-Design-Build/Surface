@@ -449,11 +449,11 @@ const commands: Record<string, Cmd> = {
     const ws = await workspaceId(a);
     const co = findCheckout();
     const [typeKey, title, ...assigns] = a._;
-    if (!typeKey || !title) throw new UserError('Usage: surface new <type> "Title" [field=value …] [--body "text"]');
+    if (!typeKey || !title) throw new UserError('Usage: surface new <type> "Title" [field=value …] [--body "text"] [--folder A/B]');
     const types = await fetchTypes(ws);
     const t = typeByKey(types, typeKey);
     const { fields, notices } = await applyAssignments(ws, co, t, {}, assigns);
-    const res = await pushRecord({ workspace: ws, id: null, baseRev: null, type: t.key, title, fields, body: flag(a, "body") ?? "" });
+    const res = await pushRecord({ workspace: ws, id: null, baseRev: null, type: t.key, title, fields, body: flag(a, "body") ?? "", folder: flag(a, "folder") ?? null });
     if (!res.ok) throw new UserError(res.message);
     for (const n of notices) console.log(dim(`  ${n}`));
     await refreshCheckout(co);
@@ -466,25 +466,27 @@ const commands: Record<string, Cmd> = {
     const ws = await workspaceId(a);
     const co = findCheckout();
     const [ref, ...assigns] = a._;
-    if (!ref || !assigns.length) throw new UserError("Usage: surface set <id or name> field=value … (title=…, type=…, body=… also work)");
+    if (!ref || !assigns.length) throw new UserError("Usage: surface set <id or name> field=value … (title=…, type=…, body=…, folder=… also work)");
     const r = await findRecord(ws, ref, co);
     if (co && localEdits(co).has(r.id)) throw new UserError(`${co.state.records[r.id].path} has unpushed edits. Push them first, or pull --force to discard.`);
     const types = await fetchTypes(ws);
     let t = types.find((x) => x.id === r.type_id)!;
     let title = r.title;
     let body = r.body;
+    let folder = r.folder;
     const rest: string[] = [];
     for (const s of assigns) {
       const [k, v = ""] = s.split(/=(.*)/s, 2);
       if (k === "title") title = v;
       else if (k === "body") body = v;
+      else if (k === "folder") folder = v;
       else if (k === "type") t = typeByKey(types, v);
       else rest.push(s);
     }
     const prevType = types.find((x) => x.id === r.type_id)!;
     const base = t.id === prevType.id ? fieldsByKey(r, t) : carryFields(r, prevType, t);
     const { fields, notices } = await applyAssignments(ws, co, t, base, rest);
-    const res = await pushRecord({ workspace: ws, id: r.id, baseRev: r.rev, type: t.key, title, fields, body });
+    const res = await pushRecord({ workspace: ws, id: r.id, baseRev: r.rev, type: t.key, title, fields, body, folder });
     if (!res.ok) throw new UserError(res.message);
     for (const n of notices) console.log(dim(`  ${n}`));
     await refreshCheckout(co);
@@ -712,8 +714,8 @@ Types
   kinds: ${KINDS.join(", ")}
 
 Records
-  new <type> "Title" [field=value …] [--body text]
-  set <id|name> field=value …         (also title=, type=, body=)
+  new <type> "Title" [field=value …] [--body text] [--folder A/B]
+  set <id|name> field=value …         (also title=, type=, body=, folder=)
   show <id|name> [--json]
   query [type] [--where "status=doing && due<2026-11-01"] [--sort -due] [--limit n] [--json]
   rm <id|name> | restore <id|name> | history <id|name>
