@@ -705,9 +705,17 @@ A fix is applied only when someone accepts it. A bulk "fix all safe notices" exi
 
 **Open:**
 
-1. Is the four-role set right, or is Member + Viewer enough to start?
+1. **Flagged for later discussion (Oct 13):** the member roles: which roles exist (Owner, Admin, Member, Viewer?), what each can do, and whether Member + Viewer is enough to start.
 2. Should publishing to the web come with the first team release?
 3. How does a record move between workspaces with its links and history?
+
+### Exploration: a central database as the source of truth
+
+**Under exploration (Oct 13):** a central cloud database as the single truth, with Surface checking out files onto each computer like Git. See `docs/explorations/CENTRAL-DATABASE.md`.
+
+- **The checkout part is already the current model.** The open question is who has the authority: every device (A), the server (B), or every device plus a canonical server (D, the hybrid).
+- **Leaning to compare D and B in the sync test.**
+- **B's main advantage** is partial checkout and per-record permissions. Its main costs: solo use without an account becomes harder, the server becomes essential, and text still needs merging anyway.
 
 ## 8. The `.surface/` folder
 
@@ -769,7 +777,7 @@ A fix is applied only when someone accepts it. A bulk "fix all safe notices" exi
 
 **Sync and hosting**
 
-1. The sync technology: Automerge (recommended) or Loro; decide after the spike.
+1. The sync technology: Automerge (recommended) or Loro; decide after the spike. **Also under exploration:** a central database (B) vs. the hybrid (D); see `docs/explorations/CENTRAL-DATABASE.md`.
 2. Who runs the sync server: a hosted Surface service, self-hosted, or both?
 3. Same-network peer-to-peer (Anytype-style), or always through the server?
 
