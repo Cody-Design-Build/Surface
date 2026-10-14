@@ -1,5 +1,7 @@
 # Exploration: a central database, with files as a checkout
 
+> **Concluded Oct 13: no change to the design.** The spec's model stands: files ⇄ local database on every machine ⇄ optional cloud database. Solo is the cloud switched off. The only thing carried forward is one extra sync option to test (Postgres with a sync engine). Kept for history.
+
 **Status:** exploration (Oct 13). Nothing here is decided. It's compared against the current model in `SPEC.md` §3 and §7.
 
 ## Correction (Oct 13): one model, not two

@@ -67,7 +67,7 @@ Views over properties are the same idea as Obsidian Bases. The trust in the data
 **Consequences (to discuss):**
 
 - **A web app becomes the main team experience,** with the desktop app and the files checkout for power users and agents.
-- **For teams, this favours a central database** (option B in `docs/explorations/CENTRAL-DATABASE.md`): a browser has no local copy to merge.
+- **For teams, this favours a central database** (see `docs/notes/CENTRAL-DATABASE.md`): a browser has no local copy to merge.
 - **Solo, local-only use** becomes the secondary path.
 
 ## 2. Principles
@@ -655,7 +655,7 @@ A fix is applied only when someone accepts it. A bulk "fix all safe notices" exi
 
 - Every device arrives at the same result on its own; no server decides the order.
 - **The sync server stores and relays every change.** It's always on, so people don't need to be online at the same time.
-- **It's the canonical copy for a team (the "hybrid", option D in `docs/explorations/CENTRAL-DATABASE.md`):** it always has the latest state and full history, and it serves as backup and as the source for web publishing and remote agents. It never overrules a merge.
+- **It's the canonical copy for a team :** it always has the latest state and full history, and it serves as backup and as the source for web publishing and remote agents. It never overrules a merge.
 - **It enforces permissions:** it relays writes only from members allowed to write, and sends each member only the workspaces they belong to (§7a).
 - **Fields** merge one by one. **Target:** detect two people changing the same field at once, and flag it rather than silently picking a winner (Notion's weakness).
 - **Body text** merges automatically, using a text CRDT.
@@ -747,14 +747,6 @@ A fix is applied only when someone accepts it. A bulk "fix all safe notices" exi
 2. Should publishing to the web come with the first team release?
 3. How does a record move between workspaces with its links and history?
 
-### Exploration: a central database as the source of truth
-
-**Under exploration (Oct 13):** a central cloud database as the single truth, with Surface checking out files onto each computer like Git. See `docs/explorations/CENTRAL-DATABASE.md`.
-
-- **The checkout part is already the current model.** The open question is who has the authority: every device (A), the server (B), or every device plus a canonical server (D, the hybrid).
-- **One model either way:** files ⇄ local database ⇄ optional cloud database. Solo is the cloud switched off. The open choice is only *how* the local and cloud databases sync: CRDT (D), or a server-decides sync engine on Postgres (B) with CRDT body text. The web-first team requirement leans towards testing B first.
-- **B's main advantage** is partial checkout and per-record permissions. Its main costs: solo use without an account becomes harder, the server becomes essential, and text still needs merging anyway.
-
 ## 8. The `.surface/` folder
 
 **Decided.** A hidden folder at the workspace root, beside `.obsidian/`. Hidden in Finder (Cmd+Shift+. shows it) and not listed in Obsidian.
@@ -815,7 +807,7 @@ A fix is applied only when someone accepts it. A bulk "fix all safe notices" exi
 
 **Sync and hosting**
 
-1. The sync technology: Automerge (recommended) or Loro; decide after the spike. **Also under exploration:** a central database (B) vs. the hybrid (D); see `docs/explorations/CENTRAL-DATABASE.md`.
+1. The sync technology: Automerge (recommended) or Loro; decide after the spike. One alternative to test alongside them: Postgres with a sync engine (e.g. PowerSync), which fits the web app (`docs/notes/CENTRAL-DATABASE.md`).
 2. Who runs the sync server: a hosted Surface service, self-hosted, or both?
 3. Same-network peer-to-peer (Anytype-style), or always through the server?
 
