@@ -1,6 +1,18 @@
 # Surface Spec
 
-The current design in one place. Last consolidated: Oct 13, 2026.
+The current design in one place. Last consolidated: Oct 14, 2026.
+
+> **Current direction (Oct 14, decided): Supabase is the truth.**
+> - **There's no local database or sync engine.**
+> - **Files are a checkout:** `surface pull`, edit, `surface push`, with revision checks.
+> - **Three layers:**
+>   1. **Files:** storage, one home per record.
+>   2. **Views:** navigation, a tree in an Obsidian plugin.
+>   3. **Composite pages:** prose plus live data.
+> - **Clients:** Obsidian with a Surface plugin (desktop), a web app (team) and the `surface` CLI (agents).
+> - **The MVP is built** (`docs/MVP.md`, `cli/`, `supabase/migrations/`).
+>
+> Sections still describing a local database, CRDT merging or a Tauri app have been rewritten. Their reasoning is kept as **Superseded** notes.
 
 - **How we got here:** the working notes in `docs/notes/` (DATA-MODEL, CONVENTIONS, SYNC), kept as design history.
 - **Research:** `docs/research/`.
@@ -27,8 +39,8 @@ Apps and SaaS aren't the future. People need three things:
 - types with typed fields and validation;
 - drift is flagged, never silently accepted or silently fixed;
 - two-way links and totals;
-- a real database for speed;
-- team sync;
+- **a real database as the truth,** which refuses bad data on every write, whoever sends it;
+- one shared workspace for the team, with no Git;
 - agents that can rely on the data.
 
 Views over properties are the same idea as Obsidian Bases. The trust in the data underneath them is what's different.
@@ -64,20 +76,20 @@ Views over properties are the same idea as Obsidian Bases. The trust in the data
 - working in a browser within a minute;
 - no install, no GitHub, no teaching.
 
-**Consequences (to discuss):**
+**Consequences (decided Oct 14):**
 
-- **A web app becomes the main team experience,** with the desktop app and the files checkout for power users and agents.
-- **For teams, this favours a central database** (see `docs/notes/CENTRAL-DATABASE.md`): a browser has no local copy to merge.
-- **Solo, local-only use** becomes the secondary path.
+- **A web app becomes the main team experience.** Obsidian (with the Surface plugin) and the files checkout are for power users and agents.
+- **A central database is the truth** (Supabase; see §3 and `docs/explorations/CENTRAL-DATABASE.md`). A browser has no local copy to merge.
+- **Solo, account-free, local-only use is dropped.** Everyone signs in.
 
 ## 2. Principles
 
 1. **Data is the foundation.** The surface is just where a human touches it.
-2. **Local-first.** Your workspace lives on your device, works offline, and needs no account. The cloud is optional, for teams.
-3. **Files are first-class.** Every record is also a plain Markdown file. People and agents can edit those files in any editor, even when Surface is closed. They're also the exit: your data is always readable without Surface. **Files are real Markdown that looks good in any text editor:** no hidden IDs in the body, no HTML, no custom layout syntax. Block-style editing is a UI feature (§5b).
+2. **The database is the truth; files are a checkout.** The workspace lives in Supabase. Any machine can pull it as Markdown, read and edit it offline, and push changes back. *(Was "local-first, no account"; superseded Oct 14.)*
+3. **Files are first-class.** Every record is also a plain Markdown file. People and agents can edit those files in any editor, then push. They're also the exit: your data is always readable without Surface. **Files are real Markdown that looks good in any text editor:** no hidden IDs in the body, no HTML, no custom layout syntax. Block-style editing is a UI feature (§5b).
 4. **Surface is the tool; other editors are welcome guests.** Obsidian and any Markdown editor can read and edit the files, but compatibility is best effort, not a design constraint.
-5. **Flag, don't silently fix.** When outside changes can't be merged safely, or drift from the schema, Surface flags them and a person or agent chooses what happens. Surface never quietly rewrites or discards someone's edit.
-6. **Agents are users.** Their edits travel the same paths as a person's, and get the same merging, history and permissions.
+5. **Fix only what's safe, report every fix, reject the rest.** On push, unambiguous fixes are applied and each one is reported, e.g. `Oct 20` → `2026-10-20`, or `done` → `Done`. Anything ambiguous, like a typo'd option, an unknown field or a stale revision, rejects that file with a clear message. Surface never quietly rewrites or discards someone's edit.
+6. **Agents are users.** Their edits travel the same paths as a person's, and get the same validation, history and permissions.
 
 ## 2a. No lock-in
 
@@ -85,7 +97,7 @@ Views over properties are the same idea as Obsidian Bases. The trust in the data
 
 ### The rule
 
-**Everything a person or agent authors exists in open, readable files at all times. The database adds speed, history and collaboration, but it never holds the only copy of anything you wrote.**
+**Everything a person or agent authors can always be written out as open, readable files, with one command (`surface pull`) and nothing lost. The database adds validation, history and collaboration, but it never holds anything that can't be exported.** *(Oct 14: the database is now the truth. The promise moves from "files are always the only copy" to "a complete, plain-file copy is always one pull away". A scheduled pull committed to Git keeps one always current; see §7.)*
 
 Every feature is designed into one of three tiers:
 
@@ -93,7 +105,7 @@ Every feature is designed into one of three tiers:
 |---|---|---|---|
 | **1. In the note** | fields, body, links, tags, to-dos, callouts, heading and paragraph links | the `.md` file: YAML front matter plus Markdown | Works in any Markdown app; native in Obsidian |
 | **2. In a readable side file** | type schemas, saved views, comments, workspace settings | plain YAML or Markdown files in the workspace | Readable in any editor; views can also be written as Obsidian `.base` files |
-| **3. Computed or temporary** | the search index, rollups, backlinks, presence, sync state, merge internals | the local database only | Nothing authored is lost; all of it can be rebuilt from tiers 1 and 2 |
+| **3. Computed or temporary** | the search index, rollups, backlinks, presence, sync state, merge internals | the database only | Nothing authored is lost; all of it can be rebuilt from tiers 1 and 2 |
 
 **Not allowed:** authored data that exists only in the database, or only in a format nobody else can read.
 
@@ -113,13 +125,13 @@ The rule above still holds for *authored content*: your words, fields and links 
 
 | Feature | What's less portable | Why it's worth it | What you get if you leave |
 |---|---|---|---|
-| Live co-editing and offline merge | Merge internals live in Surface's database | No conflict copies; teammates' edits merge automatically | Final text in the files; history export (git) |
-| Field validation, choice lists, required fields | Only enforced while Surface runs | A real database instead of loose YAML | Values stay as written; schemas readable in YAML |
+| The database as the truth | Your current copy is a checkout, not the master | Validation enforced on every write; one shared workspace for the team | A full pull is a complete plain-file workspace; history export (git) |
+| Field validation, choice lists, required fields | Enforced by the database, not the files | Data that can't drift | Values stay as written; schemas readable in YAML |
 | Two-way links | The reverse side is computed, not written | No duplicated lists, no inconsistency | Reverse side via the Obsidian backlinks pane, or a generated Bases view |
 | Rollups and formulas | Computed only in Surface | Live totals without stale numbers in files | Formulas readable in the view files; optional snapshot of values |
 | Rich views (trees, boards, calendars, agent-built views) | Full behaviour only in Surface | Views far beyond a table | Bases files for what Obsidian can show; others as readable definitions or static snapshots |
 | Comments anchored to text | Anchoring only in Surface | Discussion without cluttering the note | Comments as readable Markdown side files, or converted to callouts |
-| Permissions and sharing | Enforced only by Surface sync | Teams and guests | Plain files; your copy is yours |
+| Permissions and sharing | Enforced by the database (row-level security) | Teams and guests | Plain files; your copy is yours |
 | Rename and link repair | Automatic only in Surface | Links that never break | Links valid at the moment you left; Obsidian maintains them from there |
 
 The ledger is a product asset as well as a document. It belongs on the website: people trust a product that's honest about its trade-offs.
@@ -128,19 +140,19 @@ The ledger is a product asset as well as a document. It belongs on the website: 
 
 - **Comments are written to files** (Markdown side files), not kept only in the database.
 - **Views and schemas are always written to files** (already the plan).
-- **Sync has no lock-in either:**
-  - the sync server can be self-hosted;
-  - the protocol is open;
-  - and since the files are plain, teams can always fall back to git, Dropbox or Obsidian Sync on their own.
+- **The database has no lock-in either:**
+  - it's plain Postgres (Supabase), with a small, documented schema (`supabase/migrations/`);
+  - Supabase can be self-hosted;
+  - and since a pull is plain files, teams can always fall back to Git, Dropbox or Obsidian Sync on their own.
 - **Agents have no lock-in either:** any agent (Claude Code, Codex, Hermes, anything with a terminal) can work directly on the files.
 
 ### Proving it
 
-- **The "delete Surface" test**, run automatically on every build:
+- **The "leave and come back" test**, run automatically on every build:
   1. Build a workspace using every feature.
-  2. Delete Surface's local database.
-  3. Check that every authored thing is still present and readable in the files, and that it opens cleanly in Obsidian and in a plain text editor.
-  4. Rebuild the database from the files, and check that nothing changed.
+  2. Pull a full checkout.
+  3. Check that every authored thing is present and readable in the files, and that it opens cleanly in Obsidian and in a plain text editor.
+  4. Import the checkout into an empty workspace, and check that nothing changed.
 - **A published, open file format spec** ("Surface Markdown"): how records, fields, links, types, views and comments are written. Anyone can build a tool that reads or writes it. People trust the format more than any promise.
 - **"Leave Surface" is a feature,** not a support article. One action makes a workspace fully standalone:
   - views become `.base` files;
@@ -154,65 +166,57 @@ The ledger is a product asset as well as a document. It belongs on the website: 
 - *Your notes are files. Leave any time.*
 - *Surface is a way of working with your files, not a place they're locked away.*
 - *Obsidian, VS Code, or any text editor is always an option.*
-- *No account needed. No cloud needed. Sync if you want it.*
 - *Bring your own agent.*
 
 (Naming other products in marketing is generally fine when it's factual, but check before launch.)
 
-## 3. Architecture: three layers, with Surface as the manager
+## 3. Architecture: the database is the truth
 
-**Decided.** Surface works like a git client that merges continuously on its own:
+**Decided (Oct 14).** Built and running as the MVP.
 
 | Layer | Git equivalent | Role |
 |---|---|---|
-| **Markdown files** on disk | working copy | where people, editors and agents edit freely |
-| **Local database** on the device | local repository | the device's source of truth: records, full change history, and the last-seen version of every file |
-| **Sync server** (optional) | remote | shared history between devices and team members |
+| **Database** (Supabase / Postgres) | the remote | the single source of truth: types, records, links, full history, permissions; validates every write |
+| **Files** (a checkout on any machine) | working copy | Markdown generated from the database; people, editors and agents read and edit them, then push |
 
-- **Solo workspace (decided):** files plus the local database. No network, no account. The local database is the source of truth.
-- **Team workspace (decided):** the same, plus sync. Every device keeps a full local copy, works offline, and merges when it reconnects.
-- **Same app, same data model.** Sync is a switch per workspace. Personal and team workspaces sit side by side.
-- **Moving between modes (decided):** solo to team means turning on sync and uploading. Leaving a team means your local copy stays yours.
+- **There's no local database and no sync engine.** The checkout's `.surface/state.json` (revisions and file hashes) is the only local state.
+- **Pull and push, like Git, but per record:**
+  - `surface pull` writes the database into files;
+  - `surface push` sends edited or new files back. It validates each one and checks its revision, so a stale file is rejected rather than merged.
+- **Everyone signs in.** The workspace is shared by default. A personal workspace is just a workspace with one member.
+- **A disposable local index may come later,** only if queries get slow. It's a cache rebuilt from the database, never the truth.
 
-## 3a. A headless core: the app is one client
+> **Superseded (Oct 14): a local database on every device** (the device's source of truth, with CRDT merging between devices and an optional sync server).
+> - It existed for four needs: fully offline work with queries, speed at huge sizes, live co-editing, and solo use with no account.
+> - The MVP showed none of them are needed to start. Offline reading and editing already work through the checkout.
+> - It was the hardest and riskiest part of the design: the sync engine, the merge technology and the spike.
 
-**Leaning (Oct 13).** Surface's base is a **core engine with command-line tools**, and the Mac app is one client of it, like Git and its GUIs, or Syncthing and its web interface. Everything Surface does works without opening the app.
+## 3a. Clients: one database, several ways in
+
+**Leaning (Oct 14).** No headless background service. The database is the shared core, and every client talks to it directly.
 
 ```
-                 surface core (Rust library)
-     file watching · three-way merge · database · sync · flags · types · queries
-                              │
-          surfaced (background service: owns the workspace)
-         ┌──────────────┬───────────────┬──────────────────┐
-     Mac app       surface CLI      surface mcp      raw file edits
-   (Tauri GUI)   (people, agents,  (agents that       (any editor,
-                    scripts)        prefer MCP)        any agent)
+                      Supabase (types · records · links · history · RLS)
+         ┌───────────────────┬──────────────────┬─────────────────────┐
+   surface CLI         Obsidian + Surface     Web app             any agent
+   (agents, scripts,   plugin (desktop:       (the team:          (via the CLI,
+    power users)       Views tree, embeds,     no install)         or files + push)
+                       push on save)
 ```
 
-- **`surfaced`, the background service:** watches files, reconciles, keeps the database and syncs with the team, all with no window open.
-  - It runs at login on a Mac, or as a service on a Linux server.
-  - **This makes always-on setups possible:** a Mac mini or a small server running agents around the clock, keeping a team workspace in sync.
-- **`surface`, the command-line tool:** `init`, `status`, `sync`, `check`, `flags` (list and resolve), `new`, `query`, `types`, `views`, `history` and `undo`, `import`, `leave`, and `skills` (regenerate).
-- **`surface mcp`:** the same operations as a local MCP server, a thin layer over the CLI that's cheap to add.
-  - **Still optional:** files, `AGENTS.md` and skills remain the baseline (§10).
-  - A remote MCP server for web and phone assistants is a later, separate piece.
-- **The Mac app** bundles the core and service, so non-technical users never see a terminal.
-- **One owner per workspace:** only one process writes a workspace's database at a time. If the service is running, the app and CLI talk to it over a local socket. If not, the first one to start takes a lock and acts as the service.
+- **`surface`, the command-line tool (built):** auth, workspaces, types and fields, `pull`, `push`, `status`, `diff`, `check`, `new`, `set`, `show`, `query`, `rm`, `restore`, `history`, `skills`. TypeScript on Node. See `cli/README.md`.
+- **Obsidian plugin (planned; likely the desktop app):** a **Views** panel (§5a), live embeds in pages, push on save, inline validation messages, and type-aware property editing. It talks to Supabase directly.
+- **Web app (planned):** the team's way in. It meets the onboarding bar (§1): invite link, sign in, working in a browser within a minute.
+- **A Surface Mac app is deferred.** Obsidian plus the plugin covers the desktop, and a separate app only comes back if the plugin can't meet the "feels like Bear" bar.
+- **MCP (later):** a thin layer over the same operations, for agents that can't run the CLI or see files.
 
 **Why:**
 
-- **Agents get exact operations,** with errors right away instead of flags later: `surface new task` validates fields and makes the ID.
-- **Edits through the CLI or MCP can say who made them** (`--as claude-code`, or an environment variable). Raw file edits stay anonymous ("edited outside Surface").
-- **Build order follows naturally:** the hard part (merge, sync, flags) is all in the core. The one-week sync test becomes the first layer of the real product, and early users who live in agents can use Surface before the app is polished.
-- **No lock-in, again:** the app is optional too.
+- **Agents get exact operations** with immediate errors: `surface new task` validates fields and makes the ID.
+- **Every write goes through the database's validation**, whichever client sends it.
+- **Building on Obsidian** gets an editor, file handling, search and a plugin ecosystem for free.
 
-**Costs:**
-
-- **Background services add complexity:** installing, updating, starting at login, Mac permissions, and making sure they don't misbehave.
-- **The app and CLI share one engine,** so the local socket protocol becomes something we have to keep stable.
-- **CLI-first products risk neglecting the app.** The Bear-level app stays a first-class goal, not an afterthought.
-
-**Open:** should the first release be **core + CLI + service** (developers and agent users first), with the app close behind? Or should all three ship together?
+> **Superseded (Oct 14): a Rust core plus a `surfaced` background service** that watched files, merged and synced, with a Tauri Mac app as its main client. There's nothing left to watch or merge once the database is the truth and files are pushed explicitly.
 
 ## 4. The record
 
@@ -227,7 +231,7 @@ Record
 
 - **`title` is just a field.** It's what Surface displays, and it can repeat (every job has an "Order cabinets" task).
 - **Rule of thumb:** if something needs fields, it's a record of its own, linked or embedded. Simple to-dos in a body stay as `- [ ]`.
-- **A record's type can change** (Note → Task) with one action. It's a field edit: the ID, links and history stay the same. Fields are mapped to the new type, and any that don't fit are kept and flagged.
+- **A record's type can change** (page → task) with one action. It's a field edit: the ID, links and history stay the same. Fields are mapped to the new type, and any that don't fit are kept and flagged.
 
 ### IDs
 
@@ -236,7 +240,7 @@ Record
 - **Format:** `{time}{random}`, all lowercase Crockford base32. Example: `0q8z4mkr7f2c`.
   - 7 characters of creation time (seconds, good for about 1,000 years) plus 5 random characters (about 33 million per second).
   - IDs sort by creation time, and can be made offline on any device with no realistic chance of collision.
-- **IDs don't carry the type (decided Oct 13).** The type is a normal field: `type: task` in the database and in front matter. Changing a record's type (Note → Task) just edits that field, so the ID, links and history stay intact.
+- **IDs don't carry the type (decided Oct 13).** The type is a normal field: `type: task` in the database and in front matter. Changing a record's type (page → task) just edits that field, so the ID, links and history stay intact.
 - **Minor open point:** one fixed prefix for every record (e.g. `s_0q8z4mkr7f2c`), to make IDs easy to recognise and search for in logs and text. It would never encode the type.
 
 > **Superseded (Oct 13): type-prefixed IDs** (`task_0q8z4mkr7f2c`, with the type derived from the prefix). The prefix existed so an ID *filename* could say what it was. Once filenames became readable titles and types became user-editable, it only had costs: a type change would need a new ID, rewritten links and split history; users would have to invent a prefix for every type; and merging types would rewrite IDs.
@@ -250,15 +254,16 @@ Record
 - **Edit fields:** rename them, change their type, reorder them, edit choice options.
 - **Archive or delete** fields and types.
 - **Agents can do all of this too,** from a conversation: "track my wine collection" leads the agent to propose a Wine type with fields, and you approve it.
-- **Note is built in** and can't be deleted.
-- **Shipped types (decided): Note, Task, Project, Contact.** Except for Note, they're ordinary editable types, set up on a new workspace, not hard-coded.
+- **Page is built in** and can't be deleted. It's the only type a new workspace starts with (decided Oct 14; the MVP does this). A page has a title and a body.
+- **Everything else is created by the user or an agent** (`surface type add`), or added from the gallery below.
+- *Superseded (Oct 14): shipped Note, Task, Project and Contact types. "Note" is now "page", and the other three move to the gallery.*
 - **More types, one click away:** a type gallery (for example Meeting, Company, Event, Document, Bookmark, Decision). Adding one creates an ordinary editable type.
 
-**Starter fields (proposed; kept minimal so people add rather than delete):**
+**Gallery starter fields (proposed; kept minimal so people add rather than delete):**
 
 | Type | Fields |
 |---|---|
-| Note | title, tags |
+| Page (built in) | title, body |
 | Task | title, status (todo / doing / done), due, assignee → Contact, project ↔ Project |
 | Project | title, status (planned / active / done), start, end, tasks ↔ Task, contacts ↔ Contact |
 | Contact | title (name), email, phone, company (text, until a Company type is added), projects ↔ Project |
@@ -278,7 +283,7 @@ Record
 
 **Storage:**
 
-- Schemas are data: stored in the database, synced like records, and mirrored as readable YAML in `.surface/types/`.
+- Schemas are data: stored in the database (`types.fields`, JSON), and written to every checkout as readable YAML in `.surface/types/`.
 - **Every field has a permanent internal ID, separate from its name.** This is the key-versus-label idea again. The database stores values by field ID, so renaming a field or a choice option is instant in Surface. The files then get their YAML key updated in one migration.
 
 ```yaml
@@ -296,19 +301,29 @@ fields:
 
 ### What each schema change does
 
-| Change | In Surface | In the files | Risk |
-|---|---|---|---|
-| Add a field | Instant | Nothing until a value is set | None |
-| Rename a field or option | Instant (stored by field ID) | One migration rewrites the YAML key or value in every affected file | Offline edits with the old name: Surface keeps a list of old names and maps them on reconcile |
-| Change a field's type (e.g. text → date) | Values converted | Rewritten where conversion succeeds | Values that can't convert are **kept and flagged**, never lost |
-| Reorder fields | Instant | Canonical order applies on the next write | None |
-| Archive a field | Hidden from views; values kept | Untouched | Can be restored |
-| Delete a field | Asks first; shows how many records have values | Values removed from files in one migration | Destructive; undo through history |
-| Rename a type | Instant | `.surface/types/` mirror only | None |
-| Delete a type | Its records become Notes (or are archived); asks first | Unchanged, apart from the type | Fields that don't belong to Note are kept as extra values and flagged |
-| Change a record's type (Note → Task) | One action; same ID, links and history | Fields mapped; `type:` updated | Fields that don't exist on the new type are kept and flagged |
+Built behaviour in the MVP (`surface type …` / `surface field …`):
 
-**In teams:** editing types is a permission (owners and admins by default). Schema changes sync like any change. Two people changing the same field definition at once is flagged.
+| Change | In the database | In the files | Risk |
+|---|---|---|---|
+| Add a field | Instant | Appears (empty) on the next pull | None |
+| Rename a field key or label | Instant (values are stored by field ID) | The next pull writes the new key | A file still using the old key is rejected on push, with a message naming the field |
+| Add or remove a choice option | Instant | Nothing | Values using a removed option are kept; `surface check` flags them |
+| Change a field's kind (e.g. text → date) | Planned: values converted | Rewritten where conversion succeeds | Values that can't convert are **kept and flagged**, never lost |
+| Reorder fields | Instant | Canonical order on the next pull | None |
+| Remove a field | Values removed from every record (kept in history) | Removed on the next pull | Destructive; history keeps the old values |
+| Rename a type's key, name or folder | Instant | Files move on the next pull | None |
+| Remove a type | Refused while it has records, unless `--move-to <type>` or `--force` | Files move or disappear on the next pull | `page` can't be removed |
+| Change a record's type (page → task) | One action (`set <record> type=task`); same ID, links and history | `type:` updated | Values for fields the new type lacks are dropped (kept in history) |
+
+**In teams:** editing types is a permission (owners and admins by default). A type change applies to the database at once, and every checkout gets it on its next pull.
+
+### Nesting: the `parent` field
+
+**Leaning (Oct 14).** Pages can sit inside pages, like Notion.
+- **Every record gets a built-in, optional `parent` link,** to any record of any type.
+- **Nesting is data:** agents can set it, queries can use it, and it shows in front matter (`parent: "[[Steiner Kitchen]]"`).
+- **It doesn't move the file.** The Views tree (§5a) shows the nesting; folders stay a separate choice.
+- **One parent per record.** Appearing in many places is what links and query nodes are for.
 
 ## 5. The Markdown files
 
@@ -320,7 +335,7 @@ fields:
 - **Readable wikilinks** that are always correct: `[[Order cabinets (2243 Steiner)]]`. Renaming a record in Surface renames its file and rewrites every link to it.
 - **Each person's files contain only what they're allowed to see.**
 
-**Folders: see §5a.** They're the user's own organization, not generated by Surface.
+**Folders: see §5a.** By default each type has its own folder. Users can set up their own folders instead.
 
 **Open:**
 
@@ -329,7 +344,7 @@ fields:
 
 > **Superseded (Oct 12–13):**
 > - ID-as-filename (`task_0q8z….md`) and "files can live in any folder, moves never flagged": both made sense while files were the source of truth.
-> - "Meaningful folders generated from relationships" (`Jobs/2243 Steiner/Tasks/`): replaced by folders as the user's own organization (§5a).
+> - "Meaningful folders generated from relationships" (`Jobs/2243 Steiner/Tasks/`) as *the* layout: it's back as one optional layout (`link:`), alongside type folders and the user's own folders (§5a, §6).
 
 ### Front matter
 
@@ -356,46 +371,60 @@ Everything degrades gracefully: it's readable in any text editor, renders in any
 | Comments | Markdown side files (tier 2; §2a), never inside the note itself |
 | Presence | in Surface's database only (temporary; tier 3) |
 
-## 5a. Organizing: views and folders, side by side
+## 5a. Organizing: files, views and composite pages
 
-### The sidebar has both
+**Leaning (Oct 14), in David's framing.** Three layers that never fight: **files are storage, views are navigation, composite pages combine the two.** Surface can show the data any way we like, because it isn't tied to where the files sit.
 
-**Leaning.** The sidebar has two kinds of sections:
+### Layer 1: files in real folders (storage)
 
-- **Views** (by type): a **Tasks** section twirls down to as many saved views as you like: "Due this week", "By job", "Waiting on others". Each view is a query: a filter, a sort and a layout.
-- **Folders:** the real folder tree on disk, for people who think in folders (Zettelkasten, atomic notes, plain filing). It's also part of the escape hatch.
-- Possibly **Pinned**, for favourite records and views.
+- **Each record is one file in one folder.** Within a checkout there are no duplicate copies (they'd make Obsidian links, search and the graph ambiguous).
+- **Default layout (decided, built): a folder per type.** Pages are in `Pages/`, tasks in `Tasks/`, and so on. The folder name is a type setting (`surface type edit task --folder "To-dos"`).
+- **The user's own folders (built):** the `folder` layout. Each record has a `folder` value, set by where its file sits when pushed, by `surface new … --folder`, or by `surface set <record> folder=…`. Moving a file in Obsidian and pushing moves the record.
+- **Planned: a layout arranged by link,** e.g. `link:project`. A task's file sits under its job: `Projects/Steiner Kitchen/Tasks/…`. Records without that link go to their type folder; with several links, the first one wins.
+- **Good organizing tools,** for agents first, then the plugin: `surface mv`, folder rename, and "move everything matching X". These are planned.
+- **Folders have no meaning to the database.** A folder exists only while it holds a record, and deleting a folder in Finder deletes nothing (files show as missing until `surface rm`).
 
-**One record, many places.** A record lives in exactly one folder on disk, but it can appear in as many views as you like. A view can also be a *tree* built from links: Job → its Tasks → their notes. So a page can be "nested" under several parents at once. Notion allows only one parent per page; the closest prior art is Tana, where a node can live in many places.
+### Layer 2: the Views tree (navigation)
 
-**Views are queries, not containers.** A record appears in a view because it matches. You can't "remove it from a view" except by changing the record, or the view. Hand-picked lists, if wanted later, would be a separate feature (a record with a list of links).
+- **An Obsidian plugin adds a sidebar panel called "Views".** Later, the same tree is the web app's sidebar.
+- **It looks like folders,** with twirl-downs, but nothing in it moves a file. Its items:
 
-**Views are data:** saved in the workspace, synced in teams, and written as files so they escape too.
+| Item | What it is |
+|---|---|
+| **Group** | A twirl-down, like a folder, but virtual |
+| **Page or record** | Opens the real file; can have children |
+| **Nested pages** | Pages in pages, like Notion, from the `parent` field (§4) |
+| **Query** | Fills its children automatically, e.g. "tasks where project = this job" |
 
-**Decided:** views are built in the app and saved in Surface's own simple YAML format, with a `.base` export on Leave (§5d).
+  ```
+  Jobs                      ← query: all projects
+  └── Steiner Kitchen       ← the record
+      ├── Tasks             ← query: tasks where project = Steiner Kitchen
+      ├── Materials         ← query: materials where project = Steiner Kitchen
+      └── Meetings          ← query: meetings linked to Steiner Kitchen
+  ```
+- **One record, many places:** a task appears under every job it links to, with no copies. Notion allows one parent per page; the closest prior art is Tana.
+- **Where the tree is stored:**
+  - **Nesting lives on the records** (the `parent` field). It's data.
+  - **The arrangement lives in a view file,** `.surface/views/sidebar.yaml`: groups, query nodes, manual order, pinned items. It's readable, agents can edit it, and it's kept on Leave.
+- **Views are queries, not containers.** A record appears under a query node because it matches. Hand-picked lists are a page or collection record with a list of links.
 
-### Folders
+### Layer 3: composite pages (prose plus live data)
 
-**Decided:**
-
-- **Folders are the user's.** Surface never invents folders or moves files on its own.
-- **Moving a file between folders is an ordinary change:** recorded and synced, never flagged. A record's folder is just another attribute that views can use ("tasks in Projects/Kitchen").
-
-**Open: where new records are created.** Recommendation, decided by context with no prompt:
-
-- Creating from inside a **folder** puts the record in that folder (what Finder and Obsidian do).
-- Creating from a **view**, or anywhere else, puts it in the type's default folder.
-- A workspace setting can change this: always the type folder, always ask, or a fixed inbox folder.
+- **A page can mix text, embedded live views and embedded records:** a paragraph, then this job's open tasks as a table, then more text. The data, which is all files, becomes building blocks.
+- **The embeds stay real Markdown,** so the page reads fine without Surface (§5d).
 
 ### Notes and types
 
 **Decided:**
 
-- **Every record has a type. The default is Note.** A Note has a title, a body, links and tags, and no required fields. Folder and Zettelkasten users can live entirely in Notes.
-- **New files found on disk are flagged for import,** defaulting to Note and asking for the type.
-  - Refinement: if the file sits in a type's default folder (for example `tasks/`), suggest that type.
-  - A bulk "import all as Note" is available for many files at once.
-- **Changing a Note into a Task later** is one action, and it keeps the same ID, links and history (§4). Notes becoming typed records will be the common case.
+- **Every record has a type. The default is page.** A page has a title and a body, and no required fields. Folder and Zettelkasten users can live entirely in pages.
+- **New files found in a checkout** are listed by `surface status` and imported with `surface push --new`. Each one uses the `type:` in its front matter, or page if there isn't one.
+- **Changing a page into a task later** is one action, and it keeps the same ID, links and history (§4).
+
+> **Superseded (Oct 14):**
+> - "Surface never invents folders or moves files on its own": the default is now a folder per type.
+> - "The sidebar is a page of links" (`Sidebar.md`): replaced by the Views tree, with its arrangement in `.surface/views/sidebar.yaml`.
 
 ## 5b. Block-like editing on plain Markdown
 
@@ -435,7 +464,7 @@ Background: The question (Oct 13): are Bear or Margin block-based, and can Surfa
 - **Columns or side-by-side layouts:** not supported. There's no Markdown standard, and HTML would hurt readability.
 - **Per-block colours or backgrounds:** not supported. Callout types cover most of the need.
 - **Per-block permissions and per-block metadata:** not supported. If something needs fields, it's a record (existing rule).
-- **Comments anchored to a paragraph:** inside Surface, anchors ride on the text CRDT (Automerge supports cursors and marks that survive edits). After outside edits, anchors are re-found by quoted text and surrounding context. Comments live in side files (§2a).
+- **Comments anchored to a paragraph:** anchors are found again by quoted text and surrounding context after edits. Comments live in side files (§2a).
 
 ## 5c. Tables in a page
 
@@ -539,11 +568,22 @@ layouts:
     end: due
 ```
 
-### Views on pages
+### Views on pages (composite pages)
 
-- **A page shows a view with a one-line embed:** `![[Due this week]]`. A dashboard is a page with text plus a few embeds.
-- **Other editors** show the embed as a link. The query lives in the view file.
-- **Superseded:** putting the query itself in a page (` ```surface ` blocks), and "a view is just a page."
+**Leaning (Oct 14).** A page shows live data in three ways, all real Markdown:
+
+1. **A saved view:** a one-line embed, `![[Due this week]]`. Other editors show it as a link; the query lives in the view file.
+2. **An inline view block** for a view that only matters on this page:
+   ```surface
+   from: task
+   where: project = this and status != done
+   show: table
+   ```
+   Other editors show it as readable text. The Surface plugin renders it live, and `this` means the page it's on.
+3. **A ` ```base ` block** (Obsidian Bases syntax) for simple cases. It renders natively in Obsidian even without the plugin.
+
+- **A dashboard or job page is text plus a few embeds:** a composite page.
+- *Reversed (Oct 14): ` ```surface ` blocks had been superseded in favour of one-line embeds only. They're back, because composite pages need page-local views, and a fenced block is still plain Markdown.*
 
 ### Mixing tables, prose and content from other notes
 
@@ -566,9 +606,9 @@ layouts:
 
 **Open:** the inline value syntax (Dataview-style `` `= …` `` or something else).
 
-### The sidebar is a page too (proposal)
+### The sidebar is a page too (superseded Oct 14 by the Views tree, §5a)
 
-- **The sidebar is an outline of links** in a Markdown file (for example `Sidebar.md`):
+- **The sidebar was an outline of links** in a Markdown file (for example `Sidebar.md`):
   - indenting a link nests it, which gives the twirl-downs;
   - the same page can be linked under as many headings as you like.
 
@@ -606,129 +646,80 @@ layouts:
 
 ## 6. Keeping files and the database in step
 
-**Decided (Oct 13): staged.** Surface plus its CLI can be used entirely from Obsidian or any editor, without continuous two-way merging.
+**Decided (Oct 13), built (Oct 14).** Files are generated from the database. Edits come back by an explicit push. There's no continuous two-way merging.
 
-### Stage 1: generated files, plus an explicit push
+### Stage 1 (built): generated files, plus an explicit push
 
-- **Surface writes every record as Markdown,** and rewrites the file whenever the record changes. Agents and people read, search, back up and leave at any time.
-- **Edits go through Surface:**
-  - the app;
+- **`surface pull` writes every record as Markdown** and rewrites files whose records changed. Renamed records move their files and rewrite every link to them. Deleted records' files are removed.
+- **Edits come back through:**
   - the CLI (`surface new`, `surface set`);
-  - MCP;
-  - or **editing a file and then running `surface push`** (from a terminal, an agent, or an Obsidian command or button).
-- **`surface push` works like `git push`:**
-  - Each file carries a revision in its front matter.
-  - Push validates the fields, checks the revision, and applies the change.
-  - If the record changed since the file was written, that file is **rejected:** Surface shows the differences, and you (or the agent) re-apply the edit on the fresh version.
-  - Body text changed on both sides gets a three-way text merge; if that fails, it's flagged.
-- **No file watcher and no continuous reconcile.** Edits that are never pushed are overwritten the next time Surface rewrites that file, after a warning listing unpushed edits (`surface status` shows them too).
-- **Effort and risk:** small. Most of the data-loss risk is in Stage 2.
+  - **editing a file, then `surface push`** (from a terminal, an agent, or later the Obsidian plugin on save);
+  - later, the web app and the plugin's own editing.
+- **`surface push` works like `git push`, per record:**
+  - Each file carries its `rev` in front matter.
+  - Push normalizes safe fixes and reports each one (§2, principle 5), validates the fields, checks the revision, and applies the change through one database function (`push_record`).
+  - **If the record changed since the file was pulled, that file is rejected.** `surface diff` shows what you changed. Pull with `--force` and redo the edit.
+  - New files are imported with `surface push --new`. Links between new files resolve in the same push.
+- **Pull never overwrites unpushed edits** unless you ask (`--force`). `surface status` lists them.
 
 ### Files can be laid out any way we like
 
-Because the files are generated, **the folder layout is a rendering choice, not where the data lives:**
+Because the files are generated, **the folder layout is a choice made per checkout, not where the data lives:**
 
-- **Layouts:**
-  - by project (`Projects/2243 Steiner/Tasks/...`);
-  - by type (`Tasks/`, `Contacts/`);
-  - by person;
-  - flat;
-  - or the user's own folders (§5a).
-- **Partial checkout:** render only my projects, or only one job for a sub.
-- **Per-machine choice:** each checkout picks its own layout. An agent's checkout can differ from yours.
-- **Push still works in any layout,** because files are matched by `id`, not by path.
-- **One rule:** within one checkout, each record appears **once**. Duplicate copies would make Obsidian links ambiguous.
-- **Folders the user organizes** (§5a) become a `folder` field on the record. In Stage 1 you move a note with the app or `surface move`. Moving a file in Finder or Obsidian is picked up on the next push.
-
-### Stage 2 (later, only if people ask): live two-way files
-
-The original design below: a file watcher, a stored base version, continuous three-way merge and flags. The data model doesn't change, so it can be added on top of Stage 1.
-
-- **Surface stores a base version.** For every record, the database keeps the exact file contents it last wrote or read.
-- **It checks on startup and live.** Surface scans the files when it starts, and a file watcher catches changes while it runs.
-- **It compares three versions** for any changed file: the base, the file now, and the database now (which may include teammates' changes).
-  - **Front matter merges field by field.** A field changed in only one place is applied automatically.
-  - **The body merges as text.** The outside edit is applied as an ordinary text edit, so it combines with teammates' edits.
-- **A merged change is an ordinary change.** It's recorded in history and synced like any edit made in Surface.
-
-### Flags (the "needs attention" view)
-
-Like `git status` plus merge conflicts. In Stage 1 they're raised by `surface push`; in Stage 2, by the watcher:
-
-| Situation | What Surface does |
+| Layout | Status |
 |---|---|
-| New file without an ID | Flags *new note*; asks whether to import it (and as which type) or ignore it |
-| File deleted outside Surface | Flags it; asks whether to allow the deletion or restore the file |
-| File renamed outside Surface | Flags it: *"Renamed to X. Make that the new title and update N links, or restore the old name?"* Surface itself doesn't break, because it identifies files by `id:`; but links written in other files by name would. |
-| File moved to another folder | Ordinary change, synced, never flagged (§5a) |
-| Broken or invalid YAML | Flags it; keeps the database values until it's resolved |
-| The same field changed in the file and the database | Flags a conflict |
-| Values that drift from the schema | Reads them leniently for display, and flags them (see below) |
-| A field not in the schema | Keeps it and flags it |
+| `type`: a folder per type (default) | built |
+| `folder`: the user's own folders | built |
+| `flat`: one folder | built |
+| `link:<field>`: under the linked record, e.g. tasks under their job | planned |
+| `--only task,project`: a partial checkout | built |
 
-**Reading drift leniently** (flagged as a notice or a warning, never rewritten):
+- **Each checkout picks its own layout.** An agent's checkout can differ from yours.
+- **Push works in any layout,** because files are matched by `id`, not by path.
+- **One rule:** within one checkout, each record appears **once**.
 
-- `due: Oct 12` reads as `2026-10-12`;
-- `status: Done` reads as `done`;
-- a choice typo like `dnoe` is flagged with a suggested fix;
-- `cost: $1,200` reads as `1200`.
+### Stage 2 (not planned): live two-way files
 
-A fix is applied only when someone accepts it. A bulk "fix all safe notices" exists, but only when someone runs it.
+A file watcher with continuous three-way merging. It's only worth building if push on save (in the Obsidian plugin) turns out not to be enough. The data model wouldn't change.
 
-## 7. Sync and multi-user editing
+### What push reports
 
-### The feel
+| Situation | What happens |
+|---|---|
+| New file without an ID | Listed by `status`; imported by `push --new` (type from front matter, or page) |
+| File deleted locally | Listed as missing; the record is deleted only by `surface rm` |
+| File renamed or moved | Matched by `id`; in the `folder` layout the move is recorded, and a changed `title` renames the record |
+| Broken YAML | That file is rejected with the parser's message |
+| Record changed since the file was pulled | That file is rejected as a conflict |
+| A safe fix (`Oct 12` → `2026-10-12`, `done` → `Done`, `$1,200` → `1200`, `yes` → `true`) | Applied and reported |
+| An ambiguous value (choice typo `dnoe`) | Rejected with "did you mean `done`?" |
+| A field the type doesn't have | Rejected, with the command to add it |
+| A value made invalid by a schema change (e.g. a removed option) | Kept; `surface check` flags it until someone fixes it |
 
-**Target:** like Notion desktop, or Anytype's new app AnyTwo.
+> **Superseded (Oct 14): "flag and never rewrite; fixes only when someone accepts them".** The MVP applies safe fixes on push and reports each one, and rejects anything ambiguous. That kept data clean without a separate "needs attention" queue.
 
-- Others' edits appear within about a second, with no save button.
-- Offline edits merge automatically on reconnect.
-- You can see who else is on a page.
+## 7. Multi-user editing
 
-### How merging works
+**Decided (Oct 14): one central database, no device-to-device merging.**
 
-**Leaning.** Every device merges as an equal (CRDTs).
-
-- Every device arrives at the same result on its own; no server decides the order.
-- **The sync server stores and relays every change.** It's always on, so people don't need to be online at the same time.
-- **It's the canonical copy for a team :** it always has the latest state and full history, and it serves as backup and as the source for web publishing and remote agents. It never overrules a merge.
-- **It enforces permissions:** it relays writes only from members allowed to write, and sends each member only the workspaces they belong to (§7a).
-- **Fields** merge one by one. **Target:** detect two people changing the same field at once, and flag it rather than silently picking a winner (Notion's weakness).
-- **Body text** merges automatically, using a text CRDT.
-
-### Built sync-ready from day one
-
-**Decided.** Globally unique IDs, every change recorded as a small operation, field-level changes, and mergeable body text. Turning on sync later just means sending the history.
-
-### Technology
-
-**Open, research done** (`docs/research/SYNC-TECH.md`). Recommendation, ranked:
-
-1. **Automerge 3 + automerge-repo,** with a small self-hosted relay.
-   - It's the only option that keeps the losing value when two people edit the same field (`getConflicts`), so Surface can flag it. Verified in the Automerge docs.
-   - `changeAt` applies a file edit "as of" the last-written version and lets the CRDT merge it. That's our three-way reconcile, built in.
-   - MIT licence, Rust core, full history.
-2. **Loro.** The best text handling, with line-based diffs suited to Markdown and agent edits. But fields are last-writer-wins with no conflict API, and there's less sync infrastructure ready-made.
-3. **Yjs + Hocuspocus.** Battle-tested, but weak on history and on field conflicts.
-
-**Ruled out:**
-
-- The server decides, not the devices: Zero, PowerSync, ElectricSQL, InstantDB, Turso.
-- Stalled: cr-sqlite (last release Jan 2024) and Triplit.
-- Not open source or not ready: any-sync, Jazz 2.0, DXOS, Ditto.
-
-**Applies to any choice:**
-
-- One CRDT document per record, so the relay can grant or block access per record.
-- SQLite holds the CRDT data as the truth, plus query tables rebuilt from it.
-
-**Next step:** a one-week spike. 20,000 records, the Markdown reconcile, offline team sync through a relay, and per-record permissions; Automerge first, then Loro.
+- **Everyone works against the same Supabase database.** The CLI and files sync by pull and push, with per-record revision checks.
+- **Two people editing the same record:** the second push is rejected with a clear conflict, never silently merged or lost. For a small team editing mostly different records, this is enough to start.
+- **Live updates (planned):** the web app and the Obsidian plugin can subscribe to changes (Supabase Realtime), so others' edits appear within about a second. The plugin can then pull changed records on its own.
+- **Live co-editing in one note** (cursors, simultaneous typing) isn't planned. If it's ever needed, it's a text-collaboration layer for the body only, added on top of this model.
+- **Backup and history:** the `history` table keeps every revision. Optionally, a scheduled `surface pull` committed to a Git repository gives Git history and an always-current plain-file copy outside Supabase.
 
 ### Considered and set aside
 
-- **GitHub as the source of truth (push and pull):** history, accounts and no server, but at best 5–15 seconds behind. Other limits: per-repo permissions, a 100 MB file limit, and every user needs a GitHub account. It could still serve as an optional backup or export target.
+- **A local database on every device with CRDT merging** (Automerge, Loro or Yjs, with a relay server). Research is in `docs/research/SYNC-TECH.md`. It was set aside Oct 14 (§3): it's the hardest part of the original design, and the MVP doesn't need it.
+- **GitHub as the source of truth** (Oct 14 discussion). History, diffs and free hosting, but:
+  - rules can't be enforced, because anyone can push anything;
+  - Git's line-based merges can leave conflict markers inside front matter;
+  - the team needs GitHub accounts and Git (CDB OS's failure);
+  - there's no database to query;
+  - renames create noisy commits.
+
+  A CLI that checks before committing only enforces a convention, not a guarantee. GitHub stays useful as a backup target.
 - **Dropbox / iCloud / Syncthing:** whole-file sync with conflict copies and no merging.
-- **The cloud as the only truth (Notion-style):** offline is partial.
 
 ## 7a. Permissions and sharing
 
@@ -736,8 +727,8 @@ A fix is applied only when someone accepts it. A bulk "fix all safe notices" exi
 
 ### Why the workspace is the natural boundary
 
-- **In a local-first app, whatever syncs to your device is on your disk as readable files.** You can't hide part of a workspace from someone whose computer holds it.
-- **So read permission is really "what syncs to you."** Per-page read permissions would mean partial sync of the workspace, and complicated rules about links and views that cross the boundary. That's the hard, expensive part, and small teams don't need it.
+- **Whatever you pull is on your disk as readable files.** You can't hide part of a checkout from someone whose computer holds it.
+- **With a central database, per-record read rules are technically possible,** but rules about links and views that cross the boundary get complicated, and small teams don't need them.
 - **The same model** is used by Git repositories, shared Obsidian vaults and Anytype spaces.
 
 ### Multiple workspaces
@@ -760,9 +751,11 @@ A fix is applied only when someone accepts it. A bulk "fix all safe notices" exi
 | Member | Create and edit all records |
 | Viewer | Read only |
 
-- **Write permissions can be enforced:** every change is signed by the user who made it, and the sync server rejects changes from people without the right role.
-  - A viewer can still edit their local files, but Surface flags the edit and never syncs it.
-  - Later, peers can check signatures themselves (Ink & Switch's Keyhive research explores this for Automerge).
+- **Permissions are enforced by the database** (Postgres row-level security, written once for the generic tables; built):
+  - members read and write records; owners and admins edit types;
+  - viewers read only, and their pushes are rejected;
+  - non-members see nothing.
+  - *(Superseded Oct 14: signed changes checked by a sync server.)*
 - **Agents act with their user's role.** A remote agent (the later MCP server) gets a token for one workspace with a chosen role.
 
 ### Clients and outside people
@@ -774,7 +767,7 @@ A fix is applied only when someone accepts it. A bulk "fix all safe notices" exi
 
 ### Honest limits (trade-off ledger)
 
-- **Removing someone doesn't erase what's already on their computer,** just as with email or a shared Dropbox folder. They stop receiving new changes. With end-to-end encryption (§13), the workspace key is rotated.
+- **Removing someone doesn't erase what's already on their computer,** just as with email or a shared Dropbox folder. They can no longer pull or push.
 - **Trust is assumed within a workspace.** Anything a member can see, they can copy.
 
 **Open:**
@@ -785,41 +778,33 @@ A fix is applied only when someone accepts it. A bulk "fix all safe notices" exi
 
 ## 8. The `.surface/` folder
 
-**Decided.** A hidden folder at the workspace root, beside `.obsidian/`. Hidden in Finder (Cmd+Shift+. shows it) and not listed in Obsidian.
+**Decided (built).** A hidden folder at the checkout root, beside `.obsidian/`.
 
 ```
 .surface/
-  types/        schema files (mirrored from the database)
-  settings      workspace settings
-  comments/     comment threads as Markdown (always written; §2a)
-  flags/        open flags as readable files, so agents can resolve them (§10)
-  local/        the local database, cache, base versions (this device only, never synced as files)
+  config.json   which workspace, the layout, partial-checkout filter
+  state.json    each record's path, revision and file hash at the last pull (for status and push)
+  types/        each type as readable YAML (written on pull; edit types with the CLI)
+  views/        view definitions and sidebar.yaml (planned)
+  comments/     comment threads as Markdown (planned; §2a)
 ```
 
-**Open:** should the local database live inside the workspace (`.surface/local/`) or in the app's own data folder? It must never be synced by Dropbox or iCloud, and it must survive the workspace being moved.
+The login session is stored per user in `~/.config/surface-cli/`, not in the checkout.
 
 ## 9. The app
 
-**Open, research done** (`docs/research/APP-TECH.md`). Recommendation:
+**Leaning (Oct 14): no Surface desktop app to start.**
 
-- **App shell: Tauri 2,** a Rust core with a web interface, with Mac polish as its own workstream from day one.
-  - **Margin is built exactly this way** (Tauri v2 + CodeMirror 6; verified in its author's post on the CodeMirror forum).
-  - Fallback: a native Swift shell around the same Rust core, if the web interface isn't "Bear enough."
-- **Editor: CodeMirror 6** with an Obsidian-style live preview. It edits the text itself, so files save exactly as written. It has collaborative-editing plugins for Automerge, Loro and Yjs. ProseMirror-based editors (TipTap, BlockNote) change Markdown on save.
-- **Views:** TanStack Table and TanStack Virtual for tables, dnd-kit for boards, Schedule-X or FullCalendar for calendars.
-- **Query language:** a small YAML format modelled on Obsidian Bases, turned into SQL, plus read-only SQL for agents and power users.
-- **Agents:** the Markdown files plus `AGENTS.md` and skills (the baseline); the `surface` CLI and local `surface mcp` from the headless core (§3a); a remote MCP server later (§10).
-- **First milestone:** solo workspaces on Mac only.
-  - the editor;
-  - file watching with three-way merge, and the flags view;
-  - table and board views;
-  - view embeds in pages;
-  - `AGENTS.md`, the shipped skills and flags-as-files; the optional CLI;
-  - baseline Mac polish.
+- **Desktop = Obsidian plus the Surface plugin** (§3a): Views tree, composite-page embeds, push on save, validation messages and type-aware properties.
+- **Team = a web app** on the same Supabase database: sign in, browse the Views tree, edit records and pages, and see views. Its editor and views stack are open; earlier research (`docs/research/APP-TECH.md`: CodeMirror 6, TanStack Table, dnd-kit) still applies.
+- **Agents = the CLI,** or files plus push.
+- **A native Mac app comes back only if** the plugin can't meet the "feels like Bear" bar (§9 Visual style).
+
+> **Superseded (Oct 14): a Tauri 2 Mac app** with a Rust core, file watching and a flags view as the first milestone. Obsidian supplies the desktop editor; the web app is the team's way in.
 
 ### Visual style
 
-**Leaning.** Inspired by **Bear** and **Margin**: native Mac feel, typography-led, one sparing accent colour, live preview with no toolbar, calm even for structured data. See `docs/DESIGN.md`.
+**Leaning.** Inspired by **Bear** and **Margin**: typography-led, one sparing accent colour, calm even for structured data. Applies to the web app and the plugin's panels. See `docs/DESIGN.md`.
 
 ## 10. Agents
 
@@ -831,78 +816,83 @@ A fix is applied only when someone accepts it. A bulk "fix all safe notices" exi
   - **Agent Skills** in `.agents/skills/`, copied to `.claude/skills/` for Claude Code.
 - **Surface-shipped skills** (`surface-workspace`, `surface-types` generated from the workspace's types, `surface-views`, `surface-flags`, `surface-import`) are regenerated when the workspace changes.
 - **Users and teams write their own workflow skills** in Surface, like notes. They sync with the workspace, so every teammate's agent gets the same playbook.
-- **Flags are written as files** (`.surface/flags/`), so agents can see and resolve them.
-- **Agents never rewrite whole files.** Edits go through the same three-way merge as everyone else's. A burst of outside edits is one undoable change.
-- **The `surface` CLI and `surface mcp`** come with the headless core (§3a). They add exact operations, validation and "who edited", but aren't required. A *remote* MCP server or API comes later, for agents that can't see the files (web and phone assistants, remote teammates).
+- **Problems are reported by `surface push`, `status` and `check`,** which agents read like anyone else.
+- **Agents edit through the CLI, or by editing files and running `surface push`.** Both go through the same validation and revision check as everyone else's edits.
+- **The `surface` CLI (built)** gives exact operations and immediate errors. Every pull writes `AGENTS.md`, a Surface skill and the types. MCP, local or remote, comes later for agents that can't run the CLI.
 
 ## 11. Business model
 
-**Leaning.** A free local app, plus a paid sync service (the Obsidian and Anytype model). The billable parts are sync and agent labor. Self-hosting the sync server is an option for teams.
+**Open (Oct 14).** The database is hosted, so the natural model is a hosted service: free for one person or a small workspace, paid for teams. Self-hosting on your own Supabase is possible. *(Superseded: a free local app plus paid sync.)*
 
 ## 12. Open questions
 
-**Sync and hosting**
+**Database and hosting**
 
-1. The sync technology: Automerge (recommended) or Loro; decide after the spike. One alternative to test alongside them: Postgres with a sync engine (e.g. PowerSync), which fits the web app (`docs/notes/CENTRAL-DATABASE.md`).
-2. Who runs the sync server: a hosted Surface service, self-hosted, or both?
-3. Same-network peer-to-peer (Anytype-style), or always through the server?
+1. Hosting long-term: Surface-hosted Supabase for everyone, a project per team, or self-hosted?
+2. When to add live updates (Supabase Realtime) to the plugin and web app.
 
 **Sharing and permissions**
 
-4. ~~Per-record permissions~~ leaning: the workspace is the boundary, with roles; multiple workspaces (§7a).
-5. Guests and clients: publish a page or view to the web, or use a small shared workspace (§7a).
-
-**Feel**
-
-6. Live cursors, or just presence?
+3. The member roles in detail (flagged for later discussion, §7a).
+4. Guests and clients: publish a page or view to the web, or a small shared workspace (§7a).
 
 **Files**
 
-7. The filename naming rule, and filename churn (§5).
-8. The front matter key: `id` or `surface_id`.
-9. Where the local database lives (§8).
+5. The filename naming rule for duplicate titles, and filename churn on renames (§5). (The MVP appends a short ID to the newcomer.)
+6. The front matter key: `id` or `surface_id`.
+7. The `link:` layout when a record links to several parents (first one wins?).
+8. Show reverse links in files (e.g. a read-only `linked_from:` list), or leave that to Obsidian's backlinks pane?
 
-**App**
+**Views and pages**
 
-10. The shell: is about 95% of Bear's look acceptable (Tauri), or are a real native toolbar and controls required (Swift shell)? Also confirm the editor, views and MVP scope.
+9. The tree's storage split: `parent` on records plus `.surface/views/sidebar.yaml` (proposed, §5a). One shared sidebar, or shared plus personal?
+10. The exact syntax of view files and inline ` ```surface ` blocks (§5d); inline value syntax.
+11. Should Markdown table column types be remembered, and where (§5c)?
 
 **Types**
 
-11. A fixed prefix for all IDs (e.g. `s_`), or none (minor; §4).
-12. Who can edit types in a team (default: owners and admins).
+12. A fixed prefix for all IDs (e.g. `s_`), or none (minor; §4).
+13. Where new records are created from the plugin: the current folder, or the type's folder (§5a).
 
-**Organizing, tables and Obsidian**
+**Clients**
 
-13. Where new records are created: by context, or a setting (§5a).
-14. ~~View file format~~ decided: Surface's own simple YAML format, `.base` export on Leave (§5d). Remaining: the exact syntax.
-15. Should Markdown table column types be remembered, and where (§5c)?
-
-**Agents and the core**
-
-17. First release: core + CLI + service first, or everything together (§3a)?
-18. Where user workflow skills live: `.agents/skills/` or a visible `Skills/` folder; copy or symlink for `.claude/skills/` (`docs/AGENT-INTEGRATION.md`).
-19. Inline value syntax in pages (§5d).
-20. One shared sidebar, or shared plus personal (§5d)?
+14. Obsidian plugin scope for a first version: Views panel only, or embeds and push on save too?
+15. The web app's stack and first screens.
+16. Where user workflow skills live: `.agents/skills/` or a visible `Skills/` folder (`docs/AGENT-INTEGRATION.md`).
 
 **Parked**
 
-16. Importing existing vaults: in place or as a copy, huge vaults, the path-generation principle (`docs/IMPORT.md`).
+17. Importing existing vaults: in place or as a copy, huge vaults (`docs/IMPORT.md`). `surface push --new` already covers simple cases.
 
 ## 13. Not yet designed
 
-Gaps identified Oct 13, in suggested order:
+Gaps identified Oct 13 (updated Oct 14), in suggested order:
 
 1. **Agents and surfaces** (pillars 2 and 3 of the thesis). Bring-your-own-agent, the entry point and skills are now designed (§10). Still open:
    - Knowing which agent or person made an outside edit; approvals.
    - Agent-built views: how they're requested, rendered, saved and shared, and how they get live data.
    - Model choice and privacy (local models, your own API key).
-2. ~~Permissions and sharing~~ now designed as a leaning (§7a); remaining: signed changes and server checks in detail.
-3. **Attachments and large files** (photos, PDFs, plans): where they're stored, how they sync (CRDTs aren't for large binary files), size limits, previews.
+2. ~~Permissions and sharing~~ designed (§7a) and enforced by row-level security in the MVP.
+3. **Attachments and large files** (photos, PDFs, plans): likely Supabase Storage, pulled into the checkout next to the records; size limits, previews.
 4. **Search:** full-text; possibly semantic search for agents; search across views.
-5. **History, undo, trash and deletion:** what users see; how deletions sync; restoring.
+5. **History, undo and trash:** the database keeps every revision, and `surface history` / `rm` / `restore` exist. Still open: what the plugin and web app show, and undo.
 6. **The view system in detail:** the query language, formulas, rollups and each layout (format decided, §5d).
 7. **Templates, recurring items, reminders and notifications;** whether agents replace automations.
-8. **Security:** end-to-end encryption for sync, encryption at rest, secrets in notes.
+8. **Security:** encryption at rest (Supabase), secrets in notes, API tokens for agents.
 9. **Mobile:** what's possible with files on iOS and Android.
-10. **Performance targets:** workspace size, open time, sync time (partly covered by the spike).
+10. **Performance targets:** workspace size, pull time, query speed (and when a local index is needed).
 11. **Onboarding:** first run, starter content.
+
+## 14. Build plan
+
+**MVP: built Oct 14** (`docs/MVP.md`). It's a Supabase types engine plus the `surface` CLI, used from Obsidian, with an 11-step end-to-end test.
+
+**Next, in order (agreed Oct 14):**
+
+1. **CLI: the `link:` layout and folder commands** (`surface mv`, folder rename, move by query).
+2. **The `parent` field, `.surface/views/sidebar.yaml` and `surface tree`,** so agents can build and read the Views tree.
+3. **The Obsidian plugin: the Views panel.**
+4. **Composite pages:** live ` ```surface ` blocks and saved-view embeds in the plugin.
+5. **Push on save** in the plugin, so Obsidian users never need the terminal.
+
+Then: the web app for the team, and live updates.

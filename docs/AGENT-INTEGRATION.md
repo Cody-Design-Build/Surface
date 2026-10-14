@@ -1,5 +1,7 @@
 # Surface: how outside agents work in a workspace
 
+> **Oct 14:** the MVP writes one generated skill (`.agents/skills/surface/SKILL.md`), not the five `surface-*` skills sketched below, and it has no `.surface/flags/`. Problems are reported by `surface push`, `status` and `check`. The ideas below remain the target where they still fit.
+
 **Status:** Bring-your-own-agent and files-first are **decided** (Oct 13). The rest is **leaning** unless marked open. Summary in `SPEC.md` §10.
 
 ## The idea
@@ -99,18 +101,21 @@ The hard rules (draft):
 - **Flags as files** make the "needs attention" view available to agents too. "Clean up my flags" becomes an agent task.
 - **Grouped outside edits:** a burst of edits made outside Surface (for example, an agent changing 40 files) shows as one change in history: *"40 files changed outside Surface: review or undo all."*
 
-## The CLI and local MCP (headless core, SPEC §3a)
+## The CLI (built; SPEC §3a)
 
-Surface's base is a headless core with a background service (`surfaced`) and a `surface` CLI. The app is one client. So agents get more than files when they want it:
+Supabase is the truth and every checkout is generated from it (Oct 14). Agents work in one of two ways, and both go through the database's validation:
 
-- **`surface` CLI:** exact operations with immediate validation, for example:
-  - `surface new task "Order cabinets" --project "Kitchen Remodel"`;
-  - `surface query`, `surface check`, `surface flags`, `surface undo`.
-- **`surface mcp`:** the same operations as a local MCP server, for agents that prefer tools.
-- **Attribution:** edits through the CLI or MCP record who made them (`--as codex`, or `SURFACE_AGENT=codex`). Raw file edits show as "edited outside Surface".
-- **Sync without the app:** `surfaced` keeps the workspace in sync with the team, so an agent on a server can work in a team workspace with no GUI at all.
-- **The skills say:** use `surface` if it's installed; otherwise work with the files. Both paths end up in the same place.
-- **Remote MCP or API: later,** only for agents that can't see the files (Claude or ChatGPT on the web, phone assistants).
+- **`surface` CLI (preferred):** exact operations with immediate errors:
+  - `surface new task "Order cabinets" project="Kitchen Remodel"`;
+  - `surface set`, `query`, `show`, `check`, `history`, `rm` / `restore`;
+  - `surface type …` and `surface field …` to change types.
+- **Edit files, then `surface push`:** the push normalizes safe fixes and reports them, and rejects invalid values or stale revisions with a clear message.
+- **Attribution:** every change is recorded with the signed-in account (`updated_by`, `history.changed_by`). Separate accounts per agent give per-agent attribution.
+- **Agents on a server** need only the CLI and a login. There's no background service.
+- **Every pull writes** `AGENTS.md`, `.agents/skills/surface/SKILL.md` (copied to `.claude/skills/`), and `.surface/types/*.yaml`.
+- **MCP, local or remote: later,** for agents that can't run the CLI (Claude or ChatGPT on the web, phone assistants).
+
+> *Superseded (Oct 14): a `surfaced` background service and a local `surface mcp`, from the headless-core design.*
 
 ## Open
 

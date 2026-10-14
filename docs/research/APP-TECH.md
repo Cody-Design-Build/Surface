@@ -1,5 +1,7 @@
 # App Tech Options
 
+> **Partly superseded (Oct 14):** there's no Tauri desktop app or local database for now. The desktop is Obsidian plus a Surface plugin, and the team uses a web app (SPEC §3a, §9). The editor and views research (CodeMirror 6, TanStack, dnd-kit) still applies to the web app. The sync and Rust back-end parts don't.
+
 **Status: research, nothing decided.** Feeds SPEC §9 (The app) and §10 (Agents). Written Oct 13, 2026.
 Where something comes from my own knowledge rather than a source I checked today, it's marked *(unverified)*. GitHub activity figures were checked with `gh api` on Oct 13, 2026.
 

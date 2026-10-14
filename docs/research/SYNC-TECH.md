@@ -1,5 +1,7 @@
 # Sync technology options for Surface (research, working)
 
+> **Superseded (Oct 14):** Surface dropped the local database and device-to-device merging. Supabase is the single truth, and files are a checkout with pull and push (SPEC §3, §7). Kept as research history in case live co-editing is ever needed.
+
 > **Status: research input, nothing decided.** Checked 13 Oct 2026. GitHub data comes from `gh api` (last push, latest release, license). Anything I couldn't confirm is marked *(unverified)*.
 
 ## What we need from the sync layer

@@ -18,7 +18,7 @@ The model is something like Claude's dashboards. The user asks to see a view, wi
 
 ## Data
 
-Local-first. Each workspace is a local database on your device, with every record also kept as a plain Markdown file that any editor or agent can work with. Teams can switch on sync. Surface keeps the files, the local database and the team's shared copy in step, flagging anything it can't merge safely.
+A typed database (Supabase) is the single truth. Any machine checks the workspace out as plain Markdown files, which you can read and edit in Obsidian or any editor, then push back. The database checks every change against the type's fields. Obsidian with a Surface plugin is the desktop, a web app is for the team, and the `surface` CLI is for agents. See `docs/SPEC.md` (current design) and `cli/README.md` (how to use it).
 
 ## No lock-in
 
