@@ -55,6 +55,21 @@ Views over properties are the same idea as Obsidian Bases. The trust in the data
 4. **Phone and field use.**
 5. **Sharing with clients and subs.**
 
+**Why the team never used it, and chose Notion instead (Oct 13):** joining meant creating a GitHub account and being taught Git in person. Notion meant "log in and start making pages."
+
+**The bar for Surface's team onboarding:**
+
+- an invite link;
+- sign in with Google or email;
+- working in a browser within a minute;
+- no install, no GitHub, no teaching.
+
+**Consequences (to discuss):**
+
+- **A web app becomes the main team experience,** with the desktop app and the files checkout for power users and agents.
+- **For teams, this favours a central database** (option B in `docs/explorations/CENTRAL-DATABASE.md`): a browser has no local copy to merge.
+- **Solo, local-only use** becomes the secondary path.
+
 ## 2. Principles
 
 1. **Data is the foundation.** The surface is just where a human touches it.
