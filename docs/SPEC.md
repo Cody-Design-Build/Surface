@@ -752,7 +752,7 @@ A fix is applied only when someone accepts it. A bulk "fix all safe notices" exi
 **Under exploration (Oct 13):** a central cloud database as the single truth, with Surface checking out files onto each computer like Git. See `docs/explorations/CENTRAL-DATABASE.md`.
 
 - **The checkout part is already the current model.** The open question is who has the authority: every device (A), the server (B), or every device plus a canonical server (D, the hybrid).
-- **Leaning to compare D and B in the sync test.**
+- **One model either way:** files ⇄ local database ⇄ optional cloud database. Solo is the cloud switched off. The open choice is only *how* the local and cloud databases sync: CRDT (D), or a server-decides sync engine on Postgres (B) with CRDT body text. The web-first team requirement leans towards testing B first.
 - **B's main advantage** is partial checkout and per-record permissions. Its main costs: solo use without an account becomes harder, the server becomes essential, and text still needs merging anyway.
 
 ## 8. The `.surface/` folder

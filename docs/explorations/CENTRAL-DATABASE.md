@@ -2,6 +2,31 @@
 
 **Status:** exploration (Oct 13). Nothing here is decided. It's compared against the current model in `SPEC.md` §3 and §7.
 
+## Correction (Oct 13): one model, not two
+
+The "two engines" idea for solo work (files as truth for solo, the database for teams) was a wrong turn. **There's one model, the one the spec already has:**
+
+```
+Markdown files  ⇄  local database (every machine)  ⇄  cloud database (optional, for teams and the web app)
+```
+
+- **Solo** is the same model with the cloud switched off.
+- **The web app** for non-technical teammates reads and writes the cloud database directly.
+- Files are always rendered from the local database and reconciled back into it.
+
+**The only real open choice is how the local and cloud databases sync:**
+
+| | Every device decides (CRDT; spec option D) | The server decides (sync engine; option B) |
+|---|---|---|
+| Technology | Automerge or Loro documents | Postgres (Supabase), with PowerSync or ElectricSQL syncing to SQLite on each machine |
+| Clashing field edits | Merged on every device; real clashes flagged | The server applies the rule (flag, or last write wins) |
+| Body text | Text CRDT | **Still needs a text CRDT or three-way merge.** Common pattern: fields in rows, the body as a CRDT document stored in the row |
+| Web app | Needs the server to turn CRDT documents into queryable tables (extra work) | Native: the web app just queries Postgres |
+| Generic `types` / `records` / `links` tables | Possible | Natural fit, with one set of access rules |
+| Fit with existing skills | New technology | Supabase, which BuildBase already uses |
+
+**Leaning:** the web-first team requirement (invite link, browser, no install) and the generic-tables idea make **the server-decides flavour, with CRDT body text,** worth testing first. Everything else in the spec (files, reconcile, flags, types, views, agents) is the same in both.
+
 ## The idea
 
 - **The source of truth is a database,** possibly a single central database in the cloud.
@@ -66,7 +91,7 @@ So the real question isn't "database or files." It's **where the truth lives and
   - "leave any time" (pull everything, walk away).
 - **Why it's much simpler:** optimistic checks ("has it changed since you pulled?") replace CRDTs and the continuous reconcile engine. Agents handle a pull, edit, push loop well.
 
-#### Solo work under B2
+#### Solo work under B2 (superseded: see the correction at the top; solo is the same model with the cloud off)
 
 **Three options:**
 
