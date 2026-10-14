@@ -618,7 +618,8 @@ A fix is applied only when someone accepts it. A bulk "fix all safe notices" exi
 
 - Every device arrives at the same result on its own; no server decides the order.
 - **The sync server stores and relays every change.** It's always on, so people don't need to be online at the same time.
-- **It enforces permissions:** it relays writes only from members allowed to write, and sends each member only what they may read.
+- **It's the canonical copy for a team (the "hybrid", option D in `docs/explorations/CENTRAL-DATABASE.md`):** it always has the latest state and full history, and it serves as backup and as the source for web publishing and remote agents. It never overrules a merge.
+- **It enforces permissions:** it relays writes only from members allowed to write, and sends each member only the workspaces they belong to (§7a).
 - **Fields** merge one by one. **Target:** detect two people changing the same field at once, and flag it rather than silently picking a winner (Notion's weakness).
 - **Body text** merges automatically, using a text CRDT.
 
