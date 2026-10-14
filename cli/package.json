@@ -1,0 +1,24 @@
+{
+  "name": "surface-cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Surface CLI: a types engine on Supabase, with Markdown checkouts",
+  "bin": {
+    "surface": "bin/surface"
+  },
+  "engines": {
+    "node": ">=23.6"
+  },
+  "scripts": {
+    "test": "node --no-warnings test/e2e.ts"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.117.3",
+    "yaml": "^2.9.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "typescript": "^7.0.2"
+  }
+}

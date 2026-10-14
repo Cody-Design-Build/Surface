@@ -36,3 +36,5 @@ Your notes are files. Everything you write lives in open, readable Markdown and 
 ## Status
 
 Design phase. The data model, file conventions and reconciliation rules are largely decided. Sync technology and the app itself are being researched.
+- `docs/MVP.md`: the MVP (types engine on Supabase + CLI, used from Obsidian)
+- `cli/README.md`: the `surface` CLI, how to use it

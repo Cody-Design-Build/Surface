@@ -1,6 +1,8 @@
 # Surface MVP: a types engine on Supabase, plus a CLI, used from Obsidian
 
-**Status:** proposed (Oct 13). The smallest version of Surface that can be tested immediately. `SPEC.md` stays the long-term design. This is stage 1 of it, with Obsidian standing in for the app.
+**Status:** built (Oct 14). Supabase project `surface` (ref `njzrcmzvubhexegbdoeh`, us-west-2); CLI in `cli/` (see `cli/README.md`); 11-step end-to-end test passing. The Open questions below were settled as: reject invalid values (safe fixes normalized and reported); TypeScript. First use case still to pick.
+
+**Originally proposed** (Oct 13). The smallest version of Surface that can be tested immediately. `SPEC.md` stays the long-term design. This is stage 1 of it, with Obsidian standing in for the app.
 
 ## What it is
 

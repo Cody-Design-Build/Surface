@@ -1,0 +1,743 @@
+#!/usr/bin/env node
+// surface: a types engine on Supabase, with Markdown checkouts.
+import fs from "node:fs";
+import path from "node:path";
+import readline from "node:readline";
+import { findCheckout, saveCheckout, type Checkout, type Layout } from "./config.ts";
+import { clearSession, dbError, requireUser, sb, UserError } from "./client.ts";
+import {
+  fetchRecord, fetchRecords, fetchTypes, fieldByKey, KINDS, pushRecord, typeByKey,
+  type FieldDef, type Kind, type RecordRow, type TypeRow,
+} from "./db.ts";
+import { localEdits, makeResolver, pull, push, snapshot, status, prepare, type FileResult } from "./checkout.ts";
+import { cliValue, normalize } from "./normalize.ts";
+import { basename, parse, render } from "./markdown.ts";
+import { writeAgentFiles } from "./skills.ts";
+
+// ---------------------------------------------------------------------------
+// Arguments
+// ---------------------------------------------------------------------------
+const BOOL = new Set(["force", "dry-run", "new", "json", "multiple", "single", "required", "optional", "deleted", "yes", "help", "all"]);
+
+interface Args {
+  _: string[];
+  flags: Record<string, string | boolean>;
+}
+
+function parseArgs(argv: string[]): Args {
+  const out: Args = { _: [], flags: {} };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === "--") {
+      out._.push(...argv.slice(i + 1));
+      break;
+    }
+    if (a.startsWith("--")) {
+      const [k, v] = a.slice(2).split(/=(.*)/s, 2);
+      if (v !== undefined) out.flags[k] = v;
+      else if (BOOL.has(k)) out.flags[k] = true;
+      else if (i + 1 < argv.length) out.flags[k] = argv[++i];
+      else throw new UserError(`--${k} needs a value`);
+    } else if (a === "-h") out.flags.help = true;
+    else out._.push(a);
+  }
+  return out;
+}
+
+const flag = (a: Args, k: string) => (typeof a.flags[k] === "string" ? (a.flags[k] as string) : undefined);
+const list = (s: string | undefined) => (s ? s.split(",").map((x) => x.trim()).filter(Boolean) : undefined);
+
+// ---------------------------------------------------------------------------
+// Output helpers
+// ---------------------------------------------------------------------------
+const tty = process.stdout.isTTY;
+const c = (code: string) => (s: string) => (tty ? `\x1b[${code}m${s}\x1b[0m` : s);
+const green = c("32"), red = c("31"), yellow = c("33"), dim = c("2"), bold = c("1");
+
+function table(rows: string[][]) {
+  if (!rows.length) return;
+  const w = rows[0].map((_, i) => Math.max(...rows.map((r) => (r[i] ?? "").length)));
+  for (const [n, r] of rows.entries()) {
+    const line = r.map((cell, i) => (i === r.length - 1 ? cell : cell.padEnd(w[i]))).join("  ");
+    console.log(n === 0 ? bold(line) : line);
+  }
+}
+
+async function prompt(q: string, hidden = false): Promise<string> {
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: true });
+  if (hidden) {
+    const out = rl as unknown as { _writeToOutput: (s: string) => void; output: NodeJS.WriteStream };
+    out._writeToOutput = (s: string) => {
+      if (s.includes(q)) out.output.write(s);
+      else if (s === "\r\n" || s === "\n") out.output.write(s);
+    };
+  }
+  return new Promise((resolve) =>
+    rl.question(q, (ans) => {
+      rl.close();
+      if (hidden) process.stdout.write("\n");
+      resolve(ans);
+    }),
+  );
+}
+
+function requireCheckout(): Checkout {
+  const co = findCheckout();
+  if (!co) throw new UserError("Not in a Surface checkout. Run `surface init <folder> --workspace <id>` first.");
+  return co;
+}
+
+/** Workspace from --workspace, the checkout, or the only workspace you're in. */
+async function workspaceId(a: Args): Promise<string> {
+  const w = flag(a, "workspace");
+  if (w) return resolveWorkspace(w);
+  const co = findCheckout();
+  if (co) return co.config.workspace;
+  const { data, error } = await sb().from("workspaces").select("id,name");
+  if (error) throw dbError(error);
+  if (data.length === 1) return data[0].id;
+  throw new UserError(data.length ? "Several workspaces: pass --workspace <id or name>, or run inside a checkout." : "No workspace yet: `surface workspace create <name>`.");
+}
+
+async function resolveWorkspace(w: string): Promise<string> {
+  const { data, error } = await sb().from("workspaces").select("id,name");
+  if (error) throw dbError(error);
+  const hit = data.find((x) => x.id === w) ?? data.find((x) => x.name.toLowerCase() === w.toLowerCase());
+  if (!hit) throw new UserError(`No workspace "${w}". Yours: ${data.map((x) => `${x.name} (${x.id})`).join(", ") || "none"}`);
+  return hit.id;
+}
+
+/** Find a record by id, filename or title. */
+async function findRecord(ws: string, ref: string, co: Checkout | null, opts: { includeDeleted?: boolean } = {}): Promise<RecordRow> {
+  const direct = await fetchRecord(ref);
+  if (direct && direct.workspace_id === ws && (opts.includeDeleted || !direct.deleted_at)) return direct;
+  if (co) {
+    const rel = path.relative(co.root, path.resolve(ref));
+    const byPath = Object.entries(co.state.records).find(([, st]) => st.path === rel || basename(st.path).toLowerCase() === basename(ref).toLowerCase());
+    if (byPath) {
+      const r = await fetchRecord(byPath[0]);
+      if (r) return r;
+    }
+  }
+  const all = await fetchRecords(ws, { includeDeleted: opts.includeDeleted });
+  const hits = all.filter((r) => r.title.toLowerCase() === ref.toLowerCase());
+  if (hits.length === 1) return hits[0];
+  if (hits.length > 1) throw new UserError(`Several records are called "${ref}": ${hits.map((h) => h.id).join(", ")}. Use the id.`);
+  throw new UserError(`No record "${ref}".`);
+}
+
+/** Field values keyed by key, as the database stores them (ids for links). */
+function fieldsByKey(r: RecordRow, t: TypeRow): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const f of t.fields) if (r.fields[f.id] !== undefined) out[f.key] = r.fields[f.id];
+  return out;
+}
+
+async function refreshCheckout(co: Checkout | null) {
+  if (!co) return;
+  const rep = await pull(co);
+  if (rep.skipped.length) console.log(yellow(`Kept ${rep.skipped.length} file(s) with unpushed edits: ${rep.skipped.join(", ")}`));
+}
+
+// ---------------------------------------------------------------------------
+// Commands
+// ---------------------------------------------------------------------------
+type Cmd = (a: Args) => Promise<void>;
+
+const commands: Record<string, Cmd> = {
+  async signup(a) {
+    const email = flag(a, "email") ?? (await prompt("Email: "));
+    const password = process.env.SURFACE_PASSWORD ?? (await prompt("Choose a password: ", true));
+    const { data, error } = await sb().auth.signUp({ email, password });
+    if (error) throw new UserError(error.message);
+    if (!data.session) console.log("Check your email to confirm the account, then run `surface login`.");
+    else console.log(green(`Signed up and signed in as ${email}.`));
+  },
+
+  async login(a) {
+    const email = flag(a, "email") ?? (await prompt("Email: "));
+    const password = process.env.SURFACE_PASSWORD ?? (await prompt("Password: ", true));
+    const { error } = await sb().auth.signInWithPassword({ email, password });
+    if (error) throw new UserError(error.message);
+    console.log(green(`Signed in as ${email}.`));
+  },
+
+  async logout() {
+    await sb().auth.signOut().catch(() => {});
+    clearSession();
+    console.log("Signed out.");
+  },
+
+  async whoami() {
+    const u = await requireUser();
+    console.log(u.email);
+  },
+
+  async workspace(a) {
+    await requireUser();
+    const sub = a._[0];
+    if (sub === "create") {
+      const name = a._.slice(1).join(" ");
+      if (!name) throw new UserError("Usage: surface workspace create <name>");
+      const { data, error } = await sb().rpc("create_workspace", { p_name: name });
+      if (error) throw dbError(error);
+      console.log(green(`Created workspace "${data.name}" (${data.id}) with the built-in type "page".`));
+      return;
+    }
+    if (sub === "delete" || sub === "rm") {
+      const id = await resolveWorkspace(a._.slice(1).join(" "));
+      if (!a.flags.yes) throw new UserError("This deletes the workspace and every record in it. Re-run with --yes to confirm.");
+      const { data, error } = await sb().from("workspaces").delete().eq("id", id).select("id");
+      if (error) throw dbError(error);
+      if (!data.length) throw new UserError("Only the workspace owner can delete it.");
+      console.log(green(`Deleted workspace ${id}. Checkouts of it are now disconnected; their files are untouched.`));
+      return;
+    }
+    if (sub === "list" || !sub) {
+      const { data, error } = await sb().from("workspaces").select("id,name,members(role,user_id)");
+      if (error) throw dbError(error);
+      const me = (await requireUser()).id;
+      table([["ID", "NAME", "YOUR ROLE"], ...data.map((w) => [w.id, w.name, (w.members as { role: string; user_id: string }[]).find((m) => m.user_id === me)?.role ?? ""])]);
+      return;
+    }
+    throw new UserError("Usage: surface workspace [list | create <name> | delete <name> --yes]");
+  },
+
+  async init(a) {
+    await requireUser();
+    const dir = path.resolve(a._[0] ?? ".");
+    let ws: string;
+    const create = flag(a, "create");
+    if (create) {
+      const { data, error } = await sb().rpc("create_workspace", { p_name: create });
+      if (error) throw dbError(error);
+      ws = data.id;
+      console.log(green(`Created workspace "${create}" (${ws}).`));
+    } else ws = await workspaceId(a);
+    const layout = (flag(a, "layout") ?? "type") as Layout;
+    if (!["type", "flat", "folder"].includes(layout)) throw new UserError("--layout must be type, flat or folder");
+    if (fs.existsSync(path.join(dir, ".surface", "config.json")) && !a.flags.force) throw new UserError(`${dir} is already a checkout (use --force to re-initialise).`);
+    const { data: w } = await sb().from("workspaces").select("name").eq("id", ws).single();
+    const co: Checkout = { root: dir, config: { workspace: ws, workspaceName: w?.name, layout, only: list(flag(a, "only")) }, state: { records: {} } };
+    fs.mkdirSync(dir, { recursive: true });
+    saveCheckout(co);
+    const rep = await pull(co);
+    console.log(green(`Checked out "${w?.name}" into ${dir} (${layout} layout): ${rep.written.length} file(s).`));
+    const existing = (await status(co)).untracked.length;
+    if (existing) console.log(`${existing} existing Markdown file(s) aren't in Surface yet. Review with \`surface check\`, import with \`surface push --new\`.`);
+  },
+
+  async pull(a) {
+    await requireUser();
+    const co = requireCheckout();
+    const rep = await pull(co, { force: !!a.flags.force });
+    for (const p of rep.written) console.log(`${green("wrote")}   ${p}`);
+    for (const p of rep.moved) console.log(`${green("moved")}   ${p}`);
+    for (const p of rep.removed) console.log(`${yellow("removed")} ${p}`);
+    for (const p of rep.skipped) console.log(`${yellow("kept")}    ${p} ${dim("(unpushed edits: push them, or pull --force to discard)")}`);
+    if (!rep.written.length && !rep.moved.length && !rep.removed.length) console.log("Up to date.");
+  },
+
+  async push(a) {
+    await requireUser();
+    const co = requireCheckout();
+    const results = await push(co, { files: a._, includeNew: !!a.flags.new, dryRun: !!a.flags["dry-run"], defaultType: flag(a, "type") });
+    report(results, !!a.flags["dry-run"]);
+    if (results.some((r) => ["rejected", "conflict", "error"].includes(r.status))) process.exitCode = 1;
+  },
+
+  async check(a) {
+    await requireUser();
+    const co = requireCheckout();
+    const results = await push(co, { files: a._.length ? a._ : undefined, includeNew: true, dryRun: true, defaultType: flag(a, "type") });
+    // Also flag stored values that no longer fit their type (e.g. after an option was removed)
+    const snap = await snapshot(co);
+    const resolver = makeResolver(co, snap);
+    const stale: string[] = [];
+    for (const r of snap.records) {
+      const t = snap.typeMap.get(r.type_id)!;
+      for (const f of t.fields) {
+        const v = r.fields[f.id];
+        if (v === undefined || v === null) {
+          if (f.required) stale.push(`${r.title}: ${f.key} is required but empty`);
+          continue;
+        }
+        const n = normalize(f, f.kind === "link" ? v : v, { link: (id, target) => (snap.byId.has(id) && (!target || snap.byId.get(id)!.type_id === target) ? id : resolver.link(id, target)) });
+        if (n.error || JSON.stringify(n.value) !== JSON.stringify(v)) stale.push(`${r.title}: ${f.key} ${n.error ?? "isn't in canonical form"}`);
+      }
+    }
+    report(results, true);
+    if (stale.length) {
+      console.log(yellow(`\nIn the database, ${stale.length} value(s) don't fit their type:`));
+      for (const s of stale) console.log(`  ${s}`);
+    }
+    if (!results.length && !stale.length) console.log("All good.");
+    if (results.some((r) => ["rejected", "conflict", "error"].includes(r.status)) || stale.length) process.exitCode = 1;
+  },
+
+  async status() {
+    await requireUser();
+    const co = requireCheckout();
+    const s = await status(co);
+    const section = (title: string, items: string[], color: (x: string) => string, hint: string) => {
+      if (!items.length) return;
+      console.log(bold(title) + dim(`  ${hint}`));
+      for (const i of items) console.log(`  ${color(i)}`);
+    };
+    section("Edited, not pushed:", s.edited, yellow, "surface push");
+    section("Not in Surface:", s.untracked, red, "surface push --new");
+    section("Missing files:", s.missing, red, "surface pull restores them; surface rm <name> deletes the record");
+    section("Changed in Surface since pull:", s.behind, green, "surface pull");
+    section("Deleted in Surface:", s.remoteDeleted, dim, "surface pull removes them");
+    if (s.remoteNew) console.log(bold(`${s.remoteNew} new record(s) in Surface`) + dim("  surface pull"));
+    if (!s.edited.length && !s.untracked.length && !s.missing.length && !s.behind.length && !s.remoteDeleted.length && !s.remoteNew) console.log("Clean: files match Surface.");
+  },
+
+  async diff(a) {
+    await requireUser();
+    const co = requireCheckout();
+    const snap = await snapshot(co);
+    const resolver = makeResolver(co, snap);
+    const files = a._.length ? a._.map((f) => path.relative(co.root, path.resolve(f))) : [...localEdits(co)].map((id) => co.state.records[id].path);
+    for (const rel of files) {
+      const p = prepare(co, snap, rel, resolver);
+      if (!("type" in p) || !p.id) {
+        console.log(`${rel}: ${"errors" in p ? p.errors.join("; ") : "not in Surface"}`);
+        continue;
+      }
+      const cur = snap.byId.get(p.id);
+      if (!cur) {
+        console.log(`${rel}: deleted in Surface`);
+        continue;
+      }
+      console.log(bold(`${rel}`) + dim(`  (file rev ${p.rev ?? "?"}, Surface rev ${cur.rev})`));
+      const t = snap.typeMap.get(cur.type_id)!;
+      if (cur.title !== p.title) console.log(`  title: ${red(cur.title)} → ${green(p.title)}`);
+      if (t.id !== p.type.id) console.log(`  type: ${red(t.key)} → ${green(p.type.key)}`);
+      const was = fieldsByKey(cur, t);
+      for (const f of p.type.fields) {
+        const a1 = JSON.stringify(was[f.key] ?? null), b1 = JSON.stringify(p.fields[f.key] ?? null);
+        if (a1 !== b1) console.log(`  ${f.key}: ${red(a1)} → ${green(b1)}`);
+      }
+      if (cur.body !== p.body) console.log(`  body: changed (${cur.body.length} → ${p.body.length} chars)`);
+      for (const e of p.errors) console.log(`  ${red("✗")} ${e}`);
+    }
+  },
+
+  async types(a) {
+    await requireUser();
+    const ws = await workspaceId(a);
+    const types = await fetchTypes(ws);
+    if (a.flags.json) return console.log(JSON.stringify(types, null, 2));
+    table([["KEY", "NAME", "FOLDER", "FIELDS"], ...types.map((t) => [t.key + (t.is_builtin ? " *" : ""), t.name, t.folder ?? "", t.fields.map((f) => f.key).join(", ") || "-"])]);
+  },
+
+  async type(a) {
+    await requireUser();
+    const ws = await workspaceId(a);
+    const [sub, key] = a._;
+    const co = findCheckout();
+    const types = await fetchTypes(ws);
+    if (sub === "add") {
+      if (!key) throw new UserError("Usage: surface type add <key> [--name Name] [--folder Folder] [--icon x]");
+      const name = flag(a, "name") ?? key.replace(/_/g, " ").replace(/\b\w/g, (m) => m.toUpperCase());
+      const { error } = await sb().from("types").insert({ workspace_id: ws, key, name, folder: flag(a, "folder") ?? `${name}s`, icon: flag(a, "icon") ?? null });
+      if (error) throw dbError(error.code === "23505" ? { message: `A type "${key}" already exists.` } : error);
+      console.log(green(`Added type "${key}" (${name}). Add fields with: surface field add ${key} <field> --kind <kind>`));
+    } else if (sub === "show") {
+      const t = typeByKey(types, key ?? "");
+      if (a.flags.json) return console.log(JSON.stringify(t, null, 2));
+      console.log(`${bold(t.name)} (${t.key})${t.is_builtin ? dim(" built in") : ""}  folder: ${t.folder ?? "-"}`);
+      table([["FIELD", "KIND", "DETAILS"], ...t.fields.map((f) => [f.key, f.kind, fieldDetails(f, types)])]);
+    } else if (sub === "edit") {
+      const t = typeByKey(types, key ?? "");
+      const patch: Record<string, unknown> = {};
+      if (flag(a, "name")) patch.name = flag(a, "name");
+      if (flag(a, "folder")) patch.folder = flag(a, "folder");
+      if (flag(a, "icon")) patch.icon = flag(a, "icon");
+      if (flag(a, "key")) patch.key = flag(a, "key");
+      if (!Object.keys(patch).length) throw new UserError("Nothing to change: use --name, --key, --folder or --icon.");
+      const { error } = await sb().from("types").update(patch).eq("id", t.id);
+      if (error) throw dbError(error);
+      console.log(green(`Updated type "${t.key}".`));
+    } else if (sub === "rm" || sub === "remove") {
+      const t = typeByKey(types, key ?? "");
+      if (t.is_builtin) throw new UserError(`"${t.key}" is built in and can't be removed.`);
+      const all = await fetchRecords(ws, { typeIds: [t.id], includeDeleted: true });
+      const live = all.filter((r) => !r.deleted_at);
+      const into = flag(a, "move-to");
+      if (live.length && into) {
+        const dest = typeByKey(types, into);
+        for (const r of live) {
+          const res = await pushRecord({ workspace: ws, id: r.id, baseRev: r.rev, type: dest.key, title: r.title, fields: carryFields(r, t, dest), body: r.body, folder: dest.folder });
+          if (!res.ok) throw new UserError(`Couldn't move "${r.title}": ${res.message}`);
+        }
+        console.log(`Moved ${live.length} record(s) to "${dest.key}" (matching fields kept).`);
+      } else if (live.length && !a.flags.force) {
+        throw new UserError(`"${t.key}" has ${live.length} record(s). Use --move-to <type> to keep them, or --force to delete them too.`);
+      }
+      const leftovers = into ? all.filter((r) => r.deleted_at) : all;
+      if (leftovers.length) {
+        const { error } = await sb().from("records").delete().in("id", leftovers.map((r) => r.id));
+        if (error) throw dbError(error);
+      }
+      const { error } = await sb().from("types").delete().eq("id", t.id);
+      if (error) throw dbError(error);
+      console.log(green(`Removed type "${t.key}".`));
+    } else throw new UserError("Usage: surface type [add|show|edit|rm] <key> …");
+    await refreshCheckout(co);
+  },
+
+  async field(a) {
+    await requireUser();
+    const ws = await workspaceId(a);
+    const [sub, typeKey, key] = a._;
+    const co = findCheckout();
+    const types = await fetchTypes(ws);
+    const t = typeByKey(types, typeKey ?? "");
+    let fields: FieldDef[] = t.fields.map((f) => ({ ...f }));
+    if (sub === "add") {
+      if (!key) throw new UserError("Usage: surface field add <type> <key> --kind <kind> [--options a,b] [--target type] [--multiple] [--required] [--name Label]");
+      const kind = (flag(a, "kind") ?? "text") as Kind;
+      if (!KINDS.includes(kind)) throw new UserError(`--kind must be one of: ${KINDS.join(", ")}`);
+      const f: Record<string, unknown> = { key, kind };
+      if (flag(a, "name")) f.name = flag(a, "name");
+      if (kind === "select" || kind === "multi_select") {
+        const opts = list(flag(a, "options"));
+        if (!opts) throw new UserError(`A ${kind} field needs --options a,b,c`);
+        f.options = opts;
+      }
+      if (kind === "link") {
+        const target = flag(a, "target");
+        if (target) f.target = target === t.key ? t.id : typeByKey(types, target).id;
+        f.multiple = !!a.flags.multiple;
+      }
+      if (a.flags.required) f.required = true;
+      fields.push(f as unknown as FieldDef);
+    } else if (sub === "rm" || sub === "remove") {
+      const f = fieldByKey(t, key ?? "");
+      fields = fields.filter((x) => x.id !== f.id);
+    } else if (sub === "edit") {
+      const f = fields.find((x) => x.key === key);
+      if (!f) throw new UserError(`Type "${t.key}" has no field "${key}".`);
+      if (flag(a, "key")) f.key = flag(a, "key")!;
+      if (flag(a, "name")) f.name = flag(a, "name")!;
+      if (flag(a, "kind")) {
+        const kind = flag(a, "kind") as Kind;
+        if (!KINDS.includes(kind)) throw new UserError(`--kind must be one of: ${KINDS.join(", ")}`);
+        f.kind = kind;
+      }
+      if (flag(a, "options")) f.options = list(flag(a, "options"));
+      for (const o of list(flag(a, "add-option")) ?? []) f.options = [...(f.options ?? []), o].filter((v, i, arr) => arr.indexOf(v) === i);
+      for (const o of list(flag(a, "remove-option")) ?? []) f.options = (f.options ?? []).filter((x) => x !== o);
+      if (a.flags.required) f.required = true;
+      if (a.flags.optional) delete f.required;
+      if (a.flags.multiple) f.multiple = true;
+      if (a.flags.single) f.multiple = false;
+      if (flag(a, "target")) f.target = typeByKey(types, flag(a, "target")!).id;
+    } else throw new UserError("Usage: surface field [add|edit|rm] <type> <key> …");
+    const { error } = await sb().from("types").update({ fields }).eq("id", t.id);
+    if (error) throw dbError(error);
+    console.log(green(`${sub === "add" ? "Added" : sub === "edit" ? "Updated" : "Removed"} field "${key}" on "${t.key}".`));
+    if (sub === "rm" || sub === "remove") console.log(dim("Its values were removed from every record (they stay in history)."));
+    if (sub === "edit" && (a.flags["remove-option"] || flag(a, "kind"))) console.log(dim("Existing values that no longer fit are left as they are; `surface check` lists them."));
+    await refreshCheckout(co);
+  },
+
+  async new(a) {
+    await requireUser();
+    const ws = await workspaceId(a);
+    const co = findCheckout();
+    const [typeKey, title, ...assigns] = a._;
+    if (!typeKey || !title) throw new UserError('Usage: surface new <type> "Title" [field=value …] [--body "text"]');
+    const types = await fetchTypes(ws);
+    const t = typeByKey(types, typeKey);
+    const { fields, notices } = await applyAssignments(ws, co, t, {}, assigns);
+    const res = await pushRecord({ workspace: ws, id: null, baseRev: null, type: t.key, title, fields, body: flag(a, "body") ?? "" });
+    if (!res.ok) throw new UserError(res.message);
+    for (const n of notices) console.log(dim(`  ${n}`));
+    await refreshCheckout(co);
+    const p = co?.state.records[res.record.id]?.path;
+    console.log(green(`Created ${t.key} "${title}" (${res.record.id})${p ? ` → ${p}` : ""}`));
+  },
+
+  async set(a) {
+    await requireUser();
+    const ws = await workspaceId(a);
+    const co = findCheckout();
+    const [ref, ...assigns] = a._;
+    if (!ref || !assigns.length) throw new UserError("Usage: surface set <id or name> field=value … (title=…, type=…, body=… also work)");
+    const r = await findRecord(ws, ref, co);
+    if (co && localEdits(co).has(r.id)) throw new UserError(`${co.state.records[r.id].path} has unpushed edits. Push them first, or pull --force to discard.`);
+    const types = await fetchTypes(ws);
+    let t = types.find((x) => x.id === r.type_id)!;
+    let title = r.title;
+    let body = r.body;
+    const rest: string[] = [];
+    for (const s of assigns) {
+      const [k, v = ""] = s.split(/=(.*)/s, 2);
+      if (k === "title") title = v;
+      else if (k === "body") body = v;
+      else if (k === "type") t = typeByKey(types, v);
+      else rest.push(s);
+    }
+    const prevType = types.find((x) => x.id === r.type_id)!;
+    const base = t.id === prevType.id ? fieldsByKey(r, t) : carryFields(r, prevType, t);
+    const { fields, notices } = await applyAssignments(ws, co, t, base, rest);
+    const res = await pushRecord({ workspace: ws, id: r.id, baseRev: r.rev, type: t.key, title, fields, body });
+    if (!res.ok) throw new UserError(res.message);
+    for (const n of notices) console.log(dim(`  ${n}`));
+    await refreshCheckout(co);
+    console.log(res.record.rev === r.rev ? "No change." : green(`Updated "${title}" (rev ${res.record.rev}).`));
+  },
+
+  async show(a) {
+    await requireUser();
+    const ws = await workspaceId(a);
+    const co = findCheckout();
+    const r = await findRecord(ws, a._.join(" "), co, { includeDeleted: true });
+    const types = await fetchTypes(ws);
+    const t = types.find((x) => x.id === r.type_id)!;
+    if (a.flags.json) return console.log(JSON.stringify({ ...r, type: t.key, fields: fieldsByKey(r, t) }, null, 2));
+    const titles = new Map((await fetchRecords(ws)).map((x) => [x.id, x.title]));
+    if (r.deleted_at) console.log(red(`(deleted ${r.deleted_at})`));
+    process.stdout.write(render(r, t, (id) => titles.get(id) ?? id));
+  },
+
+  async query(a) {
+    await requireUser();
+    const ws = await workspaceId(a);
+    const types = await fetchTypes(ws);
+    const t = a._[0] ? typeByKey(types, a._[0]) : null;
+    let rows = await fetchRecords(ws, { typeIds: t ? [t.id] : undefined, includeDeleted: !!a.flags.deleted });
+    if (a.flags.deleted) rows = rows.filter((r) => r.deleted_at);
+    const titles = new Map((t ? await fetchRecords(ws) : rows).map((r) => [r.id, r.title]));
+    const typeOf = new Map(types.map((x) => [x.id, x]));
+    const wheres = ([] as string[]).concat((a.flags.where as string | undefined) ?? []).flatMap((w) => w.split(/\s*&&\s*/));
+    for (const w of wheres) {
+      const m = w.match(/^([a-z_][a-z0-9_]*)\s*(!=|>=|<=|=|>|<|~)\s*(.*)$/);
+      if (!m) throw new UserError(`Can't read --where "${w}". Use key=value, key!=value, key>value, key<value or key~text.`);
+      const [, k, op, want] = m;
+      rows = rows.filter((r) => {
+        const rt = typeOf.get(r.type_id)!;
+        let v: unknown;
+        if (k === "title") v = r.title;
+        else if (k === "type") v = rt.key;
+        else {
+          const f = rt.fields.find((f) => f.key === k);
+          if (!f) return false;
+          v = r.fields[f.id];
+          if (f.kind === "link" && v != null) v = (Array.isArray(v) ? v : [v]).map((id) => titles.get(id as string) ?? id).join(", ");
+        }
+        const s = v == null ? "" : Array.isArray(v) ? v.join(", ") : String(v);
+        const num = (x: string) => (x !== "" && !isNaN(Number(x)) ? Number(x) : x);
+        switch (op) {
+          case "=": return s.toLowerCase() === want.toLowerCase() || (Array.isArray(v) && v.map(String).map((x) => x.toLowerCase()).includes(want.toLowerCase()));
+          case "!=": return s.toLowerCase() !== want.toLowerCase();
+          case "~": return s.toLowerCase().includes(want.toLowerCase());
+          case ">": return s !== "" && num(s) > num(want);
+          case "<": return s !== "" && num(s) < num(want);
+          case ">=": return s !== "" && num(s) >= num(want);
+          case "<=": return s !== "" && num(s) <= num(want);
+        }
+        return false;
+      });
+    }
+    const sortKey = flag(a, "sort");
+    if (sortKey) {
+      const desc = sortKey.startsWith("-");
+      const k = sortKey.replace(/^-/, "");
+      const val = (r: RecordRow) => {
+        if (k === "title") return r.title;
+        const f = typeOf.get(r.type_id)!.fields.find((f) => f.key === k);
+        const v = f ? r.fields[f.id] : undefined;
+        return v == null ? "" : String(v);
+      };
+      rows.sort((x, y) => (val(x) < val(y) ? -1 : val(x) > val(y) ? 1 : 0) * (desc ? -1 : 1));
+    }
+    const limit = flag(a, "limit") ? Number(flag(a, "limit")) : undefined;
+    if (limit) rows = rows.slice(0, limit);
+    if (a.flags.json) {
+      return console.log(JSON.stringify(rows.map((r) => {
+        const rt = typeOf.get(r.type_id)!;
+        return { id: r.id, type: rt.key, title: r.title, rev: r.rev, fields: fieldsByKey(r, rt), updated_at: r.updated_at };
+      }), null, 2));
+    }
+    const cols = t ? t.fields.slice(0, 5) : [];
+    const show = (r: RecordRow, f: FieldDef) => {
+      const v = r.fields[f.id];
+      if (v == null) return "";
+      if (f.kind === "link") return (Array.isArray(v) ? v : [v]).map((id) => titles.get(id as string) ?? id).join(", ");
+      return Array.isArray(v) ? v.join(", ") : String(v);
+    };
+    table([["ID", ...(t ? [] : ["TYPE"]), "TITLE", ...cols.map((f) => f.key.toUpperCase())], ...rows.map((r) => [r.id, ...(t ? [] : [typeOf.get(r.type_id)!.key]), r.title, ...cols.map((f) => show(r, f))])]);
+    console.log(dim(`${rows.length} record(s)`));
+  },
+
+  async rm(a) {
+    await requireUser();
+    const ws = await workspaceId(a);
+    const co = findCheckout();
+    const r = await findRecord(ws, a._.join(" "), co);
+    const { error } = await sb().from("records").update({ deleted_at: new Date().toISOString() }).eq("id", r.id);
+    if (error) throw dbError(error);
+    await refreshCheckout(co);
+    console.log(green(`Deleted "${r.title}" (${r.id}). Undo with: surface restore ${r.id}`));
+  },
+
+  async restore(a) {
+    await requireUser();
+    const ws = await workspaceId(a);
+    const co = findCheckout();
+    const r = await findRecord(ws, a._.join(" "), co, { includeDeleted: true });
+    if (!r.deleted_at) return console.log(`"${r.title}" isn't deleted.`);
+    const { error } = await sb().from("records").update({ deleted_at: null }).eq("id", r.id);
+    if (error) throw dbError(error);
+    await refreshCheckout(co);
+    console.log(green(`Restored "${r.title}".`));
+  },
+
+  async history(a) {
+    await requireUser();
+    const ws = await workspaceId(a);
+    const r = await findRecord(ws, a._.join(" "), findCheckout(), { includeDeleted: true });
+    const { data, error } = await sb().from("history").select("rev,op,title,changed_at,changed_by").eq("record_id", r.id).order("rev");
+    if (error) throw dbError(error);
+    table([["REV", "OP", "WHEN", "TITLE"], ...data.map((h) => [String(h.rev), h.op, new Date(h.changed_at).toLocaleString(), h.title])]);
+  },
+
+  async skills() {
+    await requireUser();
+    const co = requireCheckout();
+    writeAgentFiles(co, await fetchTypes(co.config.workspace));
+    console.log(green("Wrote AGENTS.md, .agents/skills/surface/SKILL.md, .claude/skills/surface/SKILL.md and .surface/types/."));
+  },
+};
+
+function fieldDetails(f: FieldDef, types: TypeRow[]) {
+  const bits: string[] = [];
+  if (f.options) bits.push(f.options.join(", "));
+  if (f.kind === "link") bits.push(`→ ${types.find((t) => t.id === f.target)?.key ?? "any"}${f.multiple ? " (several)" : ""}`);
+  if (f.required) bits.push("required");
+  if (f.name.toLowerCase() !== f.key.replace(/_/g, " ")) bits.push(`label "${f.name}"`);
+  return bits.join("; ");
+}
+
+/** When a record changes type, keep values whose field key and kind match. */
+function carryFields(r: RecordRow, from: TypeRow, to: TypeRow): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const f of from.fields) {
+    const g = to.fields.find((x) => x.key === f.key && x.kind === f.kind);
+    if (g && r.fields[f.id] !== undefined) out[g.key] = r.fields[f.id];
+  }
+  return out;
+}
+
+async function applyAssignments(ws: string, co: Checkout | null, t: TypeRow, base: Record<string, unknown>, assigns: string[]) {
+  const fields = { ...base };
+  const notices: string[] = [];
+  let resolver: { link(label: string, target?: string): string | null } | null = null;
+  for (const s of assigns) {
+    const m = s.match(/^([^=]+)=(.*)$/s);
+    if (!m) throw new UserError(`Expected field=value, got "${s}"`);
+    const def = fieldByKey(t, m[1].trim());
+    if (def.kind === "link" && !resolver) {
+      const records = await fetchRecords(ws);
+      const byId = new Map(records.map((r) => [r.id, r]));
+      resolver = co
+        ? makeResolver(co, { types: [], typeMap: new Map(), records, byId })
+        : { link: (label, target) => {
+            if (byId.has(label)) return !target || byId.get(label)!.type_id === target ? label : null;
+            const hits = records.filter((r) => r.title.toLowerCase() === label.toLowerCase() && (!target || r.type_id === target));
+            return hits.length === 1 ? hits[0].id : null;
+          } };
+    }
+    const n = normalize(def, cliValue(def, m[2]), resolver ?? { link: () => null });
+    if (n.error) throw new UserError(`${def.key}: ${n.error}`);
+    if (n.notice) notices.push(`${def.key}: ${n.notice}`);
+    fields[def.key] = n.value;
+  }
+  return { fields, notices };
+}
+
+function report(results: FileResult[], dry: boolean) {
+  const label: Record<FileResult["status"], string> = {
+    unchanged: dim("ok"),
+    pushed: green(dry ? "would push" : "pushed"),
+    created: green(dry ? "would add" : "added"),
+    rejected: red("rejected"),
+    conflict: red("conflict"),
+    untracked: yellow("new"),
+    error: red("error"),
+  };
+  for (const r of results) {
+    if (r.status === "unchanged" && !r.notices.length) continue;
+    console.log(`${label[r.status].padEnd(tty ? 19 : 10)} ${r.path}`);
+    for (const n of r.notices) console.log(dim(`    ~ ${n}`));
+    for (const e of r.errors) console.log(red(`    ✗ ${e}`));
+  }
+  const count = (s: FileResult["status"]) => results.filter((r) => r.status === s).length;
+  const parts = [
+    count("pushed") && `${count("pushed")} ${dry ? "to push" : "pushed"}`,
+    count("created") && `${count("created")} ${dry ? "to add" : "added"}`,
+    count("rejected") && `${count("rejected")} rejected`,
+    count("conflict") && `${count("conflict")} conflict(s)`,
+    count("untracked") && `${count("untracked")} new (use --new to add)`,
+    count("error") && `${count("error")} error(s)`,
+  ].filter(Boolean);
+  console.log(parts.length ? parts.join(", ") : "Nothing to push.");
+}
+
+const HELP = `surface: typed records in Supabase, as Markdown files you can use in Obsidian
+
+Account
+  signup | login | logout | whoami
+  workspace [list | create <name> | delete <name> --yes]
+
+Checkout
+  init <folder> [--workspace <id|name> | --create <name>] [--layout type|flat|folder] [--only type,type]
+  pull [--force]                      database → files (keeps files with unpushed edits)
+  push [files] [--new] [--dry-run]    files → database: normalize, validate, check rev
+  status | diff [files] | check       what's changed, and whether it's valid
+  skills                              regenerate AGENTS.md and agent skills
+
+Types
+  types                               list types
+  type add <key> [--name N] [--folder F]
+  type show <key> | type edit <key> [--name --key --folder --icon]
+  type rm <key> [--move-to <type> | --force]
+  field add <type> <key> --kind <kind> [--options a,b] [--target <type>] [--multiple] [--required] [--name Label]
+  field edit <type> <key> [--key --name --kind --options --add-option --remove-option --required --optional --multiple --single --target]
+  field rm <type> <key>
+  kinds: ${KINDS.join(", ")}
+
+Records
+  new <type> "Title" [field=value …] [--body text]
+  set <id|name> field=value …         (also title=, type=, body=)
+  show <id|name> [--json]
+  query [type] [--where "status=doing && due<2026-11-01"] [--sort -due] [--limit n] [--json]
+  rm <id|name> | restore <id|name> | history <id|name>
+
+Options: --workspace <id|name> works with any command outside a checkout.
+`;
+
+async function main() {
+  const [cmd, ...rest] = process.argv.slice(2);
+  if (!cmd || cmd === "help" || cmd === "--help" || cmd === "-h") return void console.log(HELP);
+  const fn = commands[cmd];
+  if (!fn) throw new UserError(`Unknown command "${cmd}". Run \`surface help\`.`);
+  const args = parseArgs(rest);
+  if (args.flags.help) return void console.log(HELP);
+  await fn(args);
+}
+
+main()
+  .catch((e) => {
+    if (e instanceof UserError) console.error(red(`✗ ${e.message}`));
+    else console.error(e);
+    process.exitCode = 1;
+  })
+  .finally(() => {
+    sb().auth.stopAutoRefresh().catch(() => {});
+    setTimeout(() => process.exit(), 10).unref();
+  });

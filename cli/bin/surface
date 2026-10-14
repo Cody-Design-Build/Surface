@@ -1,0 +1,4 @@
+#!/bin/sh
+# Runs the TypeScript source directly (Node >= 23.6 strips types).
+DIR="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
+exec node --no-warnings "$DIR/src/main.ts" "$@"
