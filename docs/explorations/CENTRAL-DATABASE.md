@@ -40,6 +40,32 @@ So the real question isn't "database or files." It's **where the truth lives and
 - Offline edits are queued as changes. On reconnect, the server accepts them, rejects them, or flags a clash.
 - This is how Linear, Notion and Figma work. Off-the-shelf sync engines do it on Postgres: PowerSync, ElectricSQL, Zero. Supabase fits here too.
 
+### B2. Central database, with a Git-style checkout (pull, edit, push)
+
+**Raised Oct 13:** the "BuildBase v2" path: Supabase/Postgres with one generic `types` table, one generic `records` table and a `links` table, so access rules are written once and there's no new table per type.
+
+- **The database is the one truth.** The team uses a web app.
+- **Files are a checkout, not a live mirror:**
+  - `surface pull` writes the workspace (or just some projects) as Markdown files;
+  - people and agents edit them;
+  - `surface push` sends the changes back.
+- **Each file carries a revision number** in its front matter. On push, Surface checks it, validates the fields, and applies the change.
+  - If the record changed in the database since the pull, that file is **rejected, like a rejected `git push`.** The agent pulls again and reapplies its edit.
+  - Text bodies changed on both sides get a simple three-way text merge; if that fails, it's flagged.
+- **Optional:** a watcher that pushes automatically on save, for Obsidian users.
+- **What's dropped compared with the current spec:**
+  - continuous automatic merging;
+  - every device as an equal;
+  - live sync of local files;
+  - solo use with no account (unless there's a local-only mode);
+  - offline use in the browser.
+- **What's kept:**
+  - agents editing real files;
+  - Obsidian or any editor, between pull and push;
+  - partial checkout;
+  - "leave any time" (pull everything, walk away).
+- **Why it's much simpler:** optimistic checks ("has it changed since you pulled?") replace CRDTs and the continuous reconcile engine. Agents handle a pull, edit, push loop well.
+
 ### C. Git itself
 
 - Files in a Git repository, with a central remote; Surface commits, pulls and pushes automatically.
