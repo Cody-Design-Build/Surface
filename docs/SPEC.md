@@ -234,10 +234,10 @@ The ledger is a product asset as well as a document. It belongs on the website: 
 
 - **`surface`, the command-line tool (built):** auth, workspaces, types and fields, pull/push, record operations, queries, nesting, folders, saved trees and generated agent guidance. TypeScript on Node. See `cli/README.md`.
 - **Markdown checkout (built):** the foundational surface for editors and agents. A signed-in CLI connects file edits to the database; reading and editing an existing local copy can happen offline.
-- **Dedicated Surface app (planned):** Obsidian-like writing and browsing with Bear/Margin visual polish, plus management of workspaces, teams, permissions, types, fields and relationships (§9).
+- **Dedicated Surface app (in progress, local mode):** Obsidian-like writing and browsing with Bear/Margin visual polish, plus management of workspaces, teams, permissions, types, fields and relationships (§9).
 - **Obsidian plugin (planned):** a Views panel (§5a), live embeds, push on save, validation messages and type-aware properties. It extends the Markdown surface.
 - **Browser experience (planned):** the dedicated app's hosted mode: team access without an install, meeting the onboarding bar in §1 (§9).
-- **Local server (planned):** `surface serve`, the CLI's long-running mode. It serves the dedicated app on localhost and gives it the checkout, commands and agent runs (§9).
+- **Local server (built, first version):** `surface serve`, the CLI's long-running mode. It serves the dedicated app on localhost and keeps the checkout current. Commands and agent runs are planned (§9).
 - **Generated and external surfaces (direction):** reports, widgets, artifacts, web interfaces and canvases. Formats, supported hosts, scoped access and data connections remain open.
 - **MCP (later):** an additional access path for agents that cannot run the CLI or see files.
 
@@ -841,7 +841,21 @@ The app gives people a coherent home for their work. Other surfaces can expose a
 - **Why web first:** the fastest way to build and change (instant reload, no packaging, signing or update pipeline), one interface for both modes, and it matches how David runs apps on Omarchy. The same pattern as Jupyter or DeepSeek Harness (`dsh web`).
 - **Electron (planned):** wraps the same page and starts the same server inside itself, with no interface rewrite. It comes in when one of these is needed: a one-download install for non-technical Mac users who need local files or agents; a global capture hotkey or menu-bar presence; or Mac polish beyond what installed web apps allow.
 
-**Open:** the editor and views stack, first screens, and whether `surface serve` starts at login (launchd on the Mac, a systemd user service on Linux) or on demand. The earlier research in `research/APP-TECH.md` is input, not a decision to restore a Rust core, local database or CRDT engine. Supabase remains the truth.
+### Built so far (local mode)
+
+`app/` (React, CodeMirror 6, Vite), served by `surface serve`:
+
+- **Sidebar:** the Views tree from `.surface/views/sidebar.yaml`, or a group per type when there is none. Twirl-downs, add a page inside any record, slide away with ⌘\.
+- **Editor:** live preview. Markdown markers step aside except where the cursor is. It renders headings, emphasis, inline and fenced code, links, `[[wikilinks]]` (with title completion), #tags, task checkboxes, lists, quotes, callouts (`> [!note]`), dividers and images (`![](…)`, `![[…]]`). Slash menu for blocks; shortcuts for bold, italic, code, tasks and headings.
+- **Page:** a title above typed properties (select, multi-select, date, checkbox, number, text and link pickers), parent breadcrumbs, pages inside, and links from other records. A leading `# Title` heading is hidden while editing and kept in step with the title in the file.
+- **Groups:** a sidebar group opens as a table of its records.
+- **Find:** ⌘K finds by title and full text, or creates a page.
+- **Saving:** autosave through the same write path as `surface push`, with revision checks. A conflict offers keep mine or use theirs. Changes made elsewhere arrive within a few seconds.
+- **Look:** light and dark, one accent, system fonts.
+
+In this version the app reaches Supabase through the local server, using the CLI's sign-in. Hosted mode needs the app to talk to Supabase directly (planned). Not built yet: shell commands and agent runs, drag-and-drop nesting, image paste, rendered tables, board views, filters and sorting in tables, tabs.
+
+**Open:** first screens beyond the editor, the management flows (types, fields, team), and whether `surface serve` starts at login (launchd on the Mac, a systemd user service on Linux) or on demand. The earlier research in `research/APP-TECH.md` is input, not a decision to restore a Rust core, local database or CRDT engine. Supabase remains the truth.
 
 **Obsidian remains a supported surface.** The planned plugin improves its checkout experience with the Views panel, composite-page embeds, push on save and validation. It is not a condition for whether Surface gets its own app.
 
@@ -900,7 +914,7 @@ The app gives people a coherent home for their work. Other surfaces can expose a
 **Clients**
 
 14. Obsidian plugin scope for a first version: Views panel only, or embeds and push on save too?
-15. The dedicated app's editor and views stack, first screens and management flows, and whether `surface serve` starts at login or on demand (§9).
+15. The dedicated app's first screens beyond the editor, its management flows, and whether `surface serve` starts at login or on demand (§9).
 16. Where user workflow skills live: `.agents/skills/` or a visible `Skills/` folder (`docs/AGENT-INTEGRATION.md`).
 
 **Parked**

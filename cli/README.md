@@ -32,6 +32,15 @@ cd ~/Surface
 
 Every workspace starts with one built-in type, **page** (title and body only).
 
+## Run the app
+
+```sh
+cd app && npm install && npm run build   # once, and after pulling app changes
+cd ~/Surface && surface serve            # serves the app on http://127.0.0.1:4317
+```
+
+Open the link it prints once (it carries a sign-in token), then install the page as an app: Omarchy's Install Web App, Chrome's Install, or Safari's Add to Dock. `--port` changes the port; `--open` opens the browser. The server listens on 127.0.0.1 only and keeps the checkout current while it runs.
+
 ## Build your types
 
 ```sh

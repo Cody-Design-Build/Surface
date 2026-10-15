@@ -19,7 +19,7 @@ import { writeAgentFiles } from "./skills.ts";
 // ---------------------------------------------------------------------------
 // Arguments
 // ---------------------------------------------------------------------------
-const BOOL = new Set(["force", "dry-run", "new", "json", "multiple", "single", "required", "optional", "deleted", "yes", "help", "all", "paths"]);
+const BOOL = new Set(["force", "dry-run", "new", "json", "multiple", "single", "required", "optional", "deleted", "yes", "help", "all", "paths", "open"]);
 
 interface Args {
   _: string[];
@@ -721,6 +721,19 @@ const commands: Record<string, Cmd> = {
     table([["KEY", "NAME", "REV", "UPDATED"], ...views.map((v) => [v.key, v.name, String(v.rev), new Date(v.updated_at).toLocaleString()])]);
   },
 
+  async serve(a) {
+    await requireUser();
+    const co = requireCheckout();
+    const { serve } = await import("./serve.ts");
+    const port = Number(flag(a, "port") ?? 4317);
+    const { link } = await serve(co, { port });
+    if (a.flags.open) {
+      const { spawn } = await import("node:child_process");
+      spawn(process.platform === "darwin" ? "open" : "xdg-open", [link], { stdio: "ignore", detached: true }).unref();
+    }
+    await new Promise(() => {}); // run until stopped
+  },
+
   async skills() {
     await requireUser();
     const co = requireCheckout();
@@ -842,6 +855,9 @@ Folders (where files live, in the folder layout)
   folders                             list folders with record counts
   mv <record> [<record> …] <folder>   move records (or: mv --type task --where "…" --to <folder>)
   folder rename <folder> <new>        move everything under a folder
+
+App
+  serve [--port 4317] [--open]        run the Surface app for this checkout on http://127.0.0.1
 
 Views tree (navigation; never moves files)
   tree [--paths] [--json]             show the sidebar tree
