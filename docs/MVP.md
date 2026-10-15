@@ -1,66 +1,71 @@
-# Surface MVP: a types engine on Supabase, plus a CLI, used from Obsidian
+# Surface MVP: the foundation and its first Markdown surface
 
-> **Oct 14 update:** beyond this plan, the MVP now has nesting (`parent`), the `link:` layout, folder commands and the Views tree (`surface tree`, `.surface/views/sidebar.yaml`). See SPEC §5a and §14.
+**Status: built Oct 14, 2026.** The MVP is a generic types engine on Supabase plus a TypeScript CLI. It implements the first and foundational surface: a Markdown checkout people and agents can read and edit. See [SPEC.md](SPEC.md) for the product direction and [the CLI guide](../cli/README.md) for usage.
 
-**Status:** built (Oct 14). Supabase project `surface` (ref `njzrcmzvubhexegbdoeh`, us-west-2); CLI in `cli/` (see `cli/README.md`); 11-step end-to-end test passing. The Open questions below were settled as: reject invalid values (safe fixes normalized and reported); TypeScript. First use case still to pick.
+The broader product is a headless, mutable database foundation with many surfaces. A dedicated app is planned for Obsidian-like writing and browsing, Bear/Margin visual polish, and team and type management. Reports, widgets, artifacts and external integrations are further possible surfaces. Those clients are not part of the built MVP.
 
-**Originally proposed** (Oct 13). The smallest version of Surface that can be tested immediately. `SPEC.md` stays the long-term design. This is stage 1 of it, with Obsidian standing in for the app.
+## What is built
 
-## What it is
-
-```
-Supabase (Postgres): types · records · links · history
-        ⇅  surface CLI  (pull · push · new · set · query · check)
-Markdown checkout in a folder  ←  Obsidian (reading, Bases views, editing) and agents
+```text
+Supabase: types · records · relationships · saved views · history · permissions
+        ⇅  surface CLI
+Markdown checkout  ←  Obsidian, another editor, or an agent
 ```
 
-- **No app, no local database, no sync engine.** Supabase is the truth, and the folder is a checkout.
-- **Obsidian is the UI:**
-  - its Bases provide the views, and work well because the generated front matter is clean and typed;
-  - editing a file and then running `surface push` (or an agent doing it) writes changes back.
-- **Agents** use the CLI plus a generated `AGENTS.md` and skills.
+- **Supabase is the truth.** Files are a checkout, with explicit pull/push and revision checks. There is no local database or automatic merge engine.
+- **Types can evolve.** Create and edit types and fields without adding new database tables. Fields have permanent internal IDs, so renaming a key preserves its values.
+- **Markdown is a working surface.** Read records, edit front matter and prose, or make a new page or task in Obsidian, then use the CLI to validate and push it.
+- **Safe normalization is reported.** Unambiguous dates, option case, numbers and checkboxes are normalized. Invalid values and stale revisions are rejected.
+- **Files and navigation are separate.** Type, flat, folder and `link:` layouts organize files. Saved YAML definitions describe navigation trees.
+- **Agents have exact tools and readable guidance.** The CLI handles records, types, fields, queries, folders and trees; every pull generates instructions and schema copies.
 
-## What it tests
+Markdown comes first because it is a shared working language for LLMs and humans. Front matter carries typed values and relationships, while the body carries prose. The same foundation can later support surfaces that do not use files at all.
 
-1. **Does a generic types engine remove the "new table for every type" pain?** Create a type and its relationships in minutes, with no migrations and no new access rules.
-2. **Does structured data stay clean** when people and agents edit through Obsidian, with validation on push?
-3. **Does the pull, edit, push loop feel OK** for you and for agents?
-4. **Does the file format work in Obsidian:** links, Bases and readable files?
+## What the MVP tests
 
-**Not tested yet:** the team experience for non-technical people (that needs the web app, step 2), live co-editing, offline-first use.
+1. Can people and agents define useful types and relationships without new tables or access rules for each type?
+2. Does structured data stay trustworthy when people edit plain files?
+3. Does the pull, edit, push workflow work well for humans and agents?
+4. Are the files readable and useful in Obsidian and other editors?
+5. Can file layouts, nesting and a query-driven navigation tree remain independent?
 
-## Database (sketch)
+**Still to validate with real work:** the first sustained use case, such as material tracking or procurement. The MVP does not establish the dedicated app experience, team onboarding, live co-editing, or external surface integrations.
+
+## Database
+
+Migrations are in [`supabase/migrations/`](../supabase/migrations/). The current project is `surface` (`njzrcmzvubhexegbdoeh`, us-west-2).
 
 | Table | Holds |
 |---|---|
-| `workspaces` | id, name |
-| `members` | workspace, user, role (roles flagged for later discussion) |
-| `types` | id, workspace, key (`task`), name, icon, default folder, `fields` (JSON list: field id, key, label, kind, choice options, link target type, required) |
-| `records` | id (time-sortable), workspace, type, title, `fields` (JSON keyed by **field id**), body (Markdown), `rev`, folder, created/updated by and at, deleted_at |
-| `links` | record, field, target: maintained from link fields, for backlinks and two-way relations |
-| `history` | record, rev, fields, body, who, when: written by a trigger |
+| `workspaces` | Shared workspace identity and name |
+| `members` | Workspace membership: owner, admin, member, viewer |
+| `types` | User-defined types and JSON field definitions with permanent field IDs |
+| `records` | Type, title, values keyed by field ID, body, folder, parent, revision, authorship and soft deletion |
+| `links` | Relationships maintained from link fields |
+| `history` | Record revisions, operations and attribution, written by a trigger |
+| `views` | Saved definitions, including the sidebar tree, with revision numbers |
 
-- **Access rules written once:** "member of this workspace" to read, and a role to write, on every table. No new rules per type.
-- **Server-side checks:** a `push_record(id, base_rev, fields, body)` function validates against the type, checks the revision, and applies the change atomically, or rejects it with a reason.
-- **Renaming a field** is a change to the type only (records are keyed by field id). The next pull rewrites the files.
+Row-level security protects the shared tables. Triggers validate writes and maintain revisions, history and links. `push_record` maps field keys to IDs and checks the caller's base revision; `save_view` checks saved-view revisions. Schema changes can leave older values that need attention; `surface check` reports those values rather than silently rewriting them.
 
-## CLI (sketch)
+## CLI
 
 | Command | Does |
 |---|---|
-| `surface login` | Supabase sign-in (email link) |
-| `surface init <folder>` | Connect a folder to a workspace and choose a layout |
-| `surface pull [--layout project\|type\|flat] [--only <project>]` | Write records as Markdown (each record once) |
-| `surface push [files]` | Validate, check revisions, apply; show anything rejected |
-| `surface status` | Unpushed edits, rejected files, open flags |
-| `surface new <type> "Title" [--field value]` | Create a record, then pull it |
-| `surface set <record> field=value` | Edit a field directly |
-| `surface query "<filter>"` | Search records (for agents) |
-| `surface types` | List, add and edit types and fields |
-| `surface check` | Validate the checkout without pushing |
-| `surface skills` | Regenerate `AGENTS.md` and `.agents/skills/` from the types |
+| `surface signup` / `login` | Sign up or sign in with email and password |
+| `surface init <dir> --create "Workspace"` | Create a workspace with its built-in page type and check it out |
+| `surface type …` / `field …` | Create and edit types and field definitions |
+| `surface pull` / `push [files]` | Database to files / file edits to database |
+| `surface push --new` | Import new Markdown files; type defaults to page |
+| `surface status` / `diff` / `check` | Inspect changes and validate without writing to the database |
+| `surface new <type> "Title" field=value` | Create a record |
+| `surface set <record> field=value` | Update a record |
+| `surface query [type] --where "key=value"` | Query records, optionally as JSON |
+| `surface layout` / `mv` / `folder rename` / `folders` | Inspect and change file organization |
+| `surface tree` / `views` | Work with saved navigation trees and list saved views |
+| `surface rm` / `restore` / `history` | Soft-delete, restore and inspect record history |
+| `surface skills` | Regenerate checkout guidance and schema copies |
 
-**Built in TypeScript with `supabase-js`,** compiled to a single binary.
+The CLI runs TypeScript source directly on Node 23.6 or newer; it is not compiled to a standalone binary.
 
 ## File format
 
@@ -77,21 +82,10 @@ project: "[[Kitchen Remodel (2243 Steiner)]]"
 Notes go here.
 ```
 
-- **Links are written by title,** and resolved back to IDs on push. Titles are unique within a checkout, as filenames.
-- **Two-way links:** only the stored side is written (`OBSIDIAN.md`). The reverse appears through Obsidian's backlinks and Bases.
+Records have stable IDs. Filenames are readable and unique within a checkout, with a short ID suffix when needed; titles can repeat. Link fields render as quoted wikilinks and resolve back to record IDs on push. The database maintains reverse relationships; the checkout writes the stored side.
 
-## Plan
+## Verification and next work
 
-1. **A new, separate Supabase project.** Not BuildBase's.
-2. **Schema and access rules, plus `push_record`.** A few days.
-3. **CLI:** login, init, pull, push, status, new, set. About a week.
-4. **types, query, check, skills.** A few days.
-5. **Try it on one real use case,** for example Steiner material tracking or procurement, alongside Notion, not replacing it.
+[`cli/test/e2e.ts`](../cli/test/e2e.ts) defines 15 end-to-end scenarios against the real Supabase project. Run `npm test` from `cli/` with the test account configured. It creates and deletes a temporary test workspace.
 
-**Timebox: about 2 to 3 weeks of spare time.** Then decide: keep going (step 2 is a simple web app for the team on the same database), adjust, or stop.
-
-## Open
-
-1. Which real use case to test with first?
-2. Validation strictness on push: reject invalid values, or accept and flag?
-3. Is the CLI's language TypeScript (fits your Next/Supabase stack) or something else?
+Next work and unresolved release ordering are recorded in [SPEC §14](SPEC.md#14-build-plan). The Markdown workflow establishes the foundation; the dedicated app and other surfaces build on it.

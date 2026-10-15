@@ -1,126 +1,88 @@
-# Surface: how outside agents work in a workspace
+# Surface: agents, shared data and surfaces
 
-> **Oct 14:** the MVP writes one generated skill (`.agents/skills/surface/SKILL.md`), not the five `surface-*` skills sketched below, and it has no `.surface/flags/`. Problems are reported by `surface push`, `status` and `check`. The ideas below remain the target where they still fit.
+**Current direction, Oct 14, 2026.** Agents help humans work with Surface's headless, mutable database foundation. Markdown is the first and foundational bridge; the CLI is the built interface for exact operations. See [SPEC §10](SPEC.md#10-agents).
 
-**Status:** Bring-your-own-agent and files-first are **decided** (Oct 13). The rest is **leaning** unless marked open. Summary in `SPEC.md` §10.
+## The agent's role
 
-## The idea
+Bring your own agent. Surface does not require one particular model or provider. An agent can help define types and relationships, organize records, answer questions, perform updates and create a useful surface for the work at hand.
 
-**Surface doesn't ship an agent.** You bring your own: Claude Code, Codex, Cursor, Gemini CLI, Copilot, Hermes or whatever comes next.
+Markdown is the native working language of LLMs and a practical shared medium with humans. An agent can read and edit the same files a person opens in Obsidian or another editor. The foundation supplies shared storage, typed data, validation, permissions and history independently of the editor or agent.
 
-- **The workspace is a folder of Markdown files,** so any agent that can read and write files can already work in it. No MCP server, API or account is needed.
-- **What an agent needs is knowledge, not access:**
-  - what the files mean;
-  - how records, types, IDs and links work;
-  - the rules (edit in place, never delete without asking);
-  - the team's workflows.
-- **Surface provides that knowledge as plain files,** using the two open standards agents already read:
-  - **`AGENTS.md`:** the entry point;
-  - **Agent Skills (`SKILL.md` folders):** the how-to.
+An existing checkout can be read and edited offline without an API connection. Pulling fresh data or applying those edits to the database requires the CLI and a signed-in account. The MVP has no background service or automatic file watcher.
 
-This is the same no-lock-in idea applied to agents: **no agent lock-in either.** Switch agents, or mix them on one team, and the workspace works the same.
+## Two supported ways to work
 
-**Precedent:** Obsidian's CEO publishes `kepano/obsidian-skills` (about 49k stars), Agent Skills that teach any agent Obsidian's Markdown, Bases and Canvas formats. Surface does the same for its own conventions. It ships with the workspace instead of as a separate install.
+**Prefer the CLI for exact changes:**
 
-## The standards (checked Oct 13, 2026)
-
-- **`AGENTS.md`** ([agents.md](https://agents.md/)): a README for agents, used by over 60k projects.
-  - Read by Codex, Cursor, Gemini CLI, Copilot, Zed, Amp, Aider and others.
-  - **Claude Code reads it since 2.1.277 (Sep 18, 2026),** but only when there's no `CLAUDE.md` in the folder.
-- **Agent Skills** ([agentskills.io](https://agentskills.io/specification)): a folder containing `SKILL.md` (a name, a description, then instructions), plus optional `references/`, `scripts/` and `assets/`.
-  - **Progressive disclosure:** agents see only names and descriptions until a skill is relevant, then load it. Many skills cost almost nothing until used.
-  - **Project skills live in `.agents/skills/`.** It's read by Codex (its primary location), Cursor, Gemini CLI, VS Code Copilot, Zed, Amp, Goose, OpenCode and others.
-  - **Claude Code is the exception:** it reads only `.claude/skills/`, not `.agents/skills/`. Cursor also reads `.claude/skills/` for compatibility.
-
-## What Surface writes into a workspace
-
+```sh
+surface type add project
+surface type add task
+surface field add task project --kind link --target project
+surface new project "Kitchen Remodel"
+surface new task "Order cabinets" project="Kitchen Remodel"
+surface query task --where "project=Kitchen Remodel" --json
+surface set "Order cabinets" title="Order oak cabinets"
 ```
+
+**Or edit Markdown, then push:**
+
+1. Read the checkout's generated instructions and type definitions.
+2. Edit the intended fields and body, preserving existing `id`, `type` and `rev` values unless changing the type intentionally.
+3. For a new file, use `type:` and `title:` front matter, with no ID; the database assigns one. A file without a type defaults to page.
+4. Inspect with `surface status`, `surface diff` and `surface check`.
+5. Apply edits with `surface push`, or import new files with `surface push --new`.
+6. Resolve any normalization notices, validation failures or conflicts.
+
+Both routes use the database's validation and permissions. Safe fixes are normalized and reported; unusable values are rejected. A stale revision is rejected rather than merged. Normal pull keeps files with unpushed edits. To resolve a conflict, preserve the intended edit, inspect the current database record, then deliberately refresh and reapply it; `pull --force` discards local edits.
+
+Deleting a local file does not delete its database record. `surface status` reports it as missing; `surface pull` restores it. Use `surface rm` for an intentional soft deletion and `surface restore` to undo it.
+
+## What the checkout writes today
+
+```text
 My Workspace/
-  AGENTS.md                      the entry point (short, stable)
-  .agents/skills/
-    surface-workspace/SKILL.md   core: layout, records, IDs, links, rules
-    surface-types/               generated from the workspace's types
-      SKILL.md
-      references/task.md         one file per type: fields, choices, examples
-      references/project.md
-    surface-views/SKILL.md       how to read and write view files (.surface/views/)
-    surface-flags/SKILL.md       how to read and resolve flags
-    surface-import/SKILL.md      tables to records, CSV, new notes
-    weekly-review/SKILL.md       a team workflow (user-authored)
-    new-job-setup/SKILL.md       a team workflow (user-authored)
-  .claude/skills/                a copy of .agents/skills/, for Claude Code
+  AGENTS.md
+  .agents/skills/surface/SKILL.md
+  .claude/skills/surface/SKILL.md
   .surface/
-    flags/                       open flags as readable files (see below)
-    ...
+    config.json
+    state.json
+    types/<type>.yaml
+    views/sidebar.yaml             when a sidebar view exists
+  Pages/
+  ...                              records in the chosen layout
 ```
 
-### `AGENTS.md`: the entry point
+- **`AGENTS.md`** is the generated entry point. The current implementation regenerates the whole file on pull; keep personal instructions in a separate file. Preserving user additions in place is future work.
+- **The Surface skill** explains the workflow and the workspace's current types. It is written under `.agents/skills/` and copied to `.claude/skills/` for agent compatibility.
+- **`.surface/types/*.yaml`** are readable schema copies. Change types through `surface type …` and `surface field …`.
+- **`.surface/views/*.yaml`** are editable saved definitions. `surface tree init` creates a starting sidebar; check edits with `surface tree check`, then push them.
+- **Config and state** belong to the checkout machinery; agents should not edit them directly.
 
-- **Short and stable.** It says:
-  - this is a Surface workspace;
-  - records are Markdown files with front matter;
-  - load the `surface-workspace` skill before changing anything;
-  - the five hard rules.
-- **Rarely changes,** so it's safe to let users add their own instructions below Surface's part. Surface never rewrites a user's text in it.
-- **`CLAUDE.md`:** Surface doesn't create one. Claude Code falls back to `AGENTS.md` when there's no `CLAUDE.md`. If the user already has a `CLAUDE.md`, Surface offers to add `@AGENTS.md` to it.
+The MVP generates one Surface skill. It has no `surface-flags` skill, persistent flags directory, automatic file synchronization or grouped undo for batches of outside edits. Problems are reported by the CLI. Record changes are attributed to the signed-in account; raw file authorship does not identify a separate agent.
 
-The hard rules (draft):
+## Agents also create surfaces
 
-1. Prefer the `surface` CLI for changes. If you edit a file, change only what you mean to, then run `surface push`. Unpushed edits are overwritten. Never reformat or rewrite a whole file.
-2. Every record needs `id` and `type` in its front matter. New IDs follow the recipe in `surface-workspace`.
-3. Never delete a record without the user's approval. (Surface flags deletions anyway.)
-4. Never touch `.surface/local/`.
-5. After pushing, fix anything `surface push` rejected or flagged.
+The Markdown checkout is the starting point. Agents should also be able to produce the interface a person needs, wherever it is useful:
 
-### Skills Surface ships
-
-- **Surface-shipped skills start with `surface-`.** Surface owns them and regenerates them when the workspace changes (for example, when a type gains a field). Users don't edit them.
-- **`surface-types` is generated per workspace:** one reference file per type, listing its fields, kinds, choice options, link targets and an example file. The agent knows this workspace's Task fields, not just generic ones.
-- **The ID recipe** is a few lines any agent can follow in any language: creation time plus random characters, lowercase base32. An agent that gets it wrong just produces a flag ("invalid ID"), never corruption.
-
-### Workflows and team skills
-
-- **Users and teams write their own skills:** "weekly review", "new job setup", "turn meeting notes into tasks", "client update email".
-- **In Surface, skills are just documents:** a "Skills" section in the sidebar lists them and edits them like any note. They're saved as standard `SKILL.md` folders.
-- **They sync with the workspace,** so every teammate's agent (whichever agent it is) gets the same playbook. **Your team's way of working travels with the data.**
-- **Surface never touches skills without the `surface-` prefix.**
-
-## Working without an API: what agents can and can't do through files
-
-| Need | How, through files |
+| Need | Possible surface |
 |---|---|
-| Read records | Read the Markdown files |
-| Find records | Search the files (grep), filtering on front matter |
-| Create, edit, link | Write files following the skills |
-| Totals, backlinks | Compute them from the files; nothing is hidden in the database |
-| Know whether an edit was valid | Run `surface push` (Stage 1, SPEC §6): it validates, applies, or rejects with the reason; problems also go to `.surface/flags/` |
-| Resolve a flag | Edit the flag file's `resolution:` field, or fix the record |
-| Make a view | Write a view file in `.surface/views/` (`surface-views`); embed it in a page with `![[View name]]` |
+| Review a project's state | A PDF report, reflecting data at generation time |
+| Update a small set of fields | A focused widget or web interface |
+| Explore a question | An interactive artifact, inspired by Claude artifacts and similar experiences in Codex |
+| Bring context into a conversation | A canvas in Slack or another collaboration host |
+| Work across the whole workspace | The planned dedicated Surface app |
 
-- **Live, for free:** when Surface is running, it notices file changes within moments. An agent editing files shows up live in the app and syncs to the team, with no special connection.
-- **Flags as files** make the "needs attention" view available to agents too. "Clean up my flags" becomes an agent task.
-- **Grouped outside edits:** a burst of edits made outside Surface (for example, an agent changing 40 files) shows as one change in history: *"40 files changed outside Surface: review or undo all."*
+These are product directions, not implemented integrations. A snapshot needs a read at generation time. A connected surface needs authorized data access, an explicit freshness model, and validated write-back if it offers editing. It should act on the shared records rather than become a separate source of truth.
 
-## The CLI (built; SPEC §3a)
+A surface need not run inside the Surface app or use Markdown internally. The dedicated app remains planned for polished writing and browsing, plus management of teams, types and relationships. Agents and other surfaces can use the foundation independently of it.
 
-Supabase is the truth and every checkout is generated from it (Oct 14). Agents work in one of two ways, and both go through the database's validation:
+## Planned and open
 
-- **`surface` CLI (preferred):** exact operations with immediate errors:
-  - `surface new task "Order cabinets" project="Kitchen Remodel"`;
-  - `surface set`, `query`, `show`, `check`, `history`, `rm` / `restore`;
-  - `surface type …` and `surface field …` to change types.
-- **Edit files, then `surface push`:** the push normalizes safe fixes and reports them, and rejects invalid values or stale revisions with a clear message.
-- **Attribution:** every change is recorded with the signed-in account (`updated_by`, `history.changed_by`). Separate accounts per agent give per-agent attribution.
-- **Agents on a server** need only the CLI and a login. There's no background service.
-- **Every pull writes** `AGENTS.md`, `.agents/skills/surface/SKILL.md` (copied to `.claude/skills/`), and `.surface/types/*.yaml`.
-- **MCP, local or remote: later,** for agents that can't run the CLI (Claude or ChatGPT on the web, phone assistants).
+- **MCP access:** later, for agents that cannot run the CLI or access files. It should expose the same underlying operations and permissions.
+- **Generated surfaces:** formats, supported hosts, rendering, hosting, saving and sharing; authentication, scoped access and write-back; snapshot versus live refresh.
+- **Team workflows:** reusable skills such as weekly reviews and new-project setup. Their editing and sharing in the app are not implemented.
+- **Authorship and review:** per-agent identity, review of batches, and undo beyond inspecting history and restoring deleted records.
+- **Instruction ownership:** preserving user-authored `AGENTS.md` content when a checkout shares a folder with a code repository.
 
-> *Superseded (Oct 14): a `surfaced` background service and a local `surface mcp`, from the headless-core design.*
-
-## Open
-
-1. **Knowing who edited:** solved for CLI and MCP edits. Raw file edits stay "edited outside Surface". Should the skills prefer the CLI when it's available, so most agent edits get attributed?
-2. **Agent-built surfaces beyond views:** custom interactive pages (HTML or app-like) that an agent writes and Surface renders with live data. Format, sandboxing and how they read data are all open.
-3. **Where the user's workflow skills live:** hidden `.agents/skills/` (the standard), or a visible `Skills/` folder mirrored there.
-4. **Copy or symlink for `.claude/skills/`:** symlinks are cleaner, but they may not survive Dropbox, iCloud or Windows.
-5. **Workspaces inside a code repository** (where `AGENTS.md` may already exist for the code): how to merge the two.
+Older multi-skill, file-watcher and flag-file proposals have been removed from this guide so it describes the built workflow and names future work explicitly.

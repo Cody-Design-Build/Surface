@@ -1,6 +1,6 @@
 # App Tech Options
 
-> **Partly superseded (Oct 14):** there's no Tauri desktop app or local database for now. The desktop is Obsidian plus a Surface plugin, and the team uses a web app (SPEC §3a, §9). The editor and views research (CodeMirror 6, TanStack, dnd-kit) still applies to the web app. The sync and Rust back-end parts don't.
+> **Research history; current direction clarified Oct 14:** a dedicated Surface app is planned for Obsidian-like writing and browsing, Bear/Margin visual polish, and team and type management (SPEC §3a, §9). Its shell and stack remain open. The recommendations below were researched for an earlier local-database architecture; they are not implementation decisions. Supabase is now the truth, files are a pull/push checkout, and no Rust core or CRDT engine is required by that design. Editor, view and shell comparisons remain input to a future decision. External surfaces can also run outside the dedicated app; their hosts and data connections remain open.
 
 **Status: research, nothing decided.** Feeds SPEC §9 (The app) and §10 (Agents). Written Oct 13, 2026.
 Where something comes from my own knowledge rather than a source I checked today, it's marked *(unverified)*. GitHub activity figures were checked with `gh api` on Oct 13, 2026.

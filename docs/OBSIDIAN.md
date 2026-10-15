@@ -1,136 +1,70 @@
-# Escaping into Obsidian
+# Obsidian: the foundational Markdown surface
 
-Exploration, started Oct 13. David: escaping into Obsidian is always an option, and we want to explore what that looks like.
+**Current direction, Oct 14, 2026.** The Markdown checkout is Surface's first and foundational surface. Obsidian is one way people can use it for everyday work; the files also remain useful if they leave Surface. See [SPEC.md](SPEC.md) for the authoritative product design.
 
-The promise: open your Surface workspace folder in Obsidian, and it's a good Obsidian vault. You don't need to export or convert anything, and nothing gets lost.
+Surface is a headless, mutable database foundation. Its planned dedicated app will provide an Obsidian-like writing and browsing experience with Bear/Margin visual polish, plus team and type management. Obsidian remains an independent client through the Markdown workflow.
 
-## Two ways to escape
+## Working in Obsidian today
 
-| | Visit | Leave |
-|---|---|---|
-| What it is | Use Obsidian alongside Surface, for a day or for good | Stop using Surface entirely |
-| Edits made in Obsidian | Applied with `surface push` (an Obsidian command, button or agent), validated, or rejected if the record changed (SPEC §6, Stage 1) | Just files; nothing to push |
-| Team sync | Continues through Surface; Obsidian edits sync once Surface sees them | Ends; your local copy is yours |
-| What you need | Nothing; open the folder as a vault | Nothing; optionally run "Prepare for Obsidian" once (below) |
+1. Sign in with the CLI and check a workspace out using `surface init`.
+2. Open the checkout folder as an Obsidian vault.
+3. Read and edit pages, typed front matter and Markdown bodies.
+4. Make a new page or task as a Markdown file. Give it `type:` and `title:` front matter; omit the ID. Without a type it becomes a page.
+5. Run `surface status` and `surface check`, then `surface push` for edits or `surface push --new` for new files.
+6. Pull other people's changes with `surface pull`.
 
-## What carries over
+The CLI normalizes safe fixes and reports them, rejects invalid values, and checks revisions. Supabase stays the source of truth. Normal pull preserves files with unpushed edits; `pull --force` discards those edits. File editing can happen offline; database operations require a signed-in connection.
 
-| Surface | In Obsidian | Notes |
-|---|---|---|
-| Records | Markdown notes | Same files |
-| Fields | Properties | Native. Choice lists, required fields and validation aren't enforced by Obsidian, but values stay as written |
-| `title` | Filename (and the inline title) | Filenames are readable, so this just works |
-| Links | `[[wikilinks]]` | Written so they resolve the way Obsidian resolves them |
-| Link fields (`assignee: "[[Jane Doe]]"`) | Links in properties, backlinks, graph | Native |
-| Tags | Tags | Native |
-| Folders (user-made) | Folders | Native (see SPEC: folders alongside types) |
-| **Sidebar views** (Tasks → "Due this week") | **`.base` files** | If Surface's view format is compatible with Bases, every view opens in Obsidian as a table, cards, list or kanban |
-| Views (built in the app, saved in `.surface/views/`) | Converted to `.base` files on Leave, where Obsidian can show them | Embeds `![[View]]` show as links until converted |
-| Types and schemas | `.surface/types/*.yaml` (readable) + Obsidian property types | Obsidian has no per-type schemas; property types are vault-wide |
-| Callouts, to-dos, heading and paragraph links | Native | Already chosen to be Obsidian-native |
-| Attachments | Files in the vault | Native |
+Deleting a file in Obsidian does not delete the record. Use `surface rm` for an intentional database deletion. See [the CLI guide](../cli/README.md) for commands and layouts.
 
-## What doesn't carry over
+## What the files provide
 
-- **Schema enforcement and flags:** Obsidian won't validate fields or show the "needs attention" view. Visiting is fine, because Surface catches up later. Leaving means drift is possible.
-- **Relations and rollups** ("task count on a job"): Bases has formulas, but no Notion-style relation plus rollup. Views that rely on them show less, or need a formula equivalent.
-- **Comments, presence and history:** these live in Surface's database. Possible option: export comments as callouts or a side note.
-- **Agent-built views:** they stay Surface-only (sandboxed HTML). A static snapshot could be exported.
-- **Team sync:** Obsidian doesn't speak Surface's sync. Visiting works through Surface; leaving ends it, or you could use Obsidian Sync or git on your own.
-- **IDs for new notes:** notes created in Obsidian have no `id:` until Surface sees them and flags them as new notes. An Obsidian template could add one.
+| Data | In the checkout |
+|---|---|
+| Records | One readable Markdown file per checked-out record |
+| Fields | YAML front matter, usable as Obsidian properties |
+| Identity and revision | `id`, `type` and `rev` in front matter |
+| Link fields | Quoted `[[wikilinks]]`, or lists of them |
+| Nested pages | A `parent` link; file placement depends on the checkout layout |
+| Schemas | Read-only `.surface/types/*.yaml` copies |
+| Saved navigation | `.surface/views/sidebar.yaml`; the CLI can validate and draw it |
+| Agent guidance | Generated `AGENTS.md` and Surface skills |
 
-## Two-way links in the files
+Filenames are readable and unique within a checkout; record titles can repeat. Surface uses a short ID suffix when a filename would collide. Link fields are stored as record IDs in the database and rendered as filenames in the checkout. Pull rewrites their labels when records are renamed.
 
-**Question (Oct 13):** with two-way links between types (a Task's `project` mirrors a Project's `tasks`), how do they look and work in Obsidian?
+Bodies remain plain Markdown. Obsidian can render supported Markdown and wikilinks; Surface's database validation is applied when changes are pushed, not while Obsidian edits them. Custom views can be built with Obsidian's own tools, but Surface does not generate `.base` files today.
 
-### What a link looks like in front matter
+## Relationships
 
-Quoted wikilinks; lists for many. Obsidian treats these as real links: clickable in the properties panel, counted in backlinks and the graph, and usable in Bases.
+Only the stored side of a link field is written. For example:
 
 ```yaml
-# Order cabinets (2243 Steiner).md
 ---
 id: 0q8z4mkr7f2c
 type: task
+rev: 7
 title: Order cabinets
-status: doing
-due: 2026-10-20
-assignee: "[[Jane Doe]]"
-project: "[[Kitchen Remodel (2243 Steiner)]]"
+project: "[[Kitchen Remodel]]"
 ---
 ```
 
-```yaml
-# Kitchen Remodel (2243 Steiner).md
----
-id: 0q8z3abc91xk
-type: project
-title: Kitchen Remodel
-status: active
-contacts:
-  - "[[Jane Doe]]"
-  - "[[Acme Plumbing]]"
----
-```
+The project does not need a second list of all its tasks. The database maintains links for reverse lookup. In Obsidian, backlinks can reveal notes linking to the project; a configured Bases view can present matching notes as a table. Editing a computed reverse relation through a dedicated UI is future work, not a field the MVP accepts in front matter.
 
-(IDs don't carry the type; `type:` is a normal field. Decided Oct 13, SPEC §4.)
+## Planned plugin
 
-### The choice: store both sides, or one?
+The Surface plugin is planned to add a Views panel, live embeds, push on save, validation messages and type-aware properties. Its delivery order relative to the dedicated app is open. These features extend the Markdown surface; the dedicated app is planned independently of whether Obsidian meets the visual design target.
 
-| | A. Both sides in the files | B. One side in the files; the other computed (recommended) |
-|---|---|---|
-| Task file | `project: "[[Kitchen Remodel]]"` | `project: "[[Kitchen Remodel]]"` |
-| Project file | `tasks:` lists all 40 tasks | no `tasks:` key |
-| In Obsidian | both directions visible as properties | reverse shown by the backlinks pane, or a Bases view (below) |
-| Adding a task | rewrites the task **and** the project file | rewrites only the task |
-| Team edits | everyone adding tasks edits the same project list: churn and merge pressure | no shared list to fight over |
-| Big projects | a 300-line list in the front matter | clean |
-| Edits in Obsidian | someone edits one side and not the other: inconsistent, needs a flag and a rule about which side wins | only one place to edit, so no inconsistency |
+The CLI already saves and renders navigation trees. Rich views, composite-page embeds and automatic push are not implemented in the plugin because the plugin itself is not built yet. Surface uses its own readable YAML view definitions; conversion of compatible views to Obsidian `.base` files is planned.
 
-**Recommendation: B, one stored side.**
+## Leaving Surface
 
-- **Which side is stored:** for one-to-many links, the "one" side (Task → `project`), because each task names its project. For many-to-many links (Project ↔ Contact), the schema says which side is stored (`stored: project.contacts`).
-- **In Surface,** both sides appear as fields, and both are editable. Editing the computed side (adding a task from the project page) writes the stored side (sets that task's `project`).
-- **In Obsidian,** the reverse is visible through:
-  - **the backlinks pane:** links in properties count as backlinks, so a project's backlinks list its tasks (and anything else linking to it);
-  - **a Bases view:** Obsidian's docs say `file.hasLink(this.file)` replicates the backlinks pane. A generated `Project tasks.base`, filtered to `type == "task"` and linking to the current note, embedded in a project with `![[Project tasks.base]]`, shows a live task table on every project page. "Prepare for Obsidian" can add that embed to project notes or templates (opt-in, since it writes to the body).
-- **If someone types the computed side by hand** in Obsidian (adds `tasks:` to a project file), Surface flags it: *"`tasks` is computed from each task's `project`; apply these as links from the tasks, or remove?"*
+A current pull gives you plain records, schema copies and saved view definitions. Start with a full checkout if you want all records; `--only` checkouts intentionally omit other types. Once disconnected, the files are yours to edit with any tools, while Surface's validation, shared permissions and database collaboration no longer apply to that copy.
 
-### Display names in links
+The no-lock-in design also calls for a future "Leave Surface" action: convert supported views to Bases or snapshots, export history, and preserve other authored features in readable forms as those features are introduced. That complete portability workflow is a product commitment, not an implemented command today. Comments, attachments and their checkout handling remain planned work.
 
-Filenames are unique, so links carry the qualifier: `[[Kitchen Remodel (2243 Steiner)]]`. An alias keeps it readable: `"[[Kitchen Remodel (2243 Steiner)|Kitchen Remodel]]"`. Test needed: confirm that aliased links in properties render and resolve in Obsidian.
+## Open
 
-## The big lever: compatible view syntax
-
-The app research already recommends a query format "modelled on Obsidian Bases" (APP-TECH). Taking that one step further:
-
-**Open (Oct 13): David expects Surface views to be more dynamic than Bases tables** (trees from links, calendars, agent views), so the format stays open. The two options:
-
-- **A. A Bases-compatible core plus extras.** Views open natively in Obsidian.
-- **B. Surface's own format, plus a Bases export.** Surface writes `.base` files for whatever Bases can show, and its own format isn't tied to Obsidian's.
-
-Option A in more detail: **Surface views use Obsidian Bases syntax** (a compatible subset, plus Surface-only extras that Obsidian ignores).
-
-- Every sidebar view is saved as a `.base` file, and every embedded view as a ` ```base ` block. Both open natively in Obsidian.
-- Bases already has filters, sorts, formulas and grouping, plus table, cards, list and kanban layouts. These cover most Surface views.
-- **Surface-only features** (relations, rollups, calendar, agent views) live in extra keys. Obsidian shows what it understands.
-- **Risks:**
-  - We'd follow Obsidian's spec, and it can change.
-  - Our extras must never break Obsidian's parser. Test needed.
-  - Where `.base` files live has to be decided: a visible `Views/` folder (shows in Obsidian), or `.surface/views/` (hidden from Obsidian, so it doesn't escape well).
-
-## "Prepare for Obsidian" (optional, one action)
-
-For people leaving, or visiting often:
-
-- write Obsidian property types (`.obsidian/types.json`) from Surface schemas, so dates are dates and numbers are numbers (opt-in; it writes into Obsidian's folder);
-- write a new-note template per type with the right properties and an `id:`;
-- write a "Start here" note listing the types, views and how the vault is organized;
-- recommend plugins where they help (for example, Templater for automatic IDs).
-
-## Open questions
-
-1. View format: Bases-compatible core (A), or our own format plus a Bases export (B)?
-2. Where do view files live: a visible `Views/` folder, or hidden?
-3. How much should "Prepare for Obsidian" write into `.obsidian/`, if anything?
-4. A test vault to confirm the details: Bases parsing extra keys, property behaviour, and rename handling.
+- Plugin scope and sequencing: Views panel, embeds, push on save and type-aware properties.
+- Bases conversion details and tests for supported views.
+- Whether an optional preparation tool should create templates, property settings or a "Start here" note.
+- Round-trip behavior for Obsidian file moves, renames and third-party plugins.

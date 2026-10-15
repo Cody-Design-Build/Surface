@@ -2,17 +2,15 @@
 
 The current design in one place. Last consolidated: Oct 14, 2026.
 
-> **Current direction (Oct 14, decided): Supabase is the truth.**
-> - **There's no local database or sync engine.**
-> - **Files are a checkout:** `surface pull`, edit, `surface push`, with revision checks.
-> - **Three layers:**
->   1. **Files:** storage, one home per record.
->   2. **Views:** navigation, a tree in an Obsidian plugin.
->   3. **Composite pages:** prose plus live data.
-> - **Clients:** Obsidian with a Surface plugin (desktop), a web app (team) and the `surface` CLI (agents).
-> - **The MVP is built** (`docs/MVP.md`, `cli/`, `supabase/migrations/`).
+> **Current direction (Oct 14, decided): a headless foundation with many surfaces.**
+> - **Supabase is the truth:** a mutable types engine for records, relationships, validation, permissions and history.
+> - **Agents help humans do the work.** The foundation operates independently of any one interface.
+> - **Markdown is the first and foundational surface:** `surface pull`, edit, `surface push`, with normalization and revision checks. There is no local database or merge engine.
+> - **Surfaces range from snapshots to interactive tools:** documents, PDFs, widgets, web interfaces, artifacts and canvases, inside or outside the dedicated app.
+> - **A dedicated app is planned:** Obsidian-like writing and browsing, Bear/Margin visual polish, and management of workspaces, teams, permissions and types.
+> - **Built today:** the Supabase types engine and CLI, including nesting, folder tools and saved navigation trees. Other clients and integrations are planned.
 >
-> Sections still describing a local database, CRDT merging or a Tauri app have been rewritten. Their reasoning is kept as **Superseded** notes.
+> Earlier local-database and CRDT designs are superseded. A dedicated app is part of the product direction; its implementation technology is still open.
 
 - **How we got here:** the working notes in `docs/notes/` (DATA-MODEL, CONVENTIONS, SYNC), kept as design history.
 - **Research:** `docs/research/`.
@@ -24,17 +22,42 @@ Status markers: **Decided**, **Leaning** (direction agreed, details open), **Ope
 
 ## 1. Thesis
 
-Apps and SaaS aren't the future. People need three things:
+**Surface is a headless, mutable database foundation for human and agent work.** Think of Notion's pages, structured data and relationships made independent of its interface. People need three things:
 
-1. **Data:** storage and persistence, editable by many people, like any app.
-2. **Agents:** they replace much of the app. Like a real assistant, an agent works with the data and acts on it.
-3. **Surfaces:** the human interface. Fluid and often temporary, much like Notion. A surface can be the Surface app, a Markdown file, or a view an agent builds on request (like Claude's dashboards) showing live data.
+1. **Data:** shared, persistent records and relationships, with types and fields that users and agents can create and change as their work evolves.
+2. **Agents:** assistants that organize, query and act on the data with people, reducing the need for dedicated software for every workflow.
+3. **Surfaces:** ways for humans to view and interact with that data, suited to the task and the place where work happens.
+
+The foundation holds the data and its meaning. A surface is where a human touches it. Storage, relationships, validation, permissions and history remain useful across interfaces.
+
+### What counts as a surface
+
+A surface can exist inside the Surface app or elsewhere. It can be temporary or permanent, personal or shared, and have any useful level of interactivity:
+
+| Surface | Interaction and freshness |
+|---|---|
+| Markdown checkout, opened in Obsidian or another editor | Read and edit files; pull and push connect them to the database (built) |
+| PDF report | Read-only snapshot of the data at generation time (direction) |
+| Widget or small web interface | A focused view, potentially with live data and record editing (direction) |
+| Agent-generated artifact | An interface created for a particular question or workflow, inspired by Claude artifacts and similar experiences in Codex (direction) |
+| Canvas in Slack or another host | Put the relevant data where people already work; refresh and editing depend on the integration (direction) |
+| Dedicated Surface app | A coherent home for writing, browsing, working with records and managing the workspace (planned) |
+
+A generated snapshot is still a surface. Live updates and write-back are capabilities a surface may offer, not requirements for being one. External integrations and their authentication, refresh and editing mechanisms remain to be designed.
+
+### Why Markdown comes first
+
+**Decided.** Markdown is the first and foundational surface because it is a shared working medium for humans and agents. It is the native working language of LLMs: text they can read, reason about and edit directly. People can use that same text in familiar editors. YAML front matter expresses typed fields and links; Markdown bodies express notes, context and instructions.
+
+The checkout is more than an export or an escape hatch. A person can create a page or task in Obsidian, or an agent can write it as a file, then the CLI normalizes safe fixes, reports them, validates the values and adds the record to the database. Existing records follow the same edit-and-push path, with revision checks.
+
+Markdown is a bridge to the foundation, not a requirement for every surface. A PDF can be generated from a query; a connected widget can work with records directly through authorized operations. Neither needs its own copy of the Markdown checkout.
 
 ### Why Surface and not just Obsidian
 
 **Decided (positioning).** Obsidian's properties are loose: a status can be `Done`, `done`, `complete` or a typo, a date can be any text, and nothing checks them. That drift is fine for personal notes, but **it makes Obsidian mostly unusable as a business app**, because views, totals and agents can't trust the data.
 
-**Surface's difference is structured data on top of plain files:**
+**Surface adds a shared, typed foundation behind the files:**
 
 - types with typed fields and validation;
 - drift is flagged, never silently accepted or silently fixed;
@@ -59,7 +82,7 @@ Views over properties are the same idea as Obsidian Bases. The trust in the data
 
 **It works for agents and for David:** 207 commits, all from David and two agents. **It didn't work for the rest of the team:** GitHub, Git, Finder and Obsidian don't feel team-like to non-technical people.
 
-**So Surface's real job isn't the data model or the agent layer; CDB OS has those.** It's what's missing:
+**CDB OS demonstrated the file-and-agent workflow. Surface turns that into a shared foundation with trusted data and accessible human interfaces.** The team also needs:
 
 1. **An app that feels like Notion to non-technical people,** with no Git, Finder or Obsidian required.
 2. **Sync you never see.**
@@ -78,8 +101,8 @@ Views over properties are the same idea as Obsidian Bases. The trust in the data
 
 **Consequences (decided Oct 14):**
 
-- **A web app becomes the main team experience.** Obsidian (with the Surface plugin) and the files checkout are for power users and agents.
-- **A central database is the truth** (Supabase; see §3 and `docs/explorations/CENTRAL-DATABASE.md`). A browser has no local copy to merge.
+- **The team needs a browser experience with simple onboarding.** A dedicated Surface app is also planned for writing, browsing and workspace management (§9). Obsidian and the Markdown checkout remain first-class ways to work.
+- **A central database is the truth** (Supabase; see §3 and `docs/notes/CENTRAL-DATABASE.md`). A browser has no local copy to merge.
 - **Solo, account-free, local-only use is dropped.** Everyone signs in.
 
 ## 2. Principles
@@ -87,9 +110,10 @@ Views over properties are the same idea as Obsidian Bases. The trust in the data
 1. **Data is the foundation.** The surface is just where a human touches it.
 2. **The database is the truth; files are a checkout.** The workspace lives in Supabase. Any machine can pull it as Markdown, read and edit it offline, and push changes back. *(Was "local-first, no account"; superseded Oct 14.)*
 3. **Files are first-class.** Every record is also a plain Markdown file. People and agents can edit those files in any editor, then push. They're also the exit: your data is always readable without Surface. **Files are real Markdown that looks good in any text editor:** no hidden IDs in the body, no HTML, no custom layout syntax. Block-style editing is a UI feature (§5b).
-4. **Surface is the tool; other editors are welcome guests.** Obsidian and any Markdown editor can read and edit the files, but compatibility is best effort, not a design constraint.
+4. **Many surfaces share one foundation.** The dedicated app, Markdown editors and generated interfaces are clients of the same data. Markdown stays plain and useful outside Surface; each surface chooses the interaction it needs.
 5. **Fix only what's safe, report every fix, reject the rest.** On push, unambiguous fixes are applied and each one is reported, e.g. `Oct 20` → `2026-10-20`, or `done` → `Done`. Anything ambiguous, like a typo'd option, an unknown field or a stale revision, rejects that file with a clear message. Surface never quietly rewrites or discards someone's edit.
 6. **Agents are users.** Their edits travel the same paths as a person's, and get the same validation, history and permissions.
+7. **The structure can evolve.** People and agents can create and edit types, fields and relationships. The foundation supplies those capabilities independently of any particular screen or workflow.
 
 ## 2a. No lock-in
 
@@ -97,9 +121,9 @@ Views over properties are the same idea as Obsidian Bases. The trust in the data
 
 ### The rule
 
-**Everything a person or agent authors can always be written out as open, readable files, with one command (`surface pull`) and nothing lost. The database adds validation, history and collaboration, but it never holds anything that can't be exported.** *(Oct 14: the database is now the truth. The promise moves from "files are always the only copy" to "a complete, plain-file copy is always one pull away". A scheduled pull committed to Git keeps one always current; see §7.)*
+**Product requirement: everything a person or agent authors must be exportable as open, readable files, with nothing lost.** The database adds validation, history and collaboration. Today, `surface pull` exports checked-out records, schema copies and saved views. Complete export of future features and history remains planned. *(Oct 14: the database is now the truth. The promise moves from "files are always the only copy" to "a complete, plain-file copy is always one pull away". A scheduled pull committed to Git keeps one always current; see §7.)*
 
-Every feature is designed into one of three tiers:
+Every feature must fit one of three tiers. The table describes the portability design, including features not yet implemented:
 
 | Tier | What | Where | If Surface disappeared |
 |---|---|---|---|
@@ -119,7 +143,7 @@ The tier 3 exception is **history** (who changed what, and when). It's valuable 
 2. **It's disclosed.** It's listed in a public **trade-off ledger** saying what's less portable and why.
 3. **It degrades.** "Leave Surface" turns it into the best plain-file form available, and the ledger says exactly what that is.
 
-The rule above still holds for *authored content*: your words, fields and links are always in files. The trade-offs are about *behaviour*: things that only work while Surface is running.
+The rule above still holds for *authored content*: your words, fields and links must remain exportable as readable files. The trade-offs are about *behaviour*: things that only work while Surface is running.
 
 **Trade-off ledger (draft):**
 
@@ -148,13 +172,13 @@ The ledger is a product asset as well as a document. It belongs on the website: 
 
 ### Proving it
 
-- **The "leave and come back" test**, run automatically on every build:
+- **Planned: a "leave and come back" test**, to run automatically on builds:
   1. Build a workspace using every feature.
   2. Pull a full checkout.
   3. Check that every authored thing is present and readable in the files, and that it opens cleanly in Obsidian and in a plain text editor.
   4. Import the checkout into an empty workspace, and check that nothing changed.
-- **A published, open file format spec** ("Surface Markdown"): how records, fields, links, types, views and comments are written. Anyone can build a tool that reads or writes it. People trust the format more than any promise.
-- **"Leave Surface" is a feature,** not a support article. One action makes a workspace fully standalone:
+- **Planned: a published, open file format spec** ("Surface Markdown"): how records, fields, links, types, views and comments are written. Anyone can build a tool that reads or writes it. People trust the format more than any promise.
+- **Planned: a "Leave Surface" feature.** One action should make a workspace fully standalone:
   - views become `.base` files;
   - comments become visible notes;
   - history can be exported to git;
@@ -191,32 +215,32 @@ The ledger is a product asset as well as a document. It belongs on the website: 
 > - The MVP showed none of them are needed to start. Offline reading and editing already work through the checkout.
 > - It was the hardest and riskiest part of the design: the sync engine, the merge technology and the spike.
 
-## 3a. Clients: one database, several ways in
+## 3a. Clients: one foundation, several ways in
 
-**Leaning (Oct 14).** No headless background service. The database is the shared core, and every client talks to it directly.
+**Decided (product direction).** Headless means the data and its operations are usable independently of the dedicated app. It does not require a background daemon. The MVP has no such service: the CLI talks to Supabase, whose validation and access rules protect the data.
 
+```text
+        Supabase foundation: types · records · relationships · views · history · RLS
+                           authorized reads and writes
+                  ┌──────────────────┼──────────────────┐
+            surface CLI       Dedicated app       Other clients
+                  │             (planned)           (planned)
+          Markdown checkout    writing, browsing,   widgets, artifacts,
+                  │            data and team       browser interfaces,
+          editors and agents   management          external integrations
+
+          Read-only queries can also produce snapshot surfaces such as PDFs.
 ```
-                      Supabase (types · records · links · history · RLS)
-         ┌───────────────────┬──────────────────┬─────────────────────┐
-   surface CLI         Obsidian + Surface     Web app             any agent
-   (agents, scripts,   plugin (desktop:       (the team:          (via the CLI,
-    power users)       Views tree, embeds,     no install)         or files + push)
-                       push on save)
-```
 
-- **`surface`, the command-line tool (built):** auth, workspaces, types and fields, `pull`, `push`, `status`, `diff`, `check`, `new`, `set`, `show`, `query`, `rm`, `restore`, `history`, `skills`. TypeScript on Node. See `cli/README.md`.
-- **Obsidian plugin (planned; likely the desktop app):** a **Views** panel (§5a), live embeds in pages, push on save, inline validation messages, and type-aware property editing. It talks to Supabase directly.
-- **Web app (planned):** the team's way in. It meets the onboarding bar (§1): invite link, sign in, working in a browser within a minute.
-- **A Surface Mac app is deferred.** Obsidian plus the plugin covers the desktop, and a separate app only comes back if the plugin can't meet the "feels like Bear" bar.
-- **MCP (later):** a thin layer over the same operations, for agents that can't run the CLI or see files.
+- **`surface`, the command-line tool (built):** auth, workspaces, types and fields, pull/push, record operations, queries, nesting, folders, saved trees and generated agent guidance. TypeScript on Node. See `cli/README.md`.
+- **Markdown checkout (built):** the foundational surface for editors and agents. A signed-in CLI connects file edits to the database; reading and editing an existing local copy can happen offline.
+- **Dedicated Surface app (planned):** Obsidian-like writing and browsing with Bear/Margin visual polish, plus management of workspaces, teams, permissions, types, fields and relationships (§9).
+- **Obsidian plugin (planned):** a Views panel (§5a), live embeds, push on save, validation messages and type-aware properties. It extends the Markdown surface.
+- **Browser experience (planned):** team access without an install, meeting the onboarding bar in §1. Its relationship to the dedicated desktop app and any shared UI implementation remain open.
+- **Generated and external surfaces (direction):** reports, widgets, artifacts, web interfaces and canvases. Formats, supported hosts, scoped access and data connections remain open.
+- **MCP (later):** an additional access path for agents that cannot run the CLI or see files.
 
-**Why:**
-
-- **Agents get exact operations** with immediate errors: `surface new task` validates fields and makes the ID.
-- **Every write goes through the database's validation**, whichever client sends it.
-- **Building on Obsidian** gets an editor, file handling, search and a plugin ecosystem for free.
-
-> **Superseded (Oct 14): a Rust core plus a `surfaced` background service** that watched files, merged and synced, with a Tauri Mac app as its main client. There's nothing left to watch or merge once the database is the truth and files are pushed explicitly.
+Every connected surface must use the foundation's permissions and validation. A surface with editing controls writes back to the underlying records; a snapshot only presents data as it existed when generated. Individual surfaces do not need to reproduce the full app.
 
 ## 4. The record
 
@@ -373,20 +397,20 @@ Everything degrades gracefully: it's readable in any text editor, renders in any
 
 ## 5a. Organizing: files, views and composite pages
 
-**Leaning (Oct 14), in David's framing.** Three layers that never fight: **files are storage, views are navigation, composite pages combine the two.** Surface can show the data any way we like, because it isn't tied to where the files sit.
+**Organization model (Oct 14).** Within the Markdown surface, three layers have separate roles: **files are checkout storage, views are navigation, composite pages combine prose and data.** Supabase remains the source of truth. This model organizes one surface; other surfaces need not use files or a sidebar.
 
 ### Layer 1: files in real folders (storage)
 
 - **Each record is one file in one folder.** Within a checkout there are no duplicate copies (they'd make Obsidian links, search and the graph ambiguous).
 - **Default layout (decided, built): a folder per type.** Pages are in `Pages/`, tasks in `Tasks/`, and so on. The folder name is a type setting (`surface type edit task --folder "To-dos"`).
 - **The user's own folders (built):** the `folder` layout. Each record has a `folder` value, set by where its file sits when pushed, by `surface new … --folder`, or by `surface set <record> folder=…`. Moving a file in Obsidian and pushing moves the record.
-- **Planned: a layout arranged by link,** e.g. `link:project`. A task's file sits under its job: `Projects/Steiner Kitchen/Tasks/…`. Records without that link go to their type folder; with several links, the first one wins.
-- **Good organizing tools,** for agents first, then the plugin: `surface mv`, folder rename, and "move everything matching X". These are planned.
-- **Folders have no meaning to the database.** A folder exists only while it holds a record, and deleting a folder in Finder deletes nothing (files show as missing until `surface rm`).
+- **A layout arranged by link (built),** e.g. `link:project`. A task's file sits under its job: `Projects/Steiner Kitchen/Tasks/…`. Records without that link go to their type folder; with several links, the first one wins.
+- **Organizing tools (built in the CLI):** `surface mv`, folder rename, and moving records by query. Human interfaces for these operations are planned.
+- **Folders organize storage rather than define relationships.** The database stores a record's `folder` value, but folders are not separate records. Deleting a folder in Finder does not delete database records; files show as missing until restored with pull or records are intentionally deleted with `surface rm`.
 
 ### Layer 2: the Views tree (navigation)
 
-- **An Obsidian plugin adds a sidebar panel called "Views".** Later, the same tree is the web app's sidebar.
+- **The CLI already resolves and draws the Views tree.** A planned Obsidian plugin adds a "Views" sidebar panel; the dedicated app and browser experience can use the same saved definition.
 - **It looks like folders,** with twirl-downs, but nothing in it moves a file. Its items:
 
 | Item | What it is |
@@ -411,7 +435,7 @@ Everything degrades gracefully: it's readable in any text editor, renders in any
 
 ### Layer 3: composite pages (prose plus live data)
 
-- **A page can mix text, embedded live views and embedded records:** a paragraph, then this job's open tasks as a table, then more text. The data, which is all files, becomes building blocks.
+- **A page can mix text, embedded live views and embedded records:** a paragraph, then this job's open tasks as a table, then more text. The underlying records become building blocks, with their Markdown checkout remaining readable.
 - **The embeds stay real Markdown,** so the page reads fine without Surface (§5d).
 
 ### Notes and types
@@ -525,27 +549,27 @@ In Surface this isn't a separate feature. It's case 1 or case 2:
 
 - Should Markdown table column types be **remembered** (and where, without adding syntax to the file)?
 
-## 5d. Views are generated in the app
+## 5d. Views render the data
 
-**Decided (Oct 13).** **Markdown is the notes and the editable database. Views are generated by the app from that data.** Kanban boards, Gantt charts, calendars, galleries and tables can't be expressed well in Markdown, and shouldn't be. They're renderings of records, not documents.
+**Decided.** Views are renderings of records: queries shown as tables, boards, calendars, galleries or other layouts. The dedicated app, a plugin or a generated surface can render them. Markdown is the foundational editable surface; the database is the truth. Rich interactive views do not need to be encoded as Markdown layouts.
 
 - **A view = a query plus a layout:** which records, filtered, sorted and grouped, shown as a table, board, list, calendar, Gantt chart or gallery. One view can offer several layouts of the same query, as Obsidian Bases does.
-- **Interacting with a view edits the records,** never a picture of them:
+- **In planned interactive views, controls edit the underlying records:**
   - dragging a card to another board column changes its `status`;
   - dragging a Gantt bar changes its `start` and `end`;
-  - editing a table cell edits that record's file.
-- **Nothing about the board is stored except its definition.** The results are computed (tier 3, §2a), so files never churn when a view changes.
-- **Built in the app, not typed:** you pick the type, filters, grouping and layout in the UI.
+  - editing a table cell updates the database record; its checkout file reflects that change on pull.
+- **A saved board stores its definition; its results are computed** (tier 3, §2a). Reading a view does not rewrite its definition or the files of the records it displays.
+- **Authored through a UI or by an agent:** people can pick types, filters, grouping and layouts in the planned app; agents can author readable definitions. The CLI already supports saved tree definitions.
 - **This is the Obsidian Bases idea taken further.**
   - **Bases:** a view is a YAML definition generated over notes' properties. Obsidian 1.14 (Sep 2026) added a native Kanban layout for Catalyst supporters.
   - **Surface goes further** with richer layouts (Gantt, dependencies, rollups), team sync, and agent-built views.
 
 ### Where view definitions are kept
 
-**Leaning.** A view's definition is authored content, so under the no-lock-in rule (§2a) it can't live only in the database:
+**Built for saved definitions; richer layouts planned.** A view's definition is authored content, so it must remain exportable under the no-lock-in rule (§2a):
 
-- **Each view is saved as a small readable file** that Surface owns, for example `.surface/views/due-this-week.yaml`, with a format version.
-- **Agents can read and write view files** (taught by `surface-views`), and leaving keeps them. On "Leave Surface", views that Obsidian can show are converted to `.base` files.
+- **Each saved view lives in the database and is pulled as a readable file**, for example `.surface/views/due-this-week.yaml`, with a format marker. File edits return through push with revision checks. The sidebar tree is implemented; the richer layout sketch below is a proposal.
+- **Agents can read and write view files** (taught by the generated Surface skill), and leaving keeps them. The planned "Leave Surface" action will convert compatible views to `.base` files.
 - **Personal display state** (column widths, collapsed groups, a quick search) stays on this device and is never written.
 
 ### View file sketch (illustrative, not final)
@@ -579,7 +603,7 @@ layouts:
    where: project = this and status != done
    show: table
    ```
-   Other editors show it as readable text. The Surface plugin renders it live, and `this` means the page it's on.
+   Other editors show it as readable text. The planned app or plugin renders it live, and `this` means the page it's on.
 3. **A ` ```base ` block** (Obsidian Bases syntax) for simple cases. It renders natively in Obsidian even without the plugin.
 
 - **A dashboard or job page is text plus a few embeds:** a composite page.
@@ -654,7 +678,7 @@ layouts:
 - **Edits come back through:**
   - the CLI (`surface new`, `surface set`);
   - **editing a file, then `surface push`** (from a terminal, an agent, or later the Obsidian plugin on save);
-  - later, the web app and the plugin's own editing.
+  - later, the dedicated app, browser experience and other authorized interactive surfaces.
 - **`surface push` works like `git push`, per record:**
   - Each file carries its `rev` in front matter.
   - Push normalizes safe fixes and reports each one (§2, principle 5), validates the fields, checks the revision, and applies the change through one database function (`push_record`).
@@ -671,7 +695,7 @@ Because the files are generated, **the folder layout is a choice made per checko
 | `type`: a folder per type (default) | built |
 | `folder`: the user's own folders | built |
 | `flat`: one folder | built |
-| `link:<field>`: under the linked record, e.g. tasks under their job | planned |
+| `link:<field>`: under the linked record, e.g. tasks under their job | built |
 | `--only task,project`: a partial checkout | built |
 
 - **Each checkout picks its own layout.** An agent's checkout can differ from yours.
@@ -704,7 +728,7 @@ A file watcher with continuous three-way merging. It's only worth building if pu
 
 - **Everyone works against the same Supabase database.** The CLI and files sync by pull and push, with per-record revision checks.
 - **Two people editing the same record:** the second push is rejected with a clear conflict, never silently merged or lost. For a small team editing mostly different records, this is enough to start.
-- **Live updates (planned):** the web app and the Obsidian plugin can subscribe to changes (Supabase Realtime), so others' edits appear within about a second. The plugin can then pull changed records on its own.
+- **Live updates (planned):** the dedicated app, browser experience, plugin and other connected surfaces can subscribe to database changes. The refresh behavior and latency target remain to be validated. The plugin can then pull changed records on its own.
 - **Live co-editing in one note** (cursors, simultaneous typing) isn't planned. If it's ever needed, it's a text-collaboration layer for the body only, added on top of this model.
 - **Backup and history:** the `history` table keeps every revision. Optionally, a scheduled `surface pull` committed to a Git repository gives Git history and an always-current plain-file copy outside Supabase.
 
@@ -785,40 +809,42 @@ A file watcher with continuous three-way merging. It's only worth building if pu
   config.json   which workspace, the layout, partial-checkout filter
   state.json    each record's path, revision and file hash at the last pull (for status and push)
   types/        each type as readable YAML (written on pull; edit types with the CLI)
-  views/        view definitions and sidebar.yaml (planned)
+  views/        saved view definitions, including sidebar.yaml (built)
   comments/     comment threads as Markdown (planned; §2a)
 ```
 
 The login session is stored per user in `~/.config/surface-cli/`, not in the checkout.
 
-## 9. The app
+## 9. The dedicated app
 
-**Leaning (Oct 14): no Surface desktop app to start.**
+**Decided (product direction, Oct 14).** A dedicated Surface app is planned. It is a first-class client of the headless foundation and has two connected roles:
 
-- **Desktop = Obsidian plus the Surface plugin** (§3a): Views tree, composite-page embeds, push on save, validation messages and type-aware properties.
-- **Team = a web app** on the same Supabase database: sign in, browse the Views tree, edit records and pages, and see views. Its editor and views stack are open; earlier research (`docs/research/APP-TECH.md`: CodeMirror 6, TanStack Table, dnd-kit) still applies.
-- **Agents = the CLI,** or files plus push.
-- **A native Mac app comes back only if** the plugin can't meet the "feels like Bear" bar (§9 Visual style).
+1. **Everyday work:** an Obsidian-like experience for writing, browsing, searching, linking pages and working with typed records and views, with the visual care of Bear and Margin.
+2. **Workspace management:** tools to create and edit types, fields and relationships, and manage workspaces, teams, membership and permissions. People can understand and configure the foundation without using the terminal.
 
-> **Superseded (Oct 14): a Tauri 2 Mac app** with a Rust core, file watching and a flags view as the first milestone. Obsidian supplies the desktop editor; the web app is the team's way in.
+The app gives people a coherent home for their work. Other surfaces can expose a single report or workflow wherever it is useful, without needing to recreate the app. Agents can use the CLI and Markdown independently of the app.
+
+**Implementation remains open:** desktop shell, editor and views stack, first screens, and how much is shared with the browser experience. The earlier research in `research/APP-TECH.md` is input, not a decision to restore a Rust core, local database or CRDT engine. Supabase remains the truth.
+
+**Obsidian remains a supported surface.** The planned plugin improves its checkout experience with the Views panel, composite-page embeds, push on save and validation. It is not a condition for whether Surface gets its own app.
+
+> **Superseded:** the earlier direction that the desktop would be Obsidian-only and a dedicated app would be considered only if the plugin fell short. The dedicated app is planned; its implementation and scheduling remain open.
 
 ### Visual style
 
-**Leaning.** Inspired by **Bear** and **Margin**: typography-led, one sparing accent colour, calm even for structured data. Applies to the web app and the plugin's panels. See `docs/DESIGN.md`.
+**Direction.** Inspired by **Bear** and **Margin**: typography-led, one sparing accent colour, calm even for structured data. The management tools deserve the same care as the editor. See `DESIGN.md`.
 
 ## 10. Agents
 
-**Decided:** bring your own agent. Surface doesn't ship one. **Decided:** files are the interface; no MCP server or API is required. The rest is **leaning**. Full design: `docs/AGENT-INTEGRATION.md`.
+**Decided:** bring your own agent. Agents help humans work with the shared foundation: changing records, defining types and relationships, querying information and producing useful surfaces. Surface does not require one particular model or agent provider. Full design: `AGENT-INTEGRATION.md`.
 
-- **Any agent that can read and write files can work in a workspace:** Claude Code, Codex, Cursor, Gemini CLI, Copilot, Hermes and others. No agent lock-in.
-- **Agents get knowledge from files, using the two open standards they already read:**
-  - **`AGENTS.md`** at the workspace root: a short, stable entry point and five hard rules;
-  - **Agent Skills** in `.agents/skills/`, copied to `.claude/skills/` for Claude Code.
-- **Surface-shipped skills** (`surface-workspace`, `surface-types` generated from the workspace's types, `surface-views`, `surface-flags`, `surface-import`) are regenerated when the workspace changes.
-- **Users and teams write their own workflow skills** in Surface, like notes. They sync with the workspace, so every teammate's agent gets the same playbook.
-- **Problems are reported by `surface push`, `status` and `check`,** which agents read like anyone else.
-- **Agents edit through the CLI, or by editing files and running `surface push`.** Both go through the same validation and revision check as everyone else's edits.
-- **The `surface` CLI (built)** gives exact operations and immediate errors. Every pull writes `AGENTS.md`, a Surface skill and the types. MCP, local or remote, comes later for agents that can't run the CLI.
+- **Markdown is the foundational bridge.** Agents can read and edit the same documents people work with. Reading a local checkout needs no API; connecting changes to the database requires the signed-in CLI.
+- **The CLI is the preferred exact interface (built):** records, queries, types, fields, folders and trees. File edits followed by push are equally supported. Both paths use the database's validation, revision checks and permissions.
+- **Every pull generates guidance (built):** `AGENTS.md`, `.agents/skills/surface/SKILL.md`, a copy in `.claude/skills/surface/`, and `.surface/types/*.yaml`.
+- **Agents can produce surfaces beyond Markdown (direction):** a PDF snapshot, a focused widget, an artifact, a web interface or content in another host. Live connections, editing, hosting and access for those surfaces remain to be designed.
+- **Problems are reported by `surface push`, `status` and `check`.** There is no automatic file watcher or persistent flags directory in the MVP.
+- **Team workflow skills (planned)** capture reusable ways of working. Storage, editing and sharing in the app remain open.
+- **MCP (later)** adds access for agents that cannot run the CLI or see files; it is not implemented today.
 
 ## 11. Business model
 
@@ -829,7 +855,7 @@ The login session is stored per user in `~/.config/surface-cli/`, not in the che
 **Database and hosting**
 
 1. Hosting long-term: Surface-hosted Supabase for everyone, a project per team, or self-hosted?
-2. When to add live updates (Supabase Realtime) to the plugin and web app.
+2. When to add live updates to the dedicated app, plugin, browser experience and other connected surfaces.
 
 **Sharing and permissions**
 
@@ -845,7 +871,7 @@ The login session is stored per user in `~/.config/surface-cli/`, not in the che
 
 **Views and pages**
 
-9. The tree's storage split: `parent` on records plus `.surface/views/sidebar.yaml` (proposed, §5a). One shared sidebar, or shared plus personal?
+9. The tree uses `parent` on records plus `.surface/views/sidebar.yaml` (built, §5a). One shared sidebar, or shared plus personal?
 10. The exact syntax of view files and inline ` ```surface ` blocks (§5d); inline value syntax.
 11. Should Markdown table column types be remembered, and where (§5c)?
 
@@ -857,7 +883,7 @@ The login session is stored per user in `~/.config/surface-cli/`, not in the che
 **Clients**
 
 14. Obsidian plugin scope for a first version: Views panel only, or embeds and push on save too?
-15. The web app's stack and first screens.
+15. The dedicated app's stack, first screens and management flows, and its relationship to the browser experience.
 16. Where user workflow skills live: `.agents/skills/` or a visible `Skills/` folder (`docs/AGENT-INTEGRATION.md`).
 
 **Parked**
@@ -870,12 +896,12 @@ Gaps identified Oct 13 (updated Oct 14), in suggested order:
 
 1. **Agents and surfaces** (pillars 2 and 3 of the thesis). Bring-your-own-agent, the entry point and skills are now designed (§10). Still open:
    - Knowing which agent or person made an outside edit; approvals.
-   - Agent-built views: how they're requested, rendered, saved and shared, and how they get live data.
+   - Generated and external surfaces: how reports, widgets, artifacts and canvases are requested, created, saved and shared; which are snapshots or connected; and how connected surfaces read or edit data with scoped access.
    - Model choice and privacy (local models, your own API key).
 2. ~~Permissions and sharing~~ designed (§7a) and enforced by row-level security in the MVP.
 3. **Attachments and large files** (photos, PDFs, plans): likely Supabase Storage, pulled into the checkout next to the records; size limits, previews.
 4. **Search:** full-text; possibly semantic search for agents; search across views.
-5. **History, undo and trash:** the database keeps every revision, and `surface history` / `rm` / `restore` exist. Still open: what the plugin and web app show, and undo.
+5. **History, undo and trash:** the database keeps every revision, and `surface history` / `rm` / `restore` exist. Still open: what the dedicated app, plugin and browser experience show, and undo.
 6. **The view system in detail:** the query language, formulas, rollups and each layout (format decided, §5d).
 7. **Templates, recurring items, reminders and notifications;** whether agents replace automations.
 8. **Security:** encryption at rest (Supabase), secrets in notes, API tokens for agents.
@@ -885,14 +911,23 @@ Gaps identified Oct 13 (updated Oct 14), in suggested order:
 
 ## 14. Build plan
 
-**MVP: built Oct 14** (`docs/MVP.md`). It's a Supabase types engine plus the `surface` CLI, used from Obsidian. The end-to-end test now has 15 steps.
+**MVP: built Oct 14** (`MVP.md`). The Supabase types engine plus `surface` CLI implements the foundational Markdown surface. `cli/test/e2e.ts` defines 15 end-to-end scenarios against a real Supabase project.
 
-**Next, in order (agreed Oct 14):**
+**Built beyond the initial MVP:**
 
-1. ✅ **CLI: the `link:` layout and folder commands** (`surface layout`, `surface mv`, `surface folder rename`, `surface folders`, move by query). Built Oct 14.
-2. ✅ **The `parent` field, `.surface/views/sidebar.yaml` and `surface tree`,** so agents can build and read the Views tree. Built Oct 14 (migration 0004: `records.parent_id`, the `views` table, `save_view`, `rename_folder`).
-3. **The Obsidian plugin: the Views panel.**
-4. **Composite pages:** live ` ```surface ` blocks and saved-view embeds in the plugin.
-5. **Push on save** in the plugin, so Obsidian users never need the terminal.
+1. `link:` layouts and folder tools: `surface layout`, `mv`, `folder rename`, `folders`, and moving records by query.
+2. Nesting and saved trees: `parent`, `.surface/views/sidebar.yaml`, `surface tree`, and migration 0004.
 
-Then: the web app for the team, and live updates.
+**Previously identified next work on the Markdown surface (planned):**
+
+1. The Obsidian plugin's Views panel.
+2. Composite pages: live ` ```surface ` blocks and saved-view embeds.
+3. Push on save and inline validation, so file editing does not require terminal use.
+
+**Product work also planned:**
+
+- A dedicated Surface app for everyday writing and data work, plus team and schema management.
+- A browser experience for team access without an install, and live updates for connected clients.
+- Additional surfaces, from generated reports to interactive widgets, artifacts and integrations in other hosts.
+
+The dedicated app is part of the product direction. Its first release scope and delivery order relative to the plugin, browser client and other surfaces remain open; the earlier plugin-first list does not make the app conditional on the plugin falling short.

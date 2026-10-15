@@ -1,7 +1,7 @@
 # surface CLI
 
 Typed records in Supabase, checked out as Markdown files you can open in Obsidian or any editor.
-Supabase is the source of truth; the folder is a checkout. See `../docs/MVP.md`.
+Supabase is the source of truth; the folder is a checkout. This is Surface's first and foundational surface: a shared Markdown working medium for humans and agents. The planned dedicated app and other surfaces use the same data foundation; see [`../docs/SPEC.md`](../docs/SPEC.md) for the product direction and [`../docs/MVP.md`](../docs/MVP.md) for current scope.
 
 ## Install
 
