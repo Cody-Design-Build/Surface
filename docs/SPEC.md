@@ -236,7 +236,8 @@ The ledger is a product asset as well as a document. It belongs on the website: 
 - **Markdown checkout (built):** the foundational surface for editors and agents. A signed-in CLI connects file edits to the database; reading and editing an existing local copy can happen offline.
 - **Dedicated Surface app (planned):** Obsidian-like writing and browsing with Bear/Margin visual polish, plus management of workspaces, teams, permissions, types, fields and relationships (§9).
 - **Obsidian plugin (planned):** a Views panel (§5a), live embeds, push on save, validation messages and type-aware properties. It extends the Markdown surface.
-- **Browser experience (planned):** team access without an install, meeting the onboarding bar in §1. Its relationship to the dedicated desktop app and any shared UI implementation remain open.
+- **Browser experience (planned):** the dedicated app's hosted mode: team access without an install, meeting the onboarding bar in §1 (§9).
+- **Local server (planned):** `surface serve`, the CLI's long-running mode. It serves the dedicated app on localhost and gives it the checkout, commands and agent runs (§9).
 - **Generated and external surfaces (direction):** reports, widgets, artifacts, web interfaces and canvases. Formats, supported hosts, scoped access and data connections remain open.
 - **MCP (later):** an additional access path for agents that cannot run the CLI or see files.
 
@@ -824,7 +825,23 @@ The login session is stored per user in `~/.config/surface-cli/`, not in the che
 
 The app gives people a coherent home for their work. Other surfaces can expose a single report or workflow wherever it is useful, without needing to recreate the app. Agents can use the CLI and Markdown independently of the app.
 
-**Implementation remains open:** desktop shell, editor and views stack, first screens, and how much is shared with the browser experience. The earlier research in `research/APP-TECH.md` is input, not a decision to restore a Rust core, local database or CRDT engine. Supabase remains the truth.
+### How the app runs
+
+**Decided (Oct 14): a web app, in two modes from one build. An Electron shell is planned for later.**
+
+| Mode | How it runs | What it can do |
+|---|---|---|
+| **Local** | `surface serve` runs a small server on the person's machine. The app is a page on `localhost`, installed as an app (Omarchy web apps, Chrome install, Safari "Add to Dock"). | Everything in hosted mode, plus the Markdown checkout (keep it current, push on save), Surface commands, and launching the person's own agents in the checkout. |
+| **Hosted** | The same build served from the web. Teammates open a link and sign in. | Records, pages, views, types and team management against Supabase. No files, shell or local agents. |
+
+- **Platforms:** Mac and Linux first; Windows works through the same browser install, at lower priority.
+- **The app talks to two things only:** Supabase (data, validation, permissions, live updates) and, in local mode, the local server's API (files, commands, agents). Features that need the local server are disabled, not hidden, in hosted mode.
+- **The local server is the CLI.** It runs the same code as `surface` and is its long-running mode. It listens on localhost only and requires a per-session token, with Host and Origin checks. Shell commands are limited to an approved list and shown before they run.
+- **Shared code:** a `core` package (Markdown, normalization, queries, the Views tree, pull and push) used by the CLI, the local server, the app and a future Obsidian plugin.
+- **Why web first:** the fastest way to build and change (instant reload, no packaging, signing or update pipeline), one interface for both modes, and it matches how David runs apps on Omarchy. The same pattern as Jupyter or DeepSeek Harness (`dsh web`).
+- **Electron (planned):** wraps the same page and starts the same server inside itself, with no interface rewrite. It comes in when one of these is needed: a one-download install for non-technical Mac users who need local files or agents; a global capture hotkey or menu-bar presence; or Mac polish beyond what installed web apps allow.
+
+**Open:** the editor and views stack, first screens, and whether `surface serve` starts at login (launchd on the Mac, a systemd user service on Linux) or on demand. The earlier research in `research/APP-TECH.md` is input, not a decision to restore a Rust core, local database or CRDT engine. Supabase remains the truth.
 
 **Obsidian remains a supported surface.** The planned plugin improves its checkout experience with the Views panel, composite-page embeds, push on save and validation. It is not a condition for whether Surface gets its own app.
 
@@ -883,7 +900,7 @@ The app gives people a coherent home for their work. Other surfaces can expose a
 **Clients**
 
 14. Obsidian plugin scope for a first version: Views panel only, or embeds and push on save too?
-15. The dedicated app's stack, first screens and management flows, and its relationship to the browser experience.
+15. The dedicated app's editor and views stack, first screens and management flows, and whether `surface serve` starts at login or on demand (§9).
 16. Where user workflow skills live: `.agents/skills/` or a visible `Skills/` folder (`docs/AGENT-INTEGRATION.md`).
 
 **Parked**

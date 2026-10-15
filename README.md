@@ -30,7 +30,7 @@ Supabase is the source of truth. `surface pull` checks a workspace out as Markdo
 
 A dedicated Surface app is planned. It will offer an Obsidian-like writing and browsing experience with the visual polish of Bear and Margin. It will also provide the tools to manage workspaces, teams, permissions, types, fields and relationships.
 
-The app is a first-class client of the same foundation that powers Markdown checkouts and other surfaces. Its desktop technology and relationship to the planned browser experience remain open.
+The app is a first-class client of the same foundation that powers Markdown checkouts and other surfaces. It is a web app with two modes from one build: local, served by `surface serve` and installed as an app on Mac and Linux, with access to the Markdown checkout and your agents; and hosted, for teammates in a browser. An Electron shell is planned for later.
 
 ## No lock-in
 
