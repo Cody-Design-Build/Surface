@@ -1,19 +1,20 @@
 # Surface Spec
 
-The current design in one place. Last consolidated: Oct 14, 2026.
+The current design in one place. Last consolidated: Oct 16, 2026.
 
 > **Current direction (Oct 14, decided): a headless foundation with many surfaces.**
-> - **Supabase is the truth:** a mutable types engine for records, relationships, validation, permissions and history.
+> - **The database is the truth:** a mutable types engine for records, relationships, validation, permissions and history. It runs in Supabase (sync mode); a local mode on one computer with no account is leaning (`LOCAL.md`).
 > - **Agents help humans do the work.** The foundation operates independently of any one interface.
-> - **Markdown is the first and foundational surface:** `surface pull`, edit, `surface push`, with normalization and revision checks. There is no local database or merge engine.
+> - **Markdown is the first and foundational surface:** `surface pull`, edit, `surface push`, with normalization and revision checks. There is no merge engine.
 > - **Surfaces range from snapshots to interactive tools:** documents, PDFs, widgets, web interfaces, artifacts and canvases, inside or outside the dedicated app.
 > - **A dedicated app is planned:** Obsidian-like writing and browsing, Bear/Margin visual polish, and management of workspaces, teams, permissions and types.
 > - **Built today:** the Supabase types engine and CLI, including nesting, folder tools and saved navigation trees. Other clients and integrations are planned.
 >
-> Earlier local-database and CRDT designs are superseded. A dedicated app is part of the product direction; its implementation technology is still open.
+> Earlier designs with a database on every device and CRDT merging are superseded. A dedicated app is part of the product direction; its implementation technology is still open.
 
 - **How we got here:** the working notes in `docs/notes/` (DATA-MODEL, CONVENTIONS, SYNC), kept as design history.
 - **Research:** `docs/research/`.
+- **Local mode and sync mode:** `docs/LOCAL.md`.
 - **Parked:** importing existing vaults (`docs/IMPORT.md`).
 
 Status markers: **Decided**, **Leaning** (direction agreed, details open), **Open**.
@@ -203,13 +204,19 @@ The ledger is a product asset as well as a document. It belongs on the website: 
 | **Database** (Supabase / Postgres) | the remote | the single source of truth: types, records, links, full history, permissions; validates every write |
 | **Files** (a checkout on any machine) | working copy | Markdown generated from the database; people, editors and agents read and edit them, then push |
 
-- **There's no local database and no sync engine.** The checkout's `.surface/state.json` (revisions and file hashes) is the only local state.
+- **There's no sync engine.** Each workspace has one database. The checkout's `.surface/state.json` (revisions and file hashes) is the only state kept with the files.
 - **Pull and push, like Git, but per record:**
   - `surface pull` writes the database into files;
   - `surface push` sends edited or new files back. It validates each one and checks its revision, so a stale file is rejected rather than merged.
-- **Everyone signs in.** The workspace is shared by default. A personal workspace is just a workspace with one member.
+- **Two modes, one design (leaning, Oct 16; `LOCAL.md`):**
+  - **Local mode:** the same database (Postgres, embedded with PGlite) runs on one computer. No account, fully offline.
+  - **Sync mode:** the database is Supabase. Sign in, use any number of computers, and add a team.
+
+  A workspace is in one mode at a time and moves between them by a straight copy. The files, CLI, app and agent guidance are the same in both.
 - **A disposable local index may come later,** only if queries get slow. It's a cache rebuilt from the database, never the truth.
 
+> Local mode isn't this superseded design. It has exactly one database, for one person on one computer, and nothing to merge.
+>
 > **Superseded (Oct 14): a local database on every device** (the device's source of truth, with CRDT merging between devices and an optional sync server).
 > - It existed for four needs: fully offline work with queries, speed at huge sizes, live co-editing, and solo use with no account.
 > - The MVP showed none of them are needed to start. Offline reading and editing already work through the checkout.
@@ -879,13 +886,14 @@ In this version the app reaches Supabase through the local server, using the CLI
 
 ## 11. Business model
 
-**Open (Oct 14).** The database is hosted, so the natural model is a hosted service: free for one person or a small workspace, paid for teams. Self-hosting on your own Supabase is possible. *(Superseded: a free local app plus paid sync.)*
+**Open (Oct 16).** With local mode (`LOCAL.md`), a natural model is local free and sync paid: one computer at no cost, a hosted database for several computers and teams. Self-hosting on your own Supabase is possible.
 
 ## 12. Open questions
 
 **Database and hosting**
 
-1. Hosting long-term: Surface-hosted Supabase for everyone, a project per team, or self-hosted?
+1. Hosting long-term for sync mode: Surface-hosted Supabase for everyone, a project per team, or self-hosted?
+1a. Local mode's open questions: `LOCAL.md` §10.
 2. When to add live updates to the dedicated app, plugin, browser experience and other connected surfaces.
 
 **Sharing and permissions**
@@ -954,6 +962,8 @@ Gaps identified Oct 13 (updated Oct 14), in suggested order:
 1. The Obsidian plugin's Views panel.
 2. Composite pages: live ` ```surface ` blocks and saved-view embeds.
 3. Push on save and inline validation, so file editing does not require terminal use.
+
+**Local mode (leaning):** the PGlite spike, then a store interface in the CLI and `surface init --local` (`LOCAL.md` §8–9).
 
 **Product work also planned:**
 
