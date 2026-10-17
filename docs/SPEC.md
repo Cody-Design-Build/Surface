@@ -793,6 +793,12 @@ A file watcher with continuous three-way merging. It's only worth building if pu
 
 ### Multiple workspaces
 
+**Decided (Oct 17).** Anyone can create as many workspaces as they like and share each one with whoever it's for: a whole team, a few people, one client, or nobody.
+
+- **Create:** `surface workspace create <name>` (built) or from the app (planned).
+- **Share:** invite people by email with a role (planned: `surface workspace invite <email> --role member`, and a Share panel in the app). Membership and roles are already enforced by the database (built).
+- **Each workspace is separate:** its own types, records, views, workspace sidebar and members. Each member also has their own personal sidebar in it (§5a).
+- **Local and sync:** a workspace in local mode lives on one computer and has one user. Sharing it means turning on sync first (`surface sync enable`, `LOCAL.md` §6), which keeps every ID, link and revision.
 - **You can belong to several workspaces,** shown together in one app (like Slack teams or Anytype spaces), for example:
   - "Cody Design Build" (the whole team);
   - "Office" (the owners only);
@@ -835,6 +841,7 @@ A file watcher with continuous three-way merging. It's only worth building if pu
 1. **Flagged for later discussion (Oct 13):** the member roles: which roles exist (Owner, Admin, Member, Viewer?), what each can do, and whether Member + Viewer is enough to start.
 2. Should publishing to the web come with the first team release?
 3. How does a record move between workspaces with its links and history?
+4. Invitations: email links, or sharing a code; what someone sees before they accept.
 
 ## 8. The `.surface/` folder
 
