@@ -949,6 +949,8 @@ Not built yet: shell commands and agent runs, syncing attachments to storage.
 
 ## 12. Open questions
 
+The working checklist of everything still to decide is `TODO.md`; tick items there and record decisions here.
+
 **Database and hosting**
 
 1. Hosting long-term for sync mode: Surface-hosted Supabase for everyone, a project per team, or self-hosted?

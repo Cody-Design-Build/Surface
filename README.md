@@ -45,6 +45,7 @@ Records can be pulled as readable Markdown, with types and saved views in YAML. 
 ## Docs
 
 - [`docs/SPEC.md`](docs/SPEC.md): current product direction, architecture and build plan.
+- [`docs/TODO.md`](docs/TODO.md): open questions as a checklist to work through.
 - [`docs/MVP.md`](docs/MVP.md): what the first implementation does and what it tests.
 - [`cli/README.md`](cli/README.md): installation, CLI usage and running the app.
 - [`app/README.md`](app/README.md): the app's code.

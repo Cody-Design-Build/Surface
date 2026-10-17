@@ -1,0 +1,63 @@
+# Open questions: the task list
+
+Everything still to decide, in one place. Tick an item when it's decided, and record the decision in the doc it points to (SPEC, LOCAL, …). The details behind each question stay in those docs.
+
+## Next up
+
+- [ ] **Offline edits in a shared workspace:** merge both edits automatically, or reject the stale edit and show the newer one? Merging needs a sync engine (dropped Oct 14). (LOCAL §10)
+- [ ] **Local database:** confirm one database per computer for every local workspace (leaning). (LOCAL §10.3)
+- [ ] **Local mode as the default** for new users, or a choice at install? (LOCAL §10.1)
+- [ ] **Attachments:** sync pasted images and PDFs to Supabase Storage so teammates see them; size limits, previews. (SPEC §13.3)
+- [ ] **cdb-os:** is the Notion import good enough to use, and what's missing (Tags, Documents, Special Inspections, files, assignees)? (`tools/notion-import/README.md`)
+
+## Database and hosting
+
+- [ ] Where sync mode is hosted long term: Surface-hosted Supabase, one project per team, or self-hosted. (SPEC §12.1)
+- [ ] Where the local database lives: outside the checkout only, or optionally inside it. (LOCAL §10.2)
+- [ ] Pricing: local free, sync paid? A business decision. (LOCAL §10.4)
+- [ ] Mobile: sync mode with the hosted app? (LOCAL §10.5, SPEC §13.9)
+- [ ] When to add live updates to the plugin and other surfaces (the app has them). (SPEC §12.2)
+
+## Sharing and permissions
+
+- [ ] Member roles in detail. (SPEC §7a)
+- [ ] Guests and clients: publish a page or view to the web, or a small shared workspace? (SPEC §7a)
+
+## Files
+
+- [ ] Filename rule for duplicate titles, and filename churn on renames. (SPEC §5)
+- [ ] Front matter key: `id` or `surface_id`.
+- [ ] The `link:` layout when a record links to several parents.
+- [ ] Reverse links in files (`linked_from:`), or leave them to Obsidian's backlinks pane?
+
+## Views and pages
+
+- [ ] How placed entries, generated entries, pins and personal sidebars are written in view files. (SPEC §5a)
+- [ ] Exact syntax of view files and ` ```surface ` blocks; inline value syntax. (SPEC §5d)
+- [ ] Remember Markdown table column types, and where? (SPEC §5c)
+- [ ] The view system in detail: query language, formulas, rollups (the Notion import copied formula values as plain numbers). (SPEC §13.6)
+
+## Types
+
+- [ ] A fixed prefix for IDs (e.g. `s_`), or none. (SPEC §4)
+- [ ] Where the plugin creates new records: the current folder or the type's folder. (SPEC §5a)
+
+## Clients
+
+- [ ] Obsidian plugin scope for a first version. (SPEC §12.14)
+- [ ] The app's first screens and management flows; does `surface serve` start at login or on demand? (SPEC §9)
+- [ ] Where user workflow skills live: `.agents/skills/` or a visible `Skills/` folder. (`AGENT-INTEGRATION.md`)
+
+## Not designed yet
+
+- [ ] Agents and surfaces: who made an outside edit, approvals, generated surfaces (reports, widgets, canvases), model choice and privacy. (SPEC §13.1)
+- [ ] Search: full text, semantic search for agents. (SPEC §13.4)
+- [ ] History, undo and trash beyond the app's undo. (SPEC §13.5)
+- [ ] Templates, recurring items, reminders, notifications. (SPEC §13.7)
+- [ ] Security: secrets in notes (the Steiner page holds site access codes), API tokens for agents. (SPEC §13.8)
+- [ ] Performance targets and when a local index is needed. (SPEC §13.10)
+- [ ] Onboarding: first run, starter content. (SPEC §13.11)
+
+## Parked
+
+- [ ] Importing existing vaults: in place or as a copy; huge vaults. (`IMPORT.md`)
