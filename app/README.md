@@ -14,7 +14,7 @@ Hot reload (`npm run dev`) is not wired yet: the server's token cookie and Origi
 | File | What it does |
 |---|---|
 | `src/App.tsx` | Routing (`#/r/<id>`, `#/g/<group>`), keyboard shortcuts, live updates |
-| `src/Sidebar.tsx` | The Views tree |
+| `src/Sidebar.tsx` | The sidebar |
 | `src/Page.tsx` | Title, properties, editor, autosave and conflicts |
 | `src/Editor.tsx` | CodeMirror setup: slash menu, `[[` completion, shortcuts |
 | `src/livePreview.ts` | Live preview decorations |

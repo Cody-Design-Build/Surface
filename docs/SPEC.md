@@ -354,7 +354,7 @@ Built behaviour in the MVP (`surface type …` / `surface field …`):
 **Leaning (Oct 14).** Pages can sit inside pages, like Notion.
 - **Every record gets a built-in, optional `parent` link,** to any record of any type.
 - **Nesting is data:** agents can set it, queries can use it, and it shows in front matter (`parent: "[[Steiner Kitchen]]"`).
-- **It doesn't move the file.** The Views tree (§5a) shows the nesting; folders stay a separate choice.
+- **It doesn't move the file.** The sidebar (§5a) can show the nesting; folders stay a separate choice.
 - **One parent per record.** Appearing in many places is what links and query nodes are for.
 
 ## 5. The Markdown files
@@ -405,7 +405,7 @@ Everything degrades gracefully: it's readable in any text editor, renders in any
 
 ## 5a. Organizing: files, views and composite pages
 
-**Organization model (Oct 14).** Within the Markdown surface, three layers have separate roles: **files are checkout storage, views are navigation, composite pages combine prose and data.** Supabase remains the source of truth. This model organizes one surface; other surfaces need not use files or a sidebar.
+**Organization model (Oct 17).** Three layers have separate roles: **files are checkout storage, the sidebar is navigation, views show data.** Records are database rows, shown as documents, as fields, or in views (§5d), whichever fits; Markdown is one way to see them. Supabase remains the source of truth. This model organizes one surface; other surfaces need not use files or a sidebar.
 
 ### Layer 1: files in real folders (storage)
 
@@ -416,34 +416,62 @@ Everything degrades gracefully: it's readable in any text editor, renders in any
 - **Organizing tools (built in the CLI):** `surface mv`, folder rename, and moving records by query. Human interfaces for these operations are planned.
 - **Folders organize storage rather than define relationships.** The database stores a record's `folder` value, but folders are not separate records. Deleting a folder in Finder does not delete database records; files show as missing until restored with pull or records are intentionally deleted with `surface rm`.
 
-### Layer 2: the Views tree (navigation)
+### Layer 2: the sidebar (navigation)
 
-- **The CLI already resolves and draws the Views tree.** A planned Obsidian plugin adds a "Views" sidebar panel; the dedicated app and browser experience can use the same saved definition.
-- **It looks like folders,** with twirl-downs, but nothing in it moves a file. Its items:
+**Decided (Oct 17).** The sidebar is organization only. **Arranging it never changes a record's fields.** It's where people put the records and views they use, in the shape that suits them.
 
-| Item | What it is |
+**Entries:**
+
+| Entry | What it is |
 |---|---|
-| **Group** | A twirl-down, like a folder, but virtual |
-| **Page or record** | Opens the real file; can have children |
-| **Nested pages** | Pages in pages, like Notion, from the `parent` field (§4) |
-| **Query** | Fills its children automatically, e.g. "tasks where project = this job" |
+| **Folder** | A twirl-down holding whatever is placed in it |
+| **Record** | Opens one record; can show its sub-pages (`parent`, §4) |
+| **View** | A saved view (§5d). Either **opens** as a full page (table, board, calendar…) or **unfolds** to list its results in the tree |
+
+- **The same record or view can be placed any number of times.** Position is only for the person reading the sidebar.
+- **Removing an entry removes the link,** never the record.
+- **"Under each":** an unfolding view can give every result the same children, where `this` means that result. Set up once, every new result gets them:
 
   ```
-  Jobs                      ← query: all projects
-  └── Steiner Kitchen       ← the record
-      ├── Tasks             ← query: tasks where project = Steiner Kitchen
-      ├── Materials         ← query: materials where project = Steiner Kitchen
-      └── Meetings          ← query: meetings linked to Steiner Kitchen
+  Wiki                        ← folder
+    How We Estimate           ← view (unfolds): every page, nested by parent
+      Kitchen pricing
+    Supplier List
+  Jobs                        ← view (unfolds): every job
+    Steiner Kitchen
+      Pages                   ← view (unfolds): pages where job = this
+      Tasks                   ← view (opens): a board, job = this
+      Selections tracker      ← view (opens): a table, job = this
   ```
-- **One record, many places:** a task appears under every job it links to, with no copies. Notion allows one parent per page; the closest prior art is Tana.
-- **Where the tree is stored:**
-  - **Nesting lives on the records** (the `parent` field). It's data.
-  - **The arrangement lives in a view file,** `.surface/views/sidebar.yaml`: groups, query nodes, manual order, pinned items. It's readable, agents can edit it, and it's kept on Leave.
-- **Views are queries, not containers.** A record appears under a query node because it matches. Hand-picked lists are a page or collection record with a list of links.
 
-### Layer 3: composite pages (prose plus live data)
+  Works for any type: recipes with Ingredients under each, clients with Contacts and Invoices.
 
-- **A page can mix text, embedded live views and embedded records:** a paragraph, then this job's open tasks as a table, then more text. The underlying records become building blocks, with their Markdown checkout remaining readable.
+**Dragging in the sidebar:**
+
+- **Placed entries** (folders, records and views someone added) reorder, nest and duplicate freely.
+- **Generated entries** (results of an unfolding view) stay where the view's filter and sort put them.
+- **Dragging a generated entry into placed entries pins a link there;** the original stays.
+- **Undo** (⌘Z, and Undo in the message after each change) covers every sidebar change.
+- **Changing what a record belongs to** happens in its properties, in a board, or with **Move to…** (a command that picks a destination by name and applies the matching link or `parent` change). Never in the sidebar.
+
+**Workspace and personal sidebars:**
+
+- **Workspace sidebar:** shared by everyone in the workspace; owners and admins arrange it (§7a).
+- **Personal sidebar:** each member's own, saved to their account so it follows them between devices. Anyone can arrange theirs.
+- **Display is a personal setting:** two sections (Workspace, Personal), as in Notion, or one merged tree. Local mode (`LOCAL.md`) has one user and defaults to one tree.
+
+**Storage:**
+
+- **Both are saved views:** the workspace sidebar is the view `sidebar`; personal sidebars are views owned by one member (planned: an owner column on `views`).
+- **In the checkout,** `.surface/views/sidebar.yaml` holds the workspace sidebar and `.surface/views/sidebar.personal.yaml` the signed-in member's own. Both are readable and agents can edit them.
+- **Nesting lives on the records** (the `parent` field). It's data; the sidebar only displays it.
+
+**Built:** a single sidebar from `.surface/views/sidebar.yaml` with groups, records, unfolding queries and `each`, resolved by the CLI and the app. **Planned:** view entries that open full-page, placed versus generated dragging, pinning, undo, personal sidebars and the display setting.
+
+### Layer 3: views and composite pages (data)
+
+- **Views are where data work happens:** a saved view opens full-page as a table, board, list, calendar or gallery, with tabs between its layouts (§5d). Editing a cell edits the record; dragging a board card sets the field the board groups by. A drag never leaves the view it started in.
+- **A page can also mix text, embedded live views and embedded records:** a paragraph, then this job's open tasks as a table, then more text. The underlying records become building blocks, with their Markdown checkout remaining readable.
 - **The embeds stay real Markdown,** so the page reads fine without Surface (§5d).
 
 ### Notes and types
@@ -456,7 +484,7 @@ Everything degrades gracefully: it's readable in any text editor, renders in any
 
 > **Superseded (Oct 14):**
 > - "Surface never invents folders or moves files on its own": the default is now a folder per type.
-> - "The sidebar is a page of links" (`Sidebar.md`): replaced by the Views tree, with its arrangement in `.surface/views/sidebar.yaml`.
+> - "The sidebar is a page of links" (`Sidebar.md`): replaced by the sidebar (§5a), with its arrangement in `.surface/views/sidebar.yaml`.
 
 ## 5b. Block-like editing on plain Markdown
 
@@ -638,7 +666,7 @@ layouts:
 
 **Open:** the inline value syntax (Dataview-style `` `= …` `` or something else).
 
-### The sidebar is a page too (superseded Oct 14 by the Views tree, §5a)
+### The sidebar is a page too (superseded Oct 14 by the sidebar, §5a)
 
 - **The sidebar was an outline of links** in a Markdown file (for example `Sidebar.md`):
   - indenting a link nests it, which gives the twirl-downs;
@@ -673,7 +701,7 @@ layouts:
      - Surface's view format is versioned and published as an open spec (§2a);
      - its simple views (filter, sort, one group, table, cards, list or Kanban) are designed to map cleanly onto `.base`;
      - "Leave Surface" writes those as `.base` files.
-2. One sidebar for the whole team, or a shared one plus personal additions?
+2. *Decided (Oct 17): a workspace sidebar plus a personal one, shown split or merged by personal setting (§5a).*
 3. Should a quick filter be shareable as a link without saving it as a view?
 
 ## 6. Keeping files and the database in step
@@ -844,7 +872,7 @@ The app gives people a coherent home for their work. Other surfaces can expose a
 - **Platforms:** Mac and Linux first; Windows works through the same browser install, at lower priority.
 - **The app talks to two things only:** Supabase (data, validation, permissions, live updates) and, in local mode, the local server's API (files, commands, agents). Features that need the local server are disabled, not hidden, in hosted mode.
 - **The local server is the CLI.** It runs the same code as `surface` and is its long-running mode. It listens on localhost only and requires a per-session token, with Host and Origin checks. Shell commands are limited to an approved list and shown before they run.
-- **Shared code:** a `core` package (Markdown, normalization, queries, the Views tree, pull and push) used by the CLI, the local server, the app and a future Obsidian plugin.
+- **Shared code:** a `core` package (Markdown, normalization, queries, the sidebar, pull and push) used by the CLI, the local server, the app and a future Obsidian plugin.
 - **Why web first:** the fastest way to build and change (instant reload, no packaging, signing or update pipeline), one interface for both modes, and it matches how David runs apps on Omarchy. The same pattern as Jupyter or DeepSeek Harness (`dsh web`).
 - **Electron (planned):** wraps the same page and starts the same server inside itself, with no interface rewrite. It comes in when one of these is needed: a one-download install for non-technical Mac users who need local files or agents; a global capture hotkey or menu-bar presence; or Mac polish beyond what installed web apps allow.
 
@@ -852,13 +880,14 @@ The app gives people a coherent home for their work. Other surfaces can expose a
 
 `app/` (React, CodeMirror 6, Vite), served by `surface serve`:
 
-- **Sidebar:** the Views tree from `.surface/views/sidebar.yaml`, or a group per type when there is none. Twirl-downs, add a page inside any record, drag a page onto another to nest it (or onto a section to take it out), slide away with ⌘\.
+- **Sidebar:** the tree from `.surface/views/sidebar.yaml`, or a group per type when there is none. Twirl-downs, add a page inside any record, slide away with ⌘\.
 - **Editor:** live preview. Markdown markers step aside except where the cursor is. It renders headings, emphasis, inline and fenced code, links, `[[wikilinks]]` (with title completion), #tags, task checkboxes, lists, quotes, callouts (`> [!note]`), dividers and images (`![](…)`, `![[…]]`). Slash menu for blocks; shortcuts for bold, italic, code, tasks and headings. Hovering a block shows a ⋮⋮ handle: drag to move the paragraph, heading, list item, quote, table or code block, click to select it; ⌥↑/⌥↓ move lines. A move is a text edit, so the file stays plain Markdown.
 - **Page:** a title above typed properties (select, multi-select, date, checkbox, number, text and link pickers), parent breadcrumbs, pages inside, and links from other records. A leading `# Title` heading is hidden while editing and kept in step with the title in the file.
 - **Groups:** a sidebar group opens as a table of its records.
 - **Find:** ⌘K finds by title and full text, or creates a page.
 - **Saving:** autosave through the same write path as `surface push`, with revision checks. A conflict offers keep mine or use theirs. Changes made elsewhere arrive within a few seconds.
 - **Look:** light and dark, one accent, system fonts.
+- **To change:** the first version lets a sidebar drag set a page's `parent`. That conflicts with §5a (the sidebar never changes fields) and goes when the §5a sidebar is built.
 
 In this version the app reaches Supabase through the local server, using the CLI's sign-in. Hosted mode needs the app to talk to Supabase directly (planned). Not built yet: shell commands and agent runs, image paste, rendered tables, board views, filters and sorting in tables, tabs.
 
@@ -910,7 +939,7 @@ In this version the app reaches Supabase through the local server, using the CLI
 
 **Views and pages**
 
-9. The tree uses `parent` on records plus `.surface/views/sidebar.yaml` (built, §5a). One shared sidebar, or shared plus personal?
+9. Sidebar format details: how placed and generated entries, pins and personal sidebars are written in the view files (§5a).
 10. The exact syntax of view files and inline ` ```surface ` blocks (§5d); inline value syntax.
 11. Should Markdown table column types be remembered, and where (§5c)?
 
@@ -968,7 +997,7 @@ Gaps identified Oct 13 (updated Oct 14), in suggested order:
 
 **Product work also planned:**
 
-- The dedicated app, next: board and calendar views, tabs, Markdown tables, image paste, then type, field and team management.
+- The dedicated app, next: full-page views (table with cell editing, board, layout tabs, a New view panel), then the sidebar model of §5a (open/unfold view entries, pinning, undo, workspace and personal sidebars), then calendar, Markdown tables, image paste, and type, field and team management.
 - The app's hosted mode for team access without an install, and live updates for other connected clients.
 - Additional surfaces, from generated reports to interactive widgets, artifacts and integrations in other hosts.
 
