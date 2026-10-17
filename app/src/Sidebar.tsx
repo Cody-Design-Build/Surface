@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { AppState, SidebarInfo, TreeDef, TreeItem, TreeNode, ViewInfo } from "./api.ts";
+import { api, type AppState, type SidebarInfo, type TreeDef, type TreeItem, type TreeNode, type ViewInfo } from "./api.ts";
 import { Icon, typeIcon } from "./Icon.tsx";
 import { insert, isInside, itemAt, move, remove, update, type Where } from "./treeEdit.ts";
 
@@ -521,11 +521,7 @@ export function Sidebar(props: Props) {
     <aside className="sidebar">
       <div className="side-top">
         <div className="ws">
-          <div className="ws-mark">{app.workspace.name.slice(0, 1).toUpperCase()}</div>
-          <div className="ws-text">
-            <div className="ws-name">{app.workspace.name}</div>
-            <div className="ws-user">{app.user.email}</div>
-          </div>
+          <WorkspaceMenu app={app} />
           <button className="icon-btn ws-btn" title="Share" onClick={props.openShare}>
             <Icon name="people" size={15} />
           </button>
@@ -632,6 +628,69 @@ export function Menu({ x, y, items, onClose }: { x: number; y: number; items: Me
           </button>
         ),
       )}
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------ workspace switcher
+function WorkspaceMenu({ app }: { app: AppState }) {
+  const [open, setOpen] = useState(false);
+  const [list, setList] = useState<{ id: string; name: string; role: string | null; current: boolean; checkout: string | null }[] | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    api.workspaces().then((r) => setList(r.workspaces)).catch((e) => setErr(String(e.message ?? e)));
+    const h = (e: MouseEvent) => !ref.current?.contains(e.target as Node) && setOpen(false);
+    const k = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("mousedown", h);
+    document.addEventListener("keydown", k);
+    return () => {
+      document.removeEventListener("mousedown", h);
+      document.removeEventListener("keydown", k);
+    };
+  }, [open]);
+  const go = async (id: string) => {
+    setBusy(id);
+    setErr(null);
+    try {
+      await api.switchWorkspace(id);
+      location.replace(location.pathname);
+    } catch (e) {
+      setErr((e as Error).message);
+      setBusy(null);
+    }
+  };
+  return (
+    <div className="ws-menu" ref={ref}>
+      <button className="ws-switch" onClick={() => setOpen((o) => !o)} aria-haspopup="menu" aria-expanded={open} title="Switch workspace">
+        <div className="ws-mark">{app.workspace.name.slice(0, 1).toUpperCase()}</div>
+        <div className="ws-text">
+          <div className="ws-name">
+            {app.workspace.name}
+            <Icon name="chevron" size={11} className="ws-caret" />
+          </div>
+          <div className="ws-user">{app.user.email}</div>
+        </div>
+      </button>
+      {open ? (
+        <div className="menu ws-pop" role="menu">
+          <div className="menu-label">Workspaces</div>
+          {!list ? <div className="menu-note">Loading…</div> : null}
+          {list?.map((w) => (
+            <button key={w.id} role="menuitem" className={`menu-item ws-item ${w.current ? "is-on" : ""}`} disabled={!!busy} onClick={() => (w.current ? setOpen(false) : go(w.id))}>
+              <span className="ws-mark sm">{w.name.slice(0, 1).toUpperCase()}</span>
+              <span className="ws-item-text">
+                <span>{w.name}</span>
+                <small>{busy === w.id ? (w.checkout ? "Opening…" : "Downloading…") : w.checkout ? w.checkout.replace(/^\/Users\/[^/]+/, "~") : "Not on this computer yet"}</small>
+              </span>
+              {w.current ? <span className="tick">✓</span> : null}
+            </button>
+          ))}
+          {err ? <div className="menu-note err">{err}</div> : null}
+        </div>
+      ) : null}
     </div>
   );
 }

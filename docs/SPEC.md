@@ -917,7 +917,9 @@ view: job-tasks
 
 (or `![[Job tasks]]` alone on a line). It renders as the view, with tabs, cell editing and board drag, and `this` is the page it sits on. The slash menu inserts one. Put the cursor inside to edit the source. **GFM tables** render as tables, and clicking a cell opens the source at that cell. **Pasting or dropping an image** (or a PDF) saves it to an `attachments/` folder next to the record's file and links it by a relative path, so it also shows in Obsidian. **Types and fields** (Settings → Edit types and fields) add types, and add, rename, reorder or remove fields, including select options and link targets. Owners and admins edit; the database validates the same structure the CLI writes. Attachments are local files in the checkout and don't sync to Supabase yet.
 
-Not built yet: shell commands and agent runs, syncing attachments to storage, switching workspaces inside the app (it shows the one the folder is checked out from).
+**Several workspaces:** the workspace menu (top of the sidebar) lists every workspace you belong to and switches between them. Each has its own checkout folder; the CLI records them in `~/.config/surface-cli/checkouts.json`, and opening a workspace that isn't on this computer yet checks it out to `~/Surface-<name>`.
+
+Not built yet: shell commands and agent runs, syncing attachments to storage.
 
 **Open:** first screens beyond the editor, the management flows (types, fields, team), and whether `surface serve` starts at login (launchd on the Mac, a systemd user service on Linux) or on demand. The earlier research in `research/APP-TECH.md` is input, not a decision to restore a Rust core, local database or CRDT engine. Supabase remains the truth.
 

@@ -183,7 +183,8 @@ export const api = {
   cancelInvite: (id: string) => call<{ ok: true }>("DELETE", `/api/invites/${id}`),
   setRole: (userId: string, role: Role) => call<{ ok: true }>("PUT", `/api/members/${userId}`, { role }),
   removeMember: (userId: string) => call<{ ok: true }>("DELETE", `/api/members/${userId}`),
-  workspaces: () => call<{ workspaces: { id: string; name: string; role: Role | null; current: boolean }[]; invites: Invite[] }>("GET", "/api/workspaces"),
+  workspaces: () => call<{ workspaces: { id: string; name: string; role: Role | null; current: boolean; checkout: string | null }[]; invites: Invite[] }>("GET", "/api/workspaces"),
+  switchWorkspace: (id: string) => call<{ ok: true; root: string; created?: boolean }>("POST", "/api/workspace/switch", { id }),
   createWorkspace: (name: string) => call<{ workspace: { id: string; name: string } }>("POST", "/api/workspaces", { name }),
   acceptInvite: (id: string) => call<{ ok: true }>("POST", `/api/invites/${id}/accept`),
 };

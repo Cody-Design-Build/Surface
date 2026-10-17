@@ -84,6 +84,11 @@ export function App() {
     reload();
     return subscribe(
       (msg) => {
+        // another workspace was opened (here or in another tab): start fresh, don't refetch old records
+        if (msg.reason === "workspace") {
+          location.replace(location.pathname); // full load, no hash (the old record isn't in this workspace)
+          return;
+        }
         reload();
         setRemote((r) => ({ tick: r.tick + 1, ids: msg.ids ?? [] }));
       },

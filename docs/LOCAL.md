@@ -116,6 +116,6 @@ If 1 or 2 fail in ways a small shim can't fix, revisit the SQLite fallback (§2)
 
 1. Is local mode the default for new users, with sync a later upgrade, or is the choice made at install?
 2. The database location: outside the checkout only, or optionally inside it (§3).
-3. Several local workspaces on one computer: one database folder each (leaning), or one database with many workspaces.
+3. **Several workspaces on one computer. Leaning (Oct 17): one local database per computer**, holding every local workspace. Every table already carries `workspace_id` and row-level security is per workspace, so a second database per workspace buys nothing. What stays true: each workspace has one home, local or cloud. A shared workspace's truth is the cloud database; a local copy of it would be a cache (fast reads, offline edits queued as normal pushes with revision checks), not a peer that merges. Moving a workspace between modes copies its rows (`where workspace_id = …`) instead of a whole database folder.
 4. Pricing: local free and sync paid fits naturally, but it's a business decision (SPEC §11).
 5. Mobile: local mode on a phone is unlikely; mobile probably means sync mode with the hosted app.

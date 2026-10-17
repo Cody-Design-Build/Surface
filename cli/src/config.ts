@@ -78,4 +78,22 @@ export function findCheckout(start = process.cwd()): Checkout | null {
 export function saveCheckout(co: Checkout) {
   writeJson(path.join(co.root, ".surface", "config.json"), co.config);
   writeJson(path.join(co.root, ".surface", "state.json"), co.state);
+  rememberCheckout(co);
+}
+
+// Every checkout on this computer, so the app can switch workspaces (one folder per workspace).
+const CHECKOUTS_FILE = path.join(CONFIG_DIR, "checkouts.json");
+export interface KnownCheckout { root: string; workspace: string; name?: string }
+export function knownCheckouts(): KnownCheckout[] {
+  const list = readJson<KnownCheckout[]>(CHECKOUTS_FILE, []);
+  // drop folders that are gone or now hold another workspace
+  return list.filter((k) => {
+    const c = readJson<CheckoutConfig | null>(path.join(k.root, ".surface", "config.json"), null);
+    return !!c && c.workspace === k.workspace;
+  });
+}
+export function rememberCheckout(co: Checkout) {
+  const list = knownCheckouts().filter((k) => k.root !== co.root);
+  list.push({ root: co.root, workspace: co.config.workspace, name: co.config.workspaceName });
+  writeJson(CHECKOUTS_FILE, list);
 }

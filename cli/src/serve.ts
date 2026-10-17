@@ -5,7 +5,8 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
-import { CONFIG_DIR, findCheckout, type Checkout } from "./config.ts";
+import os from "node:os";
+import { CONFIG_DIR, findCheckout, knownCheckouts, rememberCheckout, saveCheckout, type Checkout } from "./config.ts";
 import { dbError, requireUser, sb } from "./client.ts";
 import { deleteView, fetchInvites, fetchMembers, fetchViews, myInvites, pushRecord, saveView, type RecordRow, type TypeRow, type ViewRow } from "./db.ts";
 import { makeResolver, pull, snapshot, type Snapshot } from "./checkout.ts";
@@ -57,7 +58,8 @@ interface State {
 
 export async function serve(co: Checkout, opts: { port: number; host?: string }) {
   const user = await requireUser();
-  const ws = co.config.workspace;
+  let ws = co.config.workspace;
+  rememberCheckout(co);
   const token = serveToken();
   const host = opts.host ?? "127.0.0.1";
   const port = opts.port;
@@ -454,7 +456,8 @@ export async function serve(co: Checkout, opts: { port: number; host?: string })
     if (parts[0] === "workspaces" && m === "GET") {
       const { data, error } = await sb().from("workspaces").select("id,name,members(role,user_id)");
       if (error) throw dbError(error);
-      const list = (data as { id: string; name: string; members: { role: string; user_id: string }[] }[]).map((w) => ({ id: w.id, name: w.name, role: w.members.find((x) => x.user_id === user.id)?.role ?? null, current: w.id === ws }));
+      const known = knownCheckouts();
+      const list = (data as { id: string; name: string; members: { role: string; user_id: string }[] }[]).map((w) => ({ id: w.id, name: w.name, role: w.members.find((x) => x.user_id === user.id)?.role ?? null, current: w.id === ws, checkout: known.find((k) => k.workspace === w.id)?.root ?? null }));
       // invites addressed to me (admins can also see the ones they sent)
       const mine = (await myInvites().catch(() => [])).filter((i) => i.email.toLowerCase() === (user.email ?? "").toLowerCase());
       return send(200, { workspaces: list, invites: mine });
@@ -466,6 +469,37 @@ export async function serve(co: Checkout, opts: { port: number; host?: string })
       const { data, error } = await sb().rpc("create_workspace", { p_name: name });
       if (error) throw dbError(error);
       return send(200, { workspace: data });
+    }
+    if (parts[0] === "workspace" && parts[1] === "switch" && m === "POST") {
+      // Open another workspace: its checkout on this computer, or a new one in ~/Surface-<name>.
+      const b = await readBody();
+      const id = String(b.id ?? "");
+      const { data: w, error } = await sb().from("workspaces").select("id,name").eq("id", id).maybeSingle();
+      if (error) throw dbError(error);
+      if (!w) throw new HttpError(404, "No such workspace, or you're not a member.");
+      if (w.id === ws) return send(200, { ok: true, root: co.root });
+      let next = knownCheckouts().find((k) => k.workspace === w.id)?.root;
+      let created = false;
+      if (!next) {
+        const slug = w.name.replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-+|-+$/g, "") || w.id;
+        next = path.join(os.homedir(), `Surface-${slug}`);
+        for (let i = 2; fs.existsSync(path.join(next, ".surface")) || (fs.existsSync(next) && fs.readdirSync(next).length); i++) next = path.join(os.homedir(), `Surface-${slug}-${i}`);
+        fs.mkdirSync(next, { recursive: true });
+        const fresh: Checkout = { root: next, config: { workspace: w.id, workspaceName: w.name, layout: "type" }, state: { records: {} } };
+        saveCheckout(fresh);
+        created = true;
+      }
+      const nextCo = findCheckout(next);
+      if (!nextCo) throw new HttpError(500, `Couldn't open the checkout in ${next}`);
+      co = nextCo;
+      ws = w.id;
+      role = null;
+      typesKey = "";
+      if (created) await pull(co);
+      state = await load();
+      broadcast({ type: "changed", reason: "workspace", ids: [] });
+      console.log(`Switched to "${w.name}" (${co.root})`);
+      return send(200, { ok: true, root: co.root, created });
     }
     if (parts[0] === "invites" && parts[1] && parts[2] === "accept" && m === "POST") {
       const { error } = await sb().rpc("accept_invite", { p_invite: parts[1] });
