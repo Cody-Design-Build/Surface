@@ -15,16 +15,19 @@ interface Props {
   open: (id: string) => void;
   onToast: (msg: string) => void;
   onDeleted: () => void;
+  /** shown inside a page (```surface block): compact header, link to open full-page */
+  embedded?: boolean;
+  onExpand?: () => void;
 }
 
 const LAYOUT_NAMES: Record<string, string> = { table: "Table", board: "Board", list: "List", calendar: "Calendar" };
 const LAYOUT_ICONS: Record<string, string> = { table: "table", board: "board", list: "list", calendar: "calendar" };
 
-export function ViewPage({ app, viewKey, personal, thisId, label, remoteTick, open, onToast, onDeleted }: Props) {
+export function ViewPage({ app, viewKey, personal, thisId, label, remoteTick, open, onToast, onDeleted, embedded, onExpand }: Props) {
   const [data, setData] = useState<{ view: ViewInfo; records: RecordFull[]; problem: string | null; this: Summary | null } | null>(null);
   const [missing, setMissing] = useState(false);
   const [editing, setEditing] = useState(false);
-  const tabKey = `surface.layout.${personal ? "p:" : ""}${viewKey}`;
+  const tabKey = `surface.layout.${embedded ? "e:" : ""}${personal ? "p:" : ""}${viewKey}`;
   const [tab, setTab] = useState(() => Number(localStorage.getItem(tabKey) ?? 0));
   const [sort, setSort] = useState<{ key: string; desc: boolean } | null>(null);
   const [q, setQ] = useState("");
@@ -109,6 +112,84 @@ export function ViewPage({ app, viewKey, personal, thisId, label, remoteTick, op
   if (!data) return <div className="page-loading" />;
   const { view } = data;
 
+  const bar = (
+    <div className="view-bar">
+      <div className="view-tabs" role="tablist">
+        {embedded ? (
+          <button className="embed-title" onClick={onExpand} title="Open as a page">
+            {view.name}
+            <Icon name="external" size={12} />
+          </button>
+        ) : null}
+        {layouts.length > 1 || !embedded
+          ? layouts.map((l, i) => (
+              <button key={i} role="tab" aria-selected={i === tab} className={`view-tab ${i === Math.min(tab, layouts.length - 1) ? "is-on" : ""}`} onClick={() => setTab(i)}>
+                <Icon name={LAYOUT_ICONS[l.show] ?? "table"} size={14} />
+                {l.name ?? LAYOUT_NAMES[l.show]}
+              </button>
+            ))
+          : null}
+      </div>
+      <div className="view-tools">
+        {!embedded ? (
+          <div className="view-search">
+            <Icon name="search" size={13} />
+            <input placeholder="Filter" value={q} onChange={(e) => setQ(e.target.value)} />
+          </div>
+        ) : null}
+        <span className="view-count">
+          {rows.length} {type?.name.toLowerCase() ?? "record"}
+          {rows.length === 1 ? "" : "s"}
+        </span>
+        {embedded ? (
+          <button className="icon-btn" title="Edit view" onClick={() => setEditing(true)} aria-label="Edit view">
+            <Icon name="sliders" size={14} />
+          </button>
+        ) : null}
+        {app.role !== "viewer" && type ? (
+          <button className="btn-soft" onClick={() => addRow()}>
+            <Icon name="plus" size={13} /> New
+          </button>
+        ) : null}
+      </div>
+    </div>
+  );
+  const body = (
+    <>
+      {data.problem ? <div className="banner">{data.problem}</div> : null}
+      {!type ? null : layout.show === "board" ? (
+        <Board app={app} type={type} layout={layout} rows={rows} open={open} update={update} addRow={addRow} readOnly={app.role === "viewer"} />
+      ) : layout.show === "list" ? (
+        <ListLayout rows={rows} open={open} type={type} app={app} />
+      ) : layout.show === "calendar" ? (
+        <Calendar type={type} layout={layout} rows={rows} open={open} update={update} readOnly={app.role === "viewer"} />
+      ) : (
+        <Table app={app} type={type} layout={layout} rows={rows} open={open} update={update} sort={sort} setSort={setSort} addRow={addRow} readOnly={app.role === "viewer"} />
+      )}
+      {!rows.length && !data.problem ? <div className="page-empty small">{q ? "No matches." : "Nothing here yet."}</div> : null}
+    </>
+  );
+  const editor = editing ? (
+    <ViewEditor
+      app={app}
+      initial={view}
+      onClose={() => setEditing(false)}
+      onSaved={() => {
+        setEditing(false);
+        load();
+      }}
+      onDeleted={onDeleted}
+    />
+  ) : null;
+  if (embedded)
+    return (
+      <div className="view-embed">
+        {bar}
+        {body}
+        {editor}
+      </div>
+    );
+
   return (
     <article className="page view-page">
       <header className="page-head">
@@ -128,55 +209,10 @@ export function ViewPage({ app, viewKey, personal, thisId, label, remoteTick, op
       </header>
       <div className="page-body wide">
         <h1 className="group-title">{label ?? view.name}</h1>
-        <div className="view-bar">
-          <div className="view-tabs" role="tablist">
-            {layouts.map((l, i) => (
-              <button key={i} role="tab" aria-selected={i === tab} className={`view-tab ${i === Math.min(tab, layouts.length - 1) ? "is-on" : ""}`} onClick={() => setTab(i)}>
-                <Icon name={LAYOUT_ICONS[l.show] ?? "table"} size={14} />
-                {l.name ?? LAYOUT_NAMES[l.show]}
-              </button>
-            ))}
-          </div>
-          <div className="view-tools">
-            <div className="view-search">
-              <Icon name="search" size={13} />
-              <input placeholder="Filter" value={q} onChange={(e) => setQ(e.target.value)} />
-            </div>
-            <span className="view-count">
-              {rows.length} {type?.name.toLowerCase() ?? "record"}
-              {rows.length === 1 ? "" : "s"}
-            </span>
-            {app.role !== "viewer" && type ? (
-              <button className="btn-soft" onClick={() => addRow()}>
-                <Icon name="plus" size={13} /> New
-              </button>
-            ) : null}
-          </div>
-        </div>
-        {data.problem ? <div className="banner">{data.problem}</div> : null}
-        {!type ? null : layout.show === "board" ? (
-          <Board app={app} type={type} layout={layout} rows={rows} open={open} update={update} addRow={addRow} readOnly={app.role === "viewer"} />
-        ) : layout.show === "list" ? (
-          <ListLayout rows={rows} open={open} type={type} app={app} />
-        ) : layout.show === "calendar" ? (
-          <Calendar type={type} layout={layout} rows={rows} open={open} update={update} readOnly={app.role === "viewer"} />
-        ) : (
-          <Table app={app} type={type} layout={layout} rows={rows} open={open} update={update} sort={sort} setSort={setSort} addRow={addRow} readOnly={app.role === "viewer"} />
-        )}
-        {!rows.length && !data.problem ? <div className="page-empty small">{q ? "No matches." : "Nothing here yet."}</div> : null}
+        {bar}
+        {body}
       </div>
-      {editing ? (
-        <ViewEditor
-          app={app}
-          initial={view}
-          onClose={() => setEditing(false)}
-          onSaved={() => {
-            setEditing(false);
-            load();
-          }}
-          onDeleted={onDeleted}
-        />
-      ) : null}
+      {editor}
     </article>
   );
 }

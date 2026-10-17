@@ -143,7 +143,7 @@ export function MoveTo({ app, id, onClose, onDone }: { app: AppState; id: string
 }
 
 // ------------------------------------------------------------------ Settings
-export function Settings({ app, onClose, setDisplay, onToast }: { app: AppState; onClose: () => void; setDisplay: (d: "split" | "merged") => void; onToast: (m: string) => void }) {
+export function Settings({ app, onClose, setDisplay, onToast, openTypes }: { app: AppState; onClose: () => void; setDisplay: (d: "split" | "merged") => void; onToast: (m: string) => void; openTypes: (key?: string) => void }) {
   const isAdmin = app.role === "owner" || app.role === "admin";
   return (
     <Panel title="Settings" onClose={onClose}>
@@ -166,7 +166,10 @@ export function Settings({ app, onClose, setDisplay, onToast }: { app: AppState;
         {app.types.map((t) => (
           <div className="type-row" key={t.key}>
             <Icon name={typeIcon(t.key)} size={15} />
-            <span className="type-row-name">{t.name}</span>
+            <button className="type-row-name link-btn" onClick={() => openTypes(t.key)} title="Edit fields">
+              {t.name}
+              <small>{t.fields.length} field{t.fields.length === 1 ? "" : "s"}</small>
+            </button>
             <select
               className="ve-input"
               value={t.display}
@@ -187,6 +190,9 @@ export function Settings({ app, onClose, setDisplay, onToast }: { app: AppState;
           </div>
         ))}
       </div>
+      <button className="ve-add" onClick={() => openTypes()}>
+        <Icon name="sliders" size={13} /> {isAdmin ? "Edit types and fields" : "See types and fields"}
+      </button>
     </Panel>
   );
 }

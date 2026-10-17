@@ -10,6 +10,7 @@ import { drawSelection, dropCursor, EditorView, keymap, placeholder, type KeyBin
 import { tags as t } from "@lezer/highlight";
 import { livePreview } from "./livePreview.ts";
 import { blockHandles } from "./blockHandles.ts";
+import { embeds, refreshEffect } from "./embeds.tsx";
 
 const highlight = HighlightStyle.define([
   { tag: t.heading, fontWeight: "700", color: "var(--text-strong)" },
@@ -133,13 +134,19 @@ export interface EditorProps {
   openLink: (target: string) => void;
   onEscapeUp?: () => void;
   extraKeys?: KeyBinding[];
+  /** saved views for the slash menu (inserts a live view block) */
+  views?: () => { key: string; name: string }[];
+  /** store a pasted or dropped file; returns the Markdown path to link */
+  upload?: (file: File) => Promise<string>;
+  /** bump to re-render embeds (views list changed) */
+  embedTick?: number;
 }
 
-export function Editor({ docKey, value, titles, onChange, openLink, onEscapeUp }: EditorProps) {
+export function Editor({ docKey, value, titles, onChange, openLink, onEscapeUp, views, upload, embedTick }: EditorProps) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
-  const cb = useRef({ onChange, openLink, titles, onEscapeUp });
-  cb.current = { onChange, openLink, titles, onEscapeUp };
+  const cb = useRef({ onChange, openLink, titles, onEscapeUp, views, upload });
+  cb.current = { onChange, openLink, titles, onEscapeUp, views, upload };
   const applying = useRef(false);
 
   useEffect(() => {
@@ -163,20 +170,46 @@ export function Editor({ docKey, value, titles, onChange, openLink, onEscapeUp }
       return {
         from: slash,
         filter: false,
-        options: SLASH.filter((s) => s.label.toLowerCase().includes(m.text.slice(m.text.indexOf("/") + 1).toLowerCase().trim())).map((s) => ({
+        options: [
+          ...SLASH,
+          ...(cb.current.views?.() ?? []).map((v) => ({ label: `View: ${v.name}`, detail: "live", insert: "```surface\nview: " + v.key + "\n```\n", line: true })),
+        ].filter((s) => s.label.toLowerCase().includes(m.text.slice(m.text.indexOf("/") + 1).toLowerCase().trim())).map((s) => ({
           label: s.label,
           detail: s.detail,
           type: "keyword",
           apply: (v: EditorView, _c: unknown, from: number, to: number) => {
             const line = v.state.doc.lineAt(from);
             const start = s.line && line.text.slice(0, from - line.from).trim() === "" ? line.from : from;
-            const cursor = s.insert.includes("```\n") ? start + 4 : start + s.insert.length;
+            const cursor = s.insert.startsWith("```\n") ? start + 4 : start + s.insert.length;
             v.dispatch({ changes: { from: start, to, insert: s.insert }, selection: { anchor: cursor } });
           },
         })),
       };
     };
 
+    const insertFiles = async (v: EditorView, files: File[], pos: number) => {
+      for (const f of files) {
+        const label = f.name.replace(/\.[^.]+$/, "") || "image";
+        const marker = `![Uploading ${label}…]()`;
+        const line = v.state.doc.lineAt(pos);
+        // own paragraph: a line straight after a table or list would be absorbed into it
+        const pre = line.text.trim() && pos !== line.from ? "\n\n" : !line.text.trim() && line.number > 1 && v.state.doc.line(line.number - 1).text.trim() ? "\n" : "";
+        // cursor goes below the image so it renders right away
+        v.dispatch({ changes: { from: pos, insert: pre + marker + "\n" }, selection: { anchor: pos + pre.length + marker.length + 1 } });
+        const at = pos + pre.length;
+        try {
+          const path = await cb.current.upload!(f);
+          const cur = v.state.doc.toString().indexOf(marker);
+          const md = f.type === "application/pdf" ? `[${f.name}](${encodeURI(path)})` : `![${label}](${encodeURI(path)})`;
+          if (cur >= 0) v.dispatch({ changes: { from: cur, to: cur + marker.length, insert: md } });
+        } catch (err) {
+          const cur = v.state.doc.toString().indexOf(marker);
+          if (cur >= 0) v.dispatch({ changes: { from: cur, to: cur + marker.length + 1, insert: "" } });
+          alert(`Couldn't add ${f.name}: ${(err as Error).message}`);
+        }
+        pos = at;
+      }
+    };
     const extensions: Extension[] = [
       history(),
       drawSelection(),
@@ -188,6 +221,24 @@ export function Editor({ docKey, value, titles, onChange, openLink, onEscapeUp }
       livePreview({ openLink: (target) => cb.current.openLink(target), openUrl: (url) => window.open(url, "_blank", "noopener") }),
       autocompletion({ override: [linkComplete, slashComplete], icons: false }),
       blockHandles(),
+      embeds(),
+      EditorView.domEventHandlers({
+        paste(e, v) {
+          const files = [...(e.clipboardData?.files ?? [])].filter((f) => f.type.startsWith("image/"));
+          if (!files.length || !cb.current.upload) return false;
+          e.preventDefault();
+          insertFiles(v, files, v.state.selection.main.head);
+          return true;
+        },
+        drop(e, v) {
+          const files = [...(e.dataTransfer?.files ?? [])].filter((f) => f.type.startsWith("image/") || f.type === "application/pdf");
+          if (!files.length || !cb.current.upload) return false;
+          e.preventDefault();
+          const pos = v.posAtCoords({ x: e.clientX, y: e.clientY }) ?? v.state.selection.main.head;
+          insertFiles(v, files, pos);
+          return true;
+        },
+      }),
       search({ top: true }),
       highlightSelectionMatches(),
       placeholder("Write, or type / for blocks and [[ to link a page…"),
@@ -246,6 +297,10 @@ export function Editor({ docKey, value, titles, onChange, openLink, onEscapeUp }
     v.dispatch({ changes: { from: 0, to: cur.length, insert: value }, selection: { anchor: head } });
     applying.current = false;
   }, [value]);
+
+  useEffect(() => {
+    view.current?.dispatch({ effects: refreshEffect.of(null) });
+  }, [embedTick]);
 
   return <div className="editor" ref={host} />;
 }

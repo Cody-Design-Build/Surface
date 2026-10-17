@@ -384,16 +384,42 @@ export async function serve(co: Checkout, opts: { port: number; host?: string })
       if (!t) throw new HttpError(404, "No such type");
       const b = await readBody();
       const patch: Record<string, unknown> = {};
+      if (b.name !== undefined) patch.name = String(b.name).trim() || t.name;
+      if (b.folder !== undefined) patch.folder = String(b.folder).trim() || null;
+      if (b.fields !== undefined) {
+        // field targets arrive as type keys; the database stores type ids
+        const fields = (b.fields as Record<string, unknown>[]).map((f) => {
+          const out: Record<string, unknown> = { ...f };
+          if (typeof f.target === "string" && f.target) {
+            const tt = state.snap.types.find((x) => x.key === f.target || x.id === f.target);
+            if (!tt) throw new HttpError(422, `No type "${f.target}" for the link field "${f.key}"`);
+            out.target = tt.id;
+          } else delete out.target;
+          if (!out.id) delete out.id;
+          return out;
+        });
+        patch.fields = fields;
+      }
       if (b.display !== undefined) {
         if (!["document", "fields"].includes(b.display)) throw new HttpError(422, "display must be document or fields");
         patch.display = b.display;
       }
       if (!Object.keys(patch).length) throw new HttpError(400, "Nothing to change");
       const { data, error } = await sb().from("types").update(patch).eq("id", t.id).select("id");
-      if (error) throw dbError(error);
+      if (error) throw new HttpError(422, dbError(error).message);
       if (!data.length) throw new HttpError(403, "Only owners and admins can change types.");
       await refresh("types", []);
       return send(200, { ok: true });
+    }
+    if (parts[0] === "types" && m === "POST") {
+      const b = await readBody();
+      const key = String(b.key ?? "").trim();
+      const name = String(b.name ?? "").trim() || key.replace(/_/g, " ").replace(/\b\w/g, (x) => x.toUpperCase());
+      if (!/^[a-z][a-z0-9_]*$/.test(key)) throw new HttpError(422, "A type key is lowercase letters, digits and _ (like budget_line).");
+      const { error } = await sb().from("types").insert({ workspace_id: ws, key, name, folder: b.folder ?? `${name}s`, display: b.display === "fields" ? "fields" : "document" });
+      if (error) throw new HttpError(error.code === "23505" ? 409 : 422, error.code === "23505" ? `A type "${key}" already exists.` : dbError(error).message);
+      await refresh("types", []);
+      return send(200, { ok: true, key });
     }
     // ---- sharing
     if (parts[0] === "members" && m === "GET") {
@@ -445,6 +471,34 @@ export async function serve(co: Checkout, opts: { port: number; host?: string })
       const { error } = await sb().rpc("accept_invite", { p_invite: parts[1] });
       if (error) throw dbError(error);
       return send(200, { ok: true });
+    }
+    if (parts[0] === "record" && parts[1] && parts[2] === "attach" && m === "POST") {
+      // a pasted or dropped file: saved in an attachments/ folder next to the record's file,
+      // linked from the text by a relative path (works in Obsidian and any editor)
+      const r = state.snap.byId.get(parts[1]);
+      if (!r) throw new HttpError(404, "No such record");
+      const ctype = String(req.headers["content-type"] ?? "");
+      const exts: Record<string, string> = { "image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif", "image/webp": ".webp", "image/svg+xml": ".svg", "image/avif": ".avif", "application/pdf": ".pdf" };
+      if (!exts[ctype]) throw new HttpError(415, "Only images and PDFs can be attached.");
+      const chunks: Buffer[] = [];
+      let size = 0;
+      for await (const c of req) {
+        size += (c as Buffer).length;
+        if (size > 25 * 1024 * 1024) throw new HttpError(413, "Files over 25 MB can't be attached.");
+        chunks.push(c as Buffer);
+      }
+      const recPath = co.state.records[r.id]?.path ?? "";
+      const dir = recPath.includes("/") ? recPath.split("/").slice(0, -1).join("/") : "";
+      const raw = String(url.searchParams.get("name") ?? "image");
+      let base = raw.replace(/\.[^.]+$/, "").replace(/[^\p{L}\p{N} _.-]+/gu, "").trim().slice(0, 60) || "image";
+      if (/^image$/i.test(base)) base = `Pasted ${new Date().toISOString().slice(0, 19).replace(/[T:]/g, "-")}`;
+      const ext = exts[ctype];
+      const attDir = path.join(co.root, dir, "attachments");
+      fs.mkdirSync(attDir, { recursive: true });
+      let name = `${base}${ext}`;
+      for (let i = 2; fs.existsSync(path.join(attDir, name)); i++) name = `${base} ${i}${ext}`;
+      fs.writeFileSync(path.join(attDir, name), Buffer.concat(chunks));
+      return send(200, { path: path.posix.join(dir, "attachments", name), markdownPath: `attachments/${name}` });
     }
     if (parts[0] === "record" && parts[1] && parts[2] === "restore" && m === "POST") {
       const { data, error } = await sb().from("records").update({ deleted_at: null }).eq("id", parts[1]).eq("workspace_id", ws).select("id");

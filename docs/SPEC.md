@@ -909,7 +909,15 @@ The app gives people a coherent home for their work. Other surfaces can expose a
 - **Saving:** autosave through the same write path as `surface push`, with revision checks. A conflict offers keep mine or use theirs. Changes made elsewhere arrive within a few seconds.
 - **Look:** light and dark, one accent, system fonts.
 
-In this version the app reaches Supabase through the local server, using the CLI's sign-in. Hosted mode needs the app to talk to Supabase directly (planned). Not built yet: shell commands and agent runs, image paste, rendered Markdown tables, live embeds in pages, field and type editing screens, switching workspaces inside the app (it shows the one the folder is checked out from).
+In this version the app reaches Supabase through the local server, using the CLI's sign-in. Hosted mode needs the app to talk to Supabase directly (planned). Also built: **live views in pages**, written as plain Markdown so the file stays readable anywhere:
+
+```surface
+view: job-tasks
+```
+
+(or `![[Job tasks]]` alone on a line). It renders as the view, with tabs, cell editing and board drag, and `this` is the page it sits on. The slash menu inserts one. Put the cursor inside to edit the source. **GFM tables** render as tables, and clicking a cell opens the source at that cell. **Pasting or dropping an image** (or a PDF) saves it to an `attachments/` folder next to the record's file and links it by a relative path, so it also shows in Obsidian. **Types and fields** (Settings → Edit types and fields) add types, and add, rename, reorder or remove fields, including select options and link targets. Owners and admins edit; the database validates the same structure the CLI writes. Attachments are local files in the checkout and don't sync to Supabase yet.
+
+Not built yet: shell commands and agent runs, syncing attachments to storage, switching workspaces inside the app (it shows the one the folder is checked out from).
 
 **Open:** first screens beyond the editor, the management flows (types, fields, team), and whether `surface serve` starts at login (launchd on the Mac, a systemd user service on Linux) or on demand. The earlier research in `research/APP-TECH.md` is input, not a decision to restore a Rust core, local database or CRDT engine. Supabase remains the truth.
 

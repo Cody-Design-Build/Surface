@@ -3,6 +3,7 @@ import { api, ApiError, subscribe, type AppState, type TreeDef, type TreeNode, t
 import { GroupView } from "./GroupView.tsx";
 import { Page, type SaveStatus } from "./Page.tsx";
 import { MoveTo, RecordPicker, Settings, Share } from "./Panels.tsx";
+import { TypesPanel } from "./TypesPanel.tsx";
 import { nodeKey, Sidebar, type Route, type Scope, type SidebarChange } from "./Sidebar.tsx";
 import { Switcher } from "./Switcher.tsx";
 import { did, onUndo, redo, typingTarget, undo } from "./undo.ts";
@@ -56,6 +57,7 @@ export function App() {
   const [toast, setToast] = useState<{ msg: string; undo: boolean; n: number } | null>(null);
   const [panel, setPanel] = useState<
     | { kind: "settings" }
+    | { kind: "types"; key?: string }
     | { kind: "share" }
     | { kind: "move"; id: string }
     | { kind: "pick"; title: string; onPick: (id: string) => void }
@@ -313,6 +315,8 @@ export function App() {
               history.back();
             }}
             onMove={() => setPanel({ kind: "move", id: route.id })}
+            openView={openView}
+            toast={(m) => showToast(m)}
           />
         ) : route?.kind === "view" ? (
           <ViewPage
@@ -337,7 +341,8 @@ export function App() {
         )}
       </main>
       {switcher ? <Switcher records={app.records} onPick={openRecord} onCreate={(t) => (setSwitcher(false), createPage(null, t))} onClose={() => setSwitcher(false)} /> : null}
-      {panel?.kind === "settings" ? <Settings app={app} onClose={() => setPanel(null)} setDisplay={setDisplay} onToast={(m) => (showToast(m), reload())} /> : null}
+      {panel?.kind === "settings" ? <Settings app={app} onClose={() => setPanel(null)} setDisplay={setDisplay} onToast={(m) => (showToast(m), reload())} openTypes={(key) => setPanel({ kind: "types", key })} /> : null}
+      {panel?.kind === "types" ? <TypesPanel app={app} initial={panel.key} onClose={() => setPanel(null)} onToast={(m) => (showToast(m), reload())} /> : null}
       {panel?.kind === "share" ? <Share app={app} onClose={() => setPanel(null)} onToast={(m) => showToast(m)} /> : null}
       {panel?.kind === "move" ? (
         <MoveTo

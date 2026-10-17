@@ -19,11 +19,13 @@ Hot reload (`npm run dev`) is not wired yet: the server's token cookie and Origi
 | `src/ViewPage.tsx` | A saved view as a page: table, board, list, calendar |
 | `src/ViewEditor.tsx` | Create or edit a view with pickers |
 | `src/Panels.tsx` | Move to…, Settings, Share, record picker |
+| `src/TypesPanel.tsx` | Types and fields: add types, add/edit/reorder/remove fields |
 | `src/edits.ts` | Record changes with undo entries |
 | `src/undo.ts` | The undo stack (⌘Z outside the editor) |
 | `src/Page.tsx` | Title, properties, editor, autosave and conflicts |
 | `src/Editor.tsx` | CodeMirror setup: slash menu, `[[` completion, shortcuts |
 | `src/livePreview.ts` | Live preview decorations |
+| `src/embeds.tsx` | Live views inside a page (```` ```surface ```` blocks, `![[View]]`) and rendered Markdown tables |
 | `src/blockHandles.ts` | Block drag handles: move or select a block |
 | `src/Properties.tsx` | Typed property editors |
 | `src/GroupView.tsx` | A group as a table |
@@ -32,4 +34,4 @@ Hot reload (`npm run dev`) is not wired yet: the server's token cookie and Origi
 
 ## QA
 
-`qa/qa-views.mjs` (24 checks: sidebars, pin, reorder, board drag, cell edit, undo, Move to…, view editor, settings, share, calendar) and `qa/qa-drag.mjs` (editor block handles) drive Chrome with puppeteer-core against a running `surface serve` on port 4317. Run them from a folder with `puppeteer-core` installed; they write screenshots to `shots/`. `qa-views.mjs` expects the demo workspace (jobs, tasks, selections, budget lines and the views in `.surface/views/`).
+`qa/qa-views.mjs` (24 checks: sidebars, pin, reorder, board drag, cell edit, undo, Move to…, view editor, settings, share, calendar) `qa/qa-embeds.mjs` (14 checks: live view in a page, Markdown table render and click-to-edit, image paste, types and fields) and `qa/qa-drag.mjs` (editor block handles) drive Chrome with puppeteer-core against a running `surface serve` on port 4317. Run them from a folder with `puppeteer-core` installed; they write screenshots to `shots/`. `qa-views.mjs` expects the demo workspace (jobs, tasks, selections, budget lines and the views in `.surface/views/`).

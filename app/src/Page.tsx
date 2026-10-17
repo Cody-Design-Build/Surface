@@ -5,6 +5,7 @@ import { setImageBase } from "./livePreview.ts";
 import { Icon, typeIcon } from "./Icon.tsx";
 import { Properties } from "./Properties.tsx";
 import { deleteRecord } from "./edits.ts";
+import { setEmbedCtx } from "./embeds.tsx";
 
 export type SaveStatus = "saved" | "saving" | "error" | "conflict";
 
@@ -19,6 +20,8 @@ interface Props {
   onStatus: (s: SaveStatus, msg?: string) => void;
   onDeleted: () => void;
   onMove: () => void;
+  openView: (key: string, personal: boolean, thisId: string | null, label?: string) => void;
+  toast: (m: string) => void;
 }
 
 // Many files start with "# Title". The app shows the title above the text, so that heading is
@@ -38,7 +41,9 @@ interface Pending {
   fields?: Record<string, unknown>;
 }
 
-export function Page({ id, app, remoteTick, remoteIds, open, openTitle, createPage, onStatus, onDeleted, onMove }: Props) {
+export function Page({ id, app, remoteTick, remoteIds, open, openTitle, createPage, onStatus, onDeleted, onMove, openView, toast }: Props) {
+  // live views in the text see this page as `this`
+  setEmbedCtx({ app, thisId: id, remoteTick, open, openView, toast });
   const [showText, setShowText] = useState(false);
   const [rec, setRec] = useState<RecordFull | null>(null);
   const [backlinks, setBacklinks] = useState<Backlink[]>([]);
@@ -360,6 +365,12 @@ export function Page({ id, app, remoteTick, remoteIds, open, openTitle, createPa
           }}
           openLink={openTitle}
           onEscapeUp={() => titleRef.current?.focus()}
+          views={() => app.views.map((v) => ({ key: v.key, name: v.name }))}
+          embedTick={app.views.length}
+          upload={async (file) => {
+            const res = await api.upload(id, file);
+            return res.markdownPath;
+          }}
         />
         )}
 

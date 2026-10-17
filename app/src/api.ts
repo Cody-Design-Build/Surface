@@ -155,6 +155,12 @@ export const api = {
   create: (input: { type: string; title: string; parent?: string | null; body?: string; fields?: Record<string, unknown> }) =>
     call<{ record: RecordFull; notices: string[] }>("POST", "/api/records", input),
   remove: (id: string) => call<{ ok: true }>("DELETE", `/api/record/${id}`),
+  upload: async (id: string, file: File) => {
+    const r = await fetch(`/api/record/${id}/attach?name=${encodeURIComponent(file.name || "image.png")}`, { method: "POST", headers: { "content-type": file.type || "application/octet-stream" }, body: file });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new ApiError(r.status, data.error ?? r.statusText);
+    return data as { path: string; markdownPath: string };
+  },
   restore: (id: string) => call<{ ok: true }>("POST", `/api/record/${id}/restore`),
   query: (q: { from?: string; where?: string; sort?: string; ids?: string[]; this?: string }) => call<{ records: RecordFull[] }>("POST", "/api/query", q),
   search: (q: string) => call<{ results: (Summary & { snippet: string })[] }>("GET", `/api/search?q=${encodeURIComponent(q)}`),
@@ -169,6 +175,8 @@ export const api = {
   removeView: (key: string, personal: boolean) => call<{ ok: true }>("DELETE", `/api/view/${encodeURIComponent(key)}${personal ? "?personal=1" : ""}`),
   saveSidebar: (scope: "workspace" | "personal", definition: TreeDef, baseRev?: number | null) =>
     call<{ sidebar: SidebarInfo }>("PUT", "/api/sidebar", { scope, definition, baseRev }),
+  saveType: (type: string, patch: { name?: string; folder?: string; display?: "document" | "fields"; fields?: FieldDef[] }) => call<{ ok: true }>("PUT", `/api/type/${type}`, patch),
+  createType: (body: { key: string; name: string; display?: "document" | "fields" }) => call<{ ok: true; key: string }>("POST", "/api/types", body),
   setTypeDisplay: (type: string, display: "document" | "fields") => call<{ ok: true }>("PUT", `/api/type/${type}`, { display }),
   members: () => call<{ members: Member[]; invites: Invite[]; role: Role }>("GET", "/api/members"),
   invite: (email: string, role: Role) => call<{ ok: true }>("POST", "/api/invites", { email, role }),
