@@ -188,6 +188,10 @@ code { font-family: var(--font-mono); font-size: 0.9em; }
 .twirl.is-open svg { transform: rotate(90deg); }
 .twirl.is-leaf { pointer-events: none; }
 .twirl:hover { color: var(--text-soft); background: var(--bg-hover); }
+.node[draggable="true"] { cursor: default; }
+.node[data-dragging] { opacity: 0.45; }
+.node[data-over="in"] { background: var(--accent-soft); box-shadow: inset 0 0 0 1.5px var(--accent); color: var(--text-strong); }
+.node[data-over="out"] { color: var(--accent-text); box-shadow: inset 0 -2px 0 var(--accent); }
 .node-add { opacity: 0; color: var(--text-muted); padding: 3px; border-radius: 5px; margin-right: -4px; }
 .node:hover .node-add { opacity: 1; }
 .node-add:hover { background: var(--bg-active); color: var(--text); }
@@ -428,6 +432,31 @@ code { font-family: var(--font-mono); font-size: 0.9em; }
 .cm-line.cm-codeblock-last { border-radius: 0 0 8px 8px; padding-bottom: 8px !important; }
 .cm-line.cm-codeblock-first.cm-codeblock-last { border-radius: 8px; }
 .cm-code-fence { color: var(--text-faint); }
+
+/* block drag handles */
+.editor .cm-editor { overflow: visible; }
+.cm-block-handle {
+  position: absolute; left: -30px; z-index: 6;
+  width: 20px; height: 22px;
+  display: grid; place-items: center;
+  border-radius: 5px;
+  color: var(--text-faint);
+  cursor: grab;
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+.cm-block-handle svg { fill: currentColor; }
+.cm-block-handle.is-on { opacity: 1; pointer-events: auto; }
+.cm-block-handle:hover { background: var(--bg-hover); color: var(--text-muted); }
+.is-dragging-block .cm-block-handle { cursor: grabbing; }
+.is-dragging-block, .is-dragging-block * { cursor: grabbing !important; user-select: none; }
+.cm-drop-marker {
+  position: absolute; left: 0; right: 0; height: 2px; z-index: 6;
+  background: var(--accent); border-radius: 1px;
+  opacity: 0; pointer-events: none;
+}
+.cm-drop-marker.is-on { opacity: 1; }
+.cm-drop-marker::before { content: ""; position: absolute; left: -4px; top: -3px; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
 
 /* search panel and autocomplete */
 .editor .cm-panels { background: var(--bg-raised); border-color: var(--line) !important; font-family: var(--font-ui); font-size: 13px; color: var(--text); border-radius: 10px; box-shadow: var(--shadow); position: sticky; }

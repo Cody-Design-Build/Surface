@@ -176,6 +176,16 @@ export function App() {
         openGroup={openGroup}
         newPage={() => createPage(null)}
         newInside={(parent) => createPage(parent)}
+        reparent={async (id, parent) => {
+          try {
+            const { record } = await api.record(id);
+            await api.save(id, { baseRev: record.rev, parent });
+            await reload();
+            setRemote((r) => ({ tick: r.tick + 1, ids: [id] }));
+          } catch (e) {
+            alert((e as Error).message);
+          }
+        }}
         openSwitcher={() => setSwitcher(true)}
       />
       <main className="main">

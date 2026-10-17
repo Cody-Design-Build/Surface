@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap, type CompletionContext, type CompletionResult } from "@codemirror/autocomplete";
-import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
+import { defaultKeymap, history, historyKeymap, indentWithTab, moveLineDown, moveLineUp } from "@codemirror/commands";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
@@ -9,6 +9,7 @@ import { EditorSelection, EditorState, Prec, type Extension } from "@codemirror/
 import { drawSelection, dropCursor, EditorView, keymap, placeholder, type KeyBinding } from "@codemirror/view";
 import { tags as t } from "@lezer/highlight";
 import { livePreview } from "./livePreview.ts";
+import { blockHandles } from "./blockHandles.ts";
 
 const highlight = HighlightStyle.define([
   { tag: t.heading, fontWeight: "700", color: "var(--text-strong)" },
@@ -186,6 +187,7 @@ export function Editor({ docKey, value, titles, onChange, openLink, onEscapeUp }
       syntaxHighlighting(highlight),
       livePreview({ openLink: (target) => cb.current.openLink(target), openUrl: (url) => window.open(url, "_blank", "noopener") }),
       autocompletion({ override: [linkComplete, slashComplete], icons: false }),
+      blockHandles(),
       search({ top: true }),
       highlightSelectionMatches(),
       placeholder("Write, or type / for blocks and [[ to link a page…"),
@@ -197,6 +199,8 @@ export function Editor({ docKey, value, titles, onChange, openLink, onEscapeUp }
           { key: "Mod-e", run: wrap("`") },
           { key: "Mod-Shift-x", run: wrap("~~") },
           { key: "Mod-Enter", run: toggleTask },
+          { key: "Alt-ArrowUp", run: moveLineUp },
+          { key: "Alt-ArrowDown", run: moveLineDown },
           { key: "Mod-Alt-1", run: linePrefix("# ", blockRe) },
           { key: "Mod-Alt-2", run: linePrefix("## ", blockRe) },
           { key: "Mod-Alt-3", run: linePrefix("### ", blockRe) },

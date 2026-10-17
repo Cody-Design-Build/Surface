@@ -15,12 +15,22 @@ interface Props {
   openGroup: (key: string) => void;
   newPage: () => void;
   newInside: (parent: string) => void;
+  /** Nest a record under another (parent id), or take it out of its parent (null). */
+  reparent: (id: string, parent: string | null) => void;
   openSwitcher: () => void;
 }
 
 const EXPANDED_KEY = "surface.expanded";
 
-export function Sidebar({ app, current, online, status, openRecord, openGroup, newPage, newInside, openSwitcher }: Props) {
+export function Sidebar({ app, current, online, status, openRecord, openGroup, newPage, newInside, reparent, openSwitcher }: Props) {
+  const [drag, setDrag] = useState<string | null>(null);
+  const [over, setOver] = useState<string | null>(null); // node key, or "root"
+  const parentOf = new Map(app.records.map((r) => [r.id, r.parent]));
+  // can't drop a page into itself or into one of its own descendants
+  const canNest = (id: string, target: string) => {
+    for (let p: string | null | undefined = target, i = 0; p && i < 50; p = parentOf.get(p), i++) if (p === id) return false;
+    return true;
+  };
   const [expanded, setExpanded] = useState<Record<string, boolean>>(() => {
     try {
       return JSON.parse(localStorage.getItem(EXPANDED_KEY) ?? "{}");
@@ -64,6 +74,40 @@ export function Sidebar({ app, current, online, status, openRecord, openGroup, n
             className={`node ${isGroup ? "is-group" : ""} ${selected ? "is-selected" : ""} ${depth === 0 && isGroup ? "is-section" : ""}`}
             style={{ paddingLeft: 6 + depth * 16 }}
             onClick={() => (isGroup ? (depth === 0 ? toggle(k, true) : openGroup(k)) : openRecord(n.id!))}
+            draggable={!isGroup}
+            onDragStart={(e) => {
+              if (isGroup) return;
+              e.dataTransfer.setData("text/plain", n.label);
+              e.dataTransfer.effectAllowed = "move";
+              setDrag(n.id!);
+            }}
+            onDragEnd={() => {
+              setDrag(null);
+              setOver(null);
+            }}
+            onDragOver={(e) => {
+              if (!drag) return;
+              const ok = isGroup ? depth === 0 && parentOf.get(drag) != null : n.id !== drag && canNest(drag, n.id!) && parentOf.get(drag) !== n.id;
+              if (!ok) return;
+              e.preventDefault();
+              e.dataTransfer.dropEffect = "move";
+              if (over !== k) setOver(k);
+            }}
+            onDragLeave={() => over === k && setOver(null)}
+            onDrop={(e) => {
+              e.preventDefault();
+              const id = drag;
+              setDrag(null);
+              setOver(null);
+              if (!id) return;
+              if (isGroup) reparent(id, null);
+              else {
+                setExpanded((x) => ({ ...x, [k]: true }));
+                reparent(id, n.id!);
+              }
+            }}
+            data-over={over === k ? (isGroup ? "out" : "in") : undefined}
+            data-dragging={drag && drag === n.id ? "" : undefined}
           >
             <button
               className={`twirl ${hasKids ? "" : "is-leaf"} ${open ? "is-open" : ""}`}
