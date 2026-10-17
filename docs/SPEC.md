@@ -852,15 +852,15 @@ The app gives people a coherent home for their work. Other surfaces can expose a
 
 `app/` (React, CodeMirror 6, Vite), served by `surface serve`:
 
-- **Sidebar:** the Views tree from `.surface/views/sidebar.yaml`, or a group per type when there is none. Twirl-downs, add a page inside any record, slide away with ⌘\.
-- **Editor:** live preview. Markdown markers step aside except where the cursor is. It renders headings, emphasis, inline and fenced code, links, `[[wikilinks]]` (with title completion), #tags, task checkboxes, lists, quotes, callouts (`> [!note]`), dividers and images (`![](…)`, `![[…]]`). Slash menu for blocks; shortcuts for bold, italic, code, tasks and headings.
+- **Sidebar:** the Views tree from `.surface/views/sidebar.yaml`, or a group per type when there is none. Twirl-downs, add a page inside any record, drag a page onto another to nest it (or onto a section to take it out), slide away with ⌘\.
+- **Editor:** live preview. Markdown markers step aside except where the cursor is. It renders headings, emphasis, inline and fenced code, links, `[[wikilinks]]` (with title completion), #tags, task checkboxes, lists, quotes, callouts (`> [!note]`), dividers and images (`![](…)`, `![[…]]`). Slash menu for blocks; shortcuts for bold, italic, code, tasks and headings. Hovering a block shows a ⋮⋮ handle: drag to move the paragraph, heading, list item, quote, table or code block, click to select it; ⌥↑/⌥↓ move lines. A move is a text edit, so the file stays plain Markdown.
 - **Page:** a title above typed properties (select, multi-select, date, checkbox, number, text and link pickers), parent breadcrumbs, pages inside, and links from other records. A leading `# Title` heading is hidden while editing and kept in step with the title in the file.
 - **Groups:** a sidebar group opens as a table of its records.
 - **Find:** ⌘K finds by title and full text, or creates a page.
 - **Saving:** autosave through the same write path as `surface push`, with revision checks. A conflict offers keep mine or use theirs. Changes made elsewhere arrive within a few seconds.
 - **Look:** light and dark, one accent, system fonts.
 
-In this version the app reaches Supabase through the local server, using the CLI's sign-in. Hosted mode needs the app to talk to Supabase directly (planned). Not built yet: shell commands and agent runs, drag-and-drop nesting, image paste, rendered tables, board views, filters and sorting in tables, tabs.
+In this version the app reaches Supabase through the local server, using the CLI's sign-in. Hosted mode needs the app to talk to Supabase directly (planned). Not built yet: shell commands and agent runs, image paste, rendered tables, board views, filters and sorting in tables, tabs.
 
 **Open:** first screens beyond the editor, the management flows (types, fields, team), and whether `surface serve` starts at login (launchd on the Mac, a systemd user service on Linux) or on demand. The earlier research in `research/APP-TECH.md` is input, not a decision to restore a Rust core, local database or CRDT engine. Supabase remains the truth.
 
