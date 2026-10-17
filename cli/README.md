@@ -1,7 +1,7 @@
 # surface CLI
 
 Typed records in Supabase, checked out as Markdown files you can open in Obsidian or any editor.
-Supabase is the source of truth; the folder is a checkout. This is Surface's first and foundational surface: a shared Markdown working medium for humans and agents. The planned dedicated app and other surfaces use the same data foundation; see [`../docs/SPEC.md`](../docs/SPEC.md) for the product direction and [`../docs/MVP.md`](../docs/MVP.md) for current scope.
+The database (Supabase) is the source of truth; the folder is a checkout. This is Surface's first and foundational surface: a shared Markdown working medium for humans and agents. The dedicated app (run with `surface serve`, below) and other surfaces use the same data foundation; see [`../docs/SPEC.md`](../docs/SPEC.md) for the product direction and [`../docs/MVP.md`](../docs/MVP.md) for current scope.
 
 ## Install
 
@@ -34,12 +34,19 @@ Every workspace starts with one built-in type, **page** (title and body only).
 
 ## Run the app
 
+Build the app once, and again after pulling app changes. From the repository root:
+
 ```sh
-cd app && npm install && npm run build   # once, and after pulling app changes
-cd ~/Surface && surface serve            # serves the app on http://127.0.0.1:4317
+cd app && npm install && npm run build
 ```
 
-Open the link it prints once (it carries a sign-in token), then install the page as an app: Omarchy's Install Web App, Chrome's Install, or Safari's Add to Dock. `--port` changes the port; `--open` opens the browser. The server listens on 127.0.0.1 only and keeps the checkout current while it runs.
+Then, in your checkout:
+
+```sh
+surface serve --open
+```
+
+It serves the app on http://127.0.0.1:4317. Open the link it prints once (it carries a sign-in token), then install the page as an app: Omarchy's Install Web App, Chrome's Install, or Safari's Add to Dock. `--port` changes the port; `--open` opens the browser. The server listens on 127.0.0.1 only and keeps the checkout current while it runs. Edits made in other editors still need `surface push` (push on save is planned).
 
 ## Build your types
 

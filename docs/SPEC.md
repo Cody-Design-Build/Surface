@@ -7,10 +7,10 @@ The current design in one place. Last consolidated: Oct 16, 2026.
 > - **Agents help humans do the work.** The foundation operates independently of any one interface.
 > - **Markdown is the first and foundational surface:** `surface pull`, edit, `surface push`, with normalization and revision checks. There is no merge engine.
 > - **Surfaces range from snapshots to interactive tools:** documents, PDFs, widgets, web interfaces, artifacts and canvases, inside or outside the dedicated app.
-> - **A dedicated app is planned:** Obsidian-like writing and browsing, Bear/Margin visual polish, and management of workspaces, teams, permissions and types.
-> - **Built today:** the Supabase types engine and CLI, including nesting, folder tools and saved navigation trees. Other clients and integrations are planned.
+> - **A dedicated app:** Obsidian-like writing and browsing, Bear/Margin visual polish, and management of workspaces, teams, permissions and types. A web app in two modes (local via `surface serve`, hosted for teams); a first local version is built (§9).
+> - **Built today:** the Supabase types engine and CLI, including nesting, folder tools and saved navigation trees, and a first version of the app in local mode. Other clients and integrations are planned.
 >
-> Earlier designs with a database on every device and CRDT merging are superseded. A dedicated app is part of the product direction; its implementation technology is still open.
+> Earlier designs with a database on every device and CRDT merging are superseded.
 
 - **How we got here:** the working notes in `docs/notes/` (DATA-MODEL, CONVENTIONS, SYNC), kept as design history.
 - **Research:** `docs/research/`.
@@ -224,14 +224,14 @@ The ledger is a product asset as well as a document. It belongs on the website: 
 
 ## 3a. Clients: one foundation, several ways in
 
-**Decided (product direction).** Headless means the data and its operations are usable independently of the dedicated app. It does not require a background daemon. The MVP has no such service: the CLI talks to Supabase, whose validation and access rules protect the data.
+**Decided (product direction).** Headless means the data and its operations are usable independently of the dedicated app. It does not require a background daemon: the CLI talks to the database directly, and its validation and access rules protect the data. `surface serve` is optional and runs only while the app is in use.
 
 ```text
         Supabase foundation: types · records · relationships · views · history · RLS
                            authorized reads and writes
                   ┌──────────────────┼──────────────────┐
             surface CLI       Dedicated app       Other clients
-                  │             (planned)           (planned)
+                  │          (first version)        (planned)
           Markdown checkout    writing, browsing,   widgets, artifacts,
                   │            data and team       browser interfaces,
           editors and agents   management          external integrations
@@ -712,7 +712,7 @@ Because the files are generated, **the folder layout is a choice made per checko
 
 ### Stage 2 (not planned): live two-way files
 
-A file watcher with continuous three-way merging. It's only worth building if push on save (in the Obsidian plugin) turns out not to be enough. The data model wouldn't change.
+A file watcher with continuous three-way merging. It's only worth building if push on save turns out not to be enough. Push on save is planned in `surface serve` (`LOCAL.md` §5) and in the Obsidian plugin. The data model wouldn't change.
 
 ### What push reports
 
@@ -825,7 +825,7 @@ The login session is stored per user in `~/.config/surface-cli/`, not in the che
 
 ## 9. The dedicated app
 
-**Decided (product direction, Oct 14).** A dedicated Surface app is planned. It is a first-class client of the headless foundation and has two connected roles:
+**Decided (product direction, Oct 14); first version built.** The dedicated Surface app is a first-class client of the headless foundation and has two connected roles:
 
 1. **Everyday work:** an Obsidian-like experience for writing, browsing, searching, linking pages and working with typed records and views, with the visual care of Bear and Margin.
 2. **Workspace management:** tools to create and edit types, fields and relationships, and manage workspaces, teams, membership and permissions. People can understand and configure the foundation without using the terminal.
@@ -866,7 +866,7 @@ In this version the app reaches Supabase through the local server, using the CLI
 
 **Obsidian remains a supported surface.** The planned plugin improves its checkout experience with the Views panel, composite-page embeds, push on save and validation. It is not a condition for whether Surface gets its own app.
 
-> **Superseded:** the earlier direction that the desktop would be Obsidian-only and a dedicated app would be considered only if the plugin fell short. The dedicated app is planned; its implementation and scheduling remain open.
+> **Superseded:** the earlier direction that the desktop would be Obsidian-only and a dedicated app would be considered only if the plugin fell short.
 
 ### Visual style
 
@@ -880,7 +880,7 @@ In this version the app reaches Supabase through the local server, using the CLI
 - **The CLI is the preferred exact interface (built):** records, queries, types, fields, folders and trees. File edits followed by push are equally supported. Both paths use the database's validation, revision checks and permissions.
 - **Every pull generates guidance (built):** `AGENTS.md`, `.agents/skills/surface/SKILL.md`, a copy in `.claude/skills/surface/`, and `.surface/types/*.yaml`.
 - **Agents can produce surfaces beyond Markdown (direction):** a PDF snapshot, a focused widget, an artifact, a web interface or content in another host. Live connections, editing, hosting and access for those surfaces remain to be designed.
-- **Problems are reported by `surface push`, `status` and `check`.** There is no automatic file watcher or persistent flags directory in the MVP.
+- **Problems are reported by `surface push`, `status` and `check`.** There is no automatic file watcher or persistent flags directory yet; push on save in `surface serve` is planned (`LOCAL.md` §5).
 - **Team workflow skills (planned)** capture reusable ways of working. Storage, editing and sharing in the app remain open.
 - **MCP (later)** adds access for agents that cannot run the CLI or see files; it is not implemented today.
 
@@ -956,6 +956,7 @@ Gaps identified Oct 13 (updated Oct 14), in suggested order:
 
 1. `link:` layouts and folder tools: `surface layout`, `mv`, `folder rename`, `folders`, and moving records by query.
 2. Nesting and saved trees: `parent`, `.surface/views/sidebar.yaml`, `surface tree`, and migration 0004.
+3. The app's first version in local mode: `surface serve` and `app/` (§9).
 
 **Previously identified next work on the Markdown surface (planned):**
 
@@ -967,8 +968,8 @@ Gaps identified Oct 13 (updated Oct 14), in suggested order:
 
 **Product work also planned:**
 
-- A dedicated Surface app for everyday writing and data work, plus team and schema management.
-- A browser experience for team access without an install, and live updates for connected clients.
+- The dedicated app, next: board and calendar views, tabs, Markdown tables, image paste, then type, field and team management.
+- The app's hosted mode for team access without an install, and live updates for other connected clients.
 - Additional surfaces, from generated reports to interactive widgets, artifacts and integrations in other hosts.
 
-The dedicated app is part of the product direction. Its first release scope and delivery order relative to the plugin, browser client and other surfaces remain open; the earlier plugin-first list does not make the app conditional on the plugin falling short.
+The app's first release scope and its order relative to the Obsidian plugin and other surfaces remain open.

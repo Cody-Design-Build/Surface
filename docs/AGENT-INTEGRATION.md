@@ -1,6 +1,6 @@
 # Surface: agents, shared data and surfaces
 
-**Current direction, Oct 14, 2026.** Agents help humans work with Surface's headless, mutable database foundation. Markdown is the first and foundational bridge; the CLI is the built interface for exact operations. See [SPEC §10](SPEC.md#10-agents).
+**Current direction, Oct 16, 2026.** Agents help humans work with Surface's headless, mutable database foundation. Markdown is the first and foundational bridge; the CLI is the built interface for exact operations. See [SPEC §10](SPEC.md#10-agents).
 
 ## The agent's role
 
@@ -8,7 +8,7 @@ Bring your own agent. Surface does not require one particular model or provider.
 
 Markdown is the native working language of LLMs and a practical shared medium with humans. An agent can read and edit the same files a person opens in Obsidian or another editor. The foundation supplies shared storage, typed data, validation, permissions and history independently of the editor or agent.
 
-An existing checkout can be read and edited offline without an API connection. Pulling fresh data or applying those edits to the database requires the CLI and a signed-in account. The MVP has no background service or automatic file watcher.
+An existing checkout can be read and edited offline without an API connection. Pulling fresh data or applying those edits to the database requires the CLI and, in sync mode, a signed-in account (local mode needs none; `LOCAL.md`). Edited files reach the database through `surface push`; push on save in `surface serve` is planned.
 
 ## Two supported ways to work
 

@@ -6,11 +6,11 @@ The aim is to be *inspired by* their design language, not to copy it. Bear's red
 
 ## The dedicated app's role
 
-**Product direction (Oct 14).** A dedicated Surface app is planned. It should feel like Obsidian for writing, browsing and working with linked records, with the visual polish of Bear and Margin. It also provides the human interface for managing workspaces, teams, membership, permissions, types, fields and relationships.
+**Product direction (Oct 14); first version built.** The dedicated Surface app should feel like Obsidian for writing, browsing and working with linked records, with the visual polish of Bear and Margin. It also provides (planned) the human interface for managing workspaces, teams, membership, permissions, types, fields and relationships.
 
 The app is a first-class client of Surface's headless database foundation. Markdown checkouts, generated reports, widgets, artifacts and external surfaces can use that same foundation independently. A PDF may be a snapshot; a connected widget may support live reads and edits. Those surfaces need only the interface their task calls for.
 
-Design the app's writing and management experiences as one coherent product. Type creation, relationship editing and team settings should be understandable and calm, with the same visual care as the editor. The desktop shell, browser implementation and first release scope remain open.
+Design the app's writing and management experiences as one coherent product. Type creation, relationship editing and team settings should be understandable and calm, with the same visual care as the editor. The app is a web app run by `surface serve` and installed as an app, with an Electron shell planned (SPEC §9).
 
 ## What makes them look the way they do
 
@@ -52,12 +52,12 @@ Design the app's writing and management experiences as one coherent product. Typ
 
 ## Implications for the app shell
 
-A truly native Bear or Margin feel is easiest with a native Mac app (Swift/AppKit/SwiftUI). A web-based shell (Tauri, Electron) can get close with careful work: vibrancy, native traffic lights, system fonts and tuned scrolling. Text-editing feel is the hardest part to match. This trade-off is being weighed in `docs/research/APP-TECH.md`.
+A truly native Bear or Margin feel is easiest with a native Mac app (Swift/AppKit/SwiftUI). Surface is a web app (SPEC §9), so it gets close with careful work instead: system fonts, live preview, tuned spacing and scrolling. Translucent sidebars and native window chrome need the planned Electron shell. Text-editing feel is the hardest part to match.
 
 ## To do
 
 - Gather reference screenshots (Bear, Margin, plus Things 3, Craft and Linear for data-heavy screens) into `docs/design/refs/`.
-- Pick a typeface and accent colour.
+- Pick a typeface and accent colour. The first app version uses system fonts and a green accent as placeholders.
 - Mock the main screens: sidebar, list, record page (fields and body), table view and validation feedback.
 - Mock type and field editing, relationship setup, workspace switching, team membership and permissions.
 - Explore a small generated widget alongside the main app to test that both can work with the same foundation.

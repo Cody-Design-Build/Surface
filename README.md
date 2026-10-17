@@ -24,13 +24,13 @@ These are product directions, not a list of integrations already built. The foun
 
 The Markdown checkout is the first and foundational surface. Markdown is the native working language of LLMs: readable text they can reason about and edit directly, and a practical bridge to human work. People can read and edit the same documents in Obsidian or any text editor. YAML front matter carries typed values and links; the body carries prose.
 
-Supabase is the source of truth. `surface pull` checks a workspace out as Markdown, and `surface push` sends edits back with validation and revision checks. Make a page or task in Obsidian, then use the CLI to normalize safe fixes and add it to the database. Files are an editable surface and a portable copy of the work.
+The database is the source of truth: Supabase today, and a local mode on one computer with no account is planned ([`docs/LOCAL.md`](docs/LOCAL.md)). `surface pull` checks a workspace out as Markdown, and `surface push` sends edits back with validation and revision checks. Make a page or task in Obsidian, then use the CLI to normalize safe fixes and add it to the database. Files are an editable surface and a portable copy of the work.
 
 ## The dedicated app
 
-A dedicated Surface app is planned. It will offer an Obsidian-like writing and browsing experience with the visual polish of Bear and Margin. It will also provide the tools to manage workspaces, teams, permissions, types, fields and relationships.
+The dedicated Surface app offers an Obsidian-like writing and browsing experience with the visual polish of Bear and Margin. It will also provide the tools to manage workspaces, teams, permissions, types, fields and relationships. A first version of the writing side is built and runs locally.
 
-The app is a first-class client of the same foundation that powers Markdown checkouts and other surfaces. It is a web app with two modes from one build: local, served by `surface serve` and installed as an app on Mac and Linux, with access to the Markdown checkout and your agents; and hosted, for teammates in a browser. An Electron shell is planned for later.
+The app is a first-class client of the same foundation that powers Markdown checkouts and other surfaces. It is a web app with two modes from one build: local, served by `surface serve` and installed as an app on Mac and Linux, with access to the Markdown checkout (built) and your agents (planned); and hosted, for teammates in a browser (planned). An Electron shell is planned for later.
 
 ## No lock-in
 
@@ -38,13 +38,17 @@ Records can be pulled as readable Markdown, with types and saved views in YAML. 
 
 ## Status
 
-The Supabase types engine and TypeScript CLI MVP are built, including Markdown pull/push, type and field editing, queries, nesting, folder layouts and saved navigation trees. The dedicated app, Obsidian plugin, browser interface and other connected surfaces are planned. The Markdown workflow is the foundation for testing the product now.
+- **Built:** the Supabase types engine and TypeScript CLI, including Markdown pull/push, type and field editing, queries, nesting, folder layouts and saved navigation trees.
+- **Built, first version:** the app in local mode (`surface serve`): Views sidebar, live-preview Markdown editor, typed properties, group tables, search, autosave with conflict handling and live updates.
+- **Planned:** local mode without an account, the app's hosted mode and management screens, push on save, the Obsidian plugin, and other connected surfaces.
 
 ## Docs
 
 - [`docs/SPEC.md`](docs/SPEC.md): current product direction, architecture and build plan.
 - [`docs/MVP.md`](docs/MVP.md): what the first implementation does and what it tests.
-- [`cli/README.md`](cli/README.md): installation and CLI usage.
+- [`cli/README.md`](cli/README.md): installation, CLI usage and running the app.
+- [`app/README.md`](app/README.md): the app's code.
+- [`docs/LOCAL.md`](docs/LOCAL.md): local mode (one computer, no account) and sync mode (teams).
 - [`docs/DESIGN.md`](docs/DESIGN.md): the dedicated app's role and visual direction.
 - [`docs/AGENT-INTEGRATION.md`](docs/AGENT-INTEGRATION.md): how agents use the foundation and help create surfaces.
 - [`docs/OBSIDIAN.md`](docs/OBSIDIAN.md): using the foundational Markdown surface in Obsidian.

@@ -1,8 +1,8 @@
 # Obsidian: the foundational Markdown surface
 
-**Current direction, Oct 14, 2026.** The Markdown checkout is Surface's first and foundational surface. Obsidian is one way people can use it for everyday work; the files also remain useful if they leave Surface. See [SPEC.md](SPEC.md) for the authoritative product design.
+**Current direction, Oct 16, 2026.** The Markdown checkout is Surface's first and foundational surface. Obsidian is one way people can use it for everyday work; the files also remain useful if they leave Surface. See [SPEC.md](SPEC.md) for the authoritative product design.
 
-Surface is a headless, mutable database foundation. Its planned dedicated app will provide an Obsidian-like writing and browsing experience with Bear/Margin visual polish, plus team and type management. Obsidian remains an independent client through the Markdown workflow.
+Surface is a headless, mutable database foundation. Its dedicated app (first version built, SPEC §9) provides an Obsidian-like writing and browsing experience with Bear/Margin visual polish, with team and type management planned. Obsidian remains an independent client through the Markdown workflow, and can be used alongside the app on the same checkout.
 
 ## Working in Obsidian today
 
@@ -52,7 +52,7 @@ The project does not need a second list of all its tasks. The database maintains
 
 ## Planned plugin
 
-The Surface plugin is planned to add a Views panel, live embeds, push on save, validation messages and type-aware properties. Its delivery order relative to the dedicated app is open. These features extend the Markdown surface; the dedicated app is planned independently of whether Obsidian meets the visual design target.
+The Surface plugin is planned to add a Views panel, live embeds, push on save, validation messages and type-aware properties. Its delivery order relative to the app's next features is open. These features extend the Markdown surface; the dedicated app is planned independently of whether Obsidian meets the visual design target.
 
 The CLI already saves and renders navigation trees. Rich views, composite-page embeds and automatic push are not implemented in the plugin because the plugin itself is not built yet. Surface uses its own readable YAML view definitions; conversion of compatible views to Obsidian `.base` files is planned.
 

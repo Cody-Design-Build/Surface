@@ -4,8 +4,10 @@ The dedicated Surface app: Views sidebar, a live-preview Markdown editor, typed 
 
 ```sh
 npm install
-npm run build      # surface serve serves dist/
+npm run build
 ```
+
+`surface serve` serves the built `dist/` folder.
 
 Hot reload (`npm run dev`) is not wired yet: the server's token cookie and Origin check don't accept the dev port. For now, rebuild and refresh.
 

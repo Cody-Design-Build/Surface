@@ -2,7 +2,7 @@
 
 **Status: built Oct 14, 2026.** The MVP is a generic types engine on Supabase plus a TypeScript CLI. It implements the first and foundational surface: a Markdown checkout people and agents can read and edit. See [SPEC.md](SPEC.md) for the product direction and [the CLI guide](../cli/README.md) for usage.
 
-The broader product is a headless, mutable database foundation with many surfaces. A dedicated app is planned for Obsidian-like writing and browsing, Bear/Margin visual polish, and team and type management. Reports, widgets, artifacts and external integrations are further possible surfaces. Those clients are not part of the built MVP.
+The broader product is a headless, mutable database foundation with many surfaces. A dedicated app provides Obsidian-like writing and browsing with Bear/Margin visual polish, with team and type management planned. Reports, widgets, artifacts and external integrations are further possible surfaces. Those clients are not part of the MVP. A first version of the app was built after it (SPEC §9).
 
 ## What is built
 
