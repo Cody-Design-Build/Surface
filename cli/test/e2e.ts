@@ -202,6 +202,34 @@ try {
   assert.match(run(["status"]), /Clean/);
   ok("views tree: init, edit the YAML, check, push, draw with paths; invalid tree rejected");
 
+  // data views, personal sidebar and views, type display, sharing
+  run(["view", "new", "Open tasks", "--from", "task", "--where", "status!=done", "--sort", "due_date", "--show", "board:status,table,calendar:due_date"]);
+  {
+    const y = read(".surface/views/open-tasks.yaml");
+    assert.match(y, /by: status/);
+    assert.match(y, /date: due_date/);
+    assert.match(y, /show: board[\s\S]*show: table[\s\S]*show: calendar/);
+  }
+  assert.match(run(["view", "new", "Bad", "--from", "task", "--show", "board:nope"], { fail: true }), /nope/);
+  run(["view", "new", "Mine", "--from", "task", "--show", "list", "--personal"]);
+  assert.ok(fs.existsSync(path.join(vault, ".surface/views/personal/mine.yaml")));
+  run(["tree", "init", "--personal"]);
+  write(".surface/views/personal/sidebar.yaml", ["items:", "  - view: mine", "  - view: open-tasks", "  - record: \"[[Steiner Kitchen]]\"", "display: merged", ""].join("\n"));
+  assert.match(run(["push"]), /pushed\s+\.surface\/views\/personal\/sidebar\.yaml/);
+  assert.match(run(["tree", "--personal"]), /Mine ⊞[\s\S]*Open tasks ⊞[\s\S]*Steiner Kitchen/);
+  // the workspace sidebar can't use a personal view
+  edit(".surface/views/sidebar.yaml", (s) => s.replace(/^items:\s*\n/m, "items:\n  - view: mine\n"));
+  assert.match(read(".surface/views/sidebar.yaml"), /view: mine/);
+  assert.match(run(["push"], { fail: true }), /no saved view "mine"/);
+  run(["pull", "--force"]);
+  run(["type", "edit", "task", "--display", "fields"]);
+  assert.match(run(["type", "show", "task"]), /fields/);
+  run(["workspace", "invite", "someone@example.com", "--role", "viewer"]);
+  assert.match(run(["workspace", "members"]), /someone@example\.com\s+viewer/);
+  run(["workspace", "uninvite", "someone@example.com"]);
+  assert.doesNotMatch(run(["workspace", "members"]), /someone@example\.com/);
+  ok("data views (board:field shorthand), personal views and sidebar, type display, invites");
+
   const flat = path.join(tmp, "flat");
   run(["init", flat, "--workspace", wsName, "--layout", "flat", "--only", "task"], { cwd: tmp });
   assert.deepEqual(fs.readdirSync(flat).filter((f) => f.endsWith(".md")).sort(), ["AGENTS.md", "Demo.md", "Order cabinets.md"]);

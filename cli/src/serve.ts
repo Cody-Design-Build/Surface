@@ -7,10 +7,10 @@ import http from "node:http";
 import path from "node:path";
 import { CONFIG_DIR, findCheckout, type Checkout } from "./config.ts";
 import { dbError, requireUser, sb } from "./client.ts";
-import { fetchViews, pushRecord, type RecordRow, type TypeRow, type ViewRow } from "./db.ts";
+import { deleteView, fetchInvites, fetchMembers, fetchViews, myInvites, pushRecord, saveView, type RecordRow, type TypeRow, type ViewRow } from "./db.ts";
 import { makeResolver, pull, snapshot, type Snapshot } from "./checkout.ts";
 import { normalize } from "./normalize.ts";
-import { asTreeDef, defaultTree, resolveTree, type TreeNode } from "./tree.ts";
+import { asTreeDef, defaultTree, isTreeDef, resolveTree, validateDataView, validateTree, type TreeDef, type TreeNode } from "./tree.ts";
 import { matches, parseWhere, sortRows } from "./query.ts";
 
 const APP_DIR = path.resolve(import.meta.dirname, "../../app/dist");
@@ -71,7 +71,10 @@ export async function serve(co: Checkout, opts: { port: number; host?: string })
     return { snap, views, revKey: revKeyOf(snap.all, views) };
   }
   function revKeyOf(records: RecordRow[], views: ViewRow[]) {
-    return records.map((r) => `${r.id}:${r.rev}`).sort().join(",") + "|" + views.map((v) => `${v.key}:${v.rev}`).join(",");
+    return records.map((r) => `${r.id}:${r.rev}`).sort().join(",") + "|" + views.map(viewRevKey).sort().join(",");
+  }
+  function viewRevKey(v: ViewRow) {
+    return `${v.owner ? "p:" : ""}${v.key}:${v.rev}`;
   }
   async function refresh(reason: string, ids: string[] = []) {
     state = await load();
@@ -95,6 +98,7 @@ export async function serve(co: Checkout, opts: { port: number; host?: string })
 
   // Watch the database for changes made elsewhere (CLI, agents, teammates).
   let polling = false;
+  let typesKey = "";
   setInterval(async () => {
     if (polling) return;
     polling = true;
@@ -102,7 +106,16 @@ export async function serve(co: Checkout, opts: { port: number; host?: string })
       const { data, error } = await sb().from("records").select("id,rev").eq("workspace_id", ws).is("deleted_at", null);
       if (error) throw error;
       const views = await fetchViews(ws);
-      const key = (data as { id: string; rev: number }[]).map((r) => `${r.id}:${r.rev}`).sort().join(",") + "|" + views.map((v) => `${v.key}:${v.rev}`).join(",");
+      const key = (data as { id: string; rev: number }[]).map((r) => `${r.id}:${r.rev}`).sort().join(",") + "|" + views.map(viewRevKey).sort().join(",");
+      // types change rarely; compare them too so a display or field change shows up
+      const { data: tdata } = await sb().from("types").select("id,updated_at").eq("workspace_id", ws);
+      const tkey = JSON.stringify((tdata ?? []).map((t) => [t.id, t.updated_at]).sort());
+      if (typesKey && tkey !== typesKey) {
+        typesKey = tkey;
+        await refresh("types");
+        return;
+      }
+      typesKey = tkey;
       if (key !== state.revKey) {
         const before = new Map(state.snap.all.map((r) => [r.id, r.rev]));
         const changed = (data as { id: string; rev: number }[]).filter((r) => before.get(r.id) !== r.rev).map((r) => r.id);
@@ -127,6 +140,10 @@ export async function serve(co: Checkout, opts: { port: number; host?: string })
     updated_at: r.updated_at,
     path: co.state.records[r.id]?.path ?? null,
   });
+  function summaryOf(id: string) {
+    const r = state.snap.byId.get(id);
+    return r ? summary(r) : null;
+  }
   function recordJson(r: RecordRow) {
     const t = typeOf(r.type_id);
     const fields: Record<string, unknown> = {};
@@ -167,13 +184,34 @@ export async function serve(co: Checkout, opts: { port: number; host?: string })
     }
     return out;
   }
-  function tree(): TreeNode[] {
-    const v = state.views.find((x) => x.key === "sidebar");
-    const def = v ? asTreeDef(v.definition) : defaultTree(state.snap.types);
-    return resolveTree(def, state.snap.records, state.snap.types);
+  const dataViews = () => state.views.filter((v) => !isTreeDef(v.key, v.definition));
+  const sidebarRow = (personal: boolean) => state.views.find((x) => x.key === "sidebar" && !!x.owner === personal);
+  function sidebarJson(personal: boolean) {
+    const v = sidebarRow(personal);
+    const def: TreeDef = v ? asTreeDef(v.definition) : personal ? { items: [] } : defaultTree(state.snap.types);
+    return {
+      exists: !!v,
+      rev: v?.rev ?? null,
+      definition: def,
+      // the workspace sidebar sees shared views; the personal one sees both, its own first
+      tree: resolveTree(def, state.snap.records, state.snap.types, personal ? [...dataViews().filter((x) => !x.owner), ...dataViews().filter((x) => x.owner)] : dataViews().filter((x) => !x.owner)),
+    };
+  }
+  function viewJson(v: ViewRow) {
+    return { key: v.key, name: v.name, personal: !!v.owner, rev: v.rev, definition: v.definition, updated_at: v.updated_at };
   }
   function typeJson(t: TypeRow) {
-    return { id: t.id, key: t.key, name: t.name, folder: t.folder, icon: t.icon, builtin: t.is_builtin, fields: t.fields.map((f) => ({ ...f, target: f.target ? state.snap.typeMap.get(f.target)?.key ?? null : null })) };
+    return { id: t.id, key: t.key, name: t.name, folder: t.folder, icon: t.icon, builtin: t.is_builtin, display: t.display ?? "document", fields: t.fields.map((f) => ({ ...f, target: f.target ? state.snap.typeMap.get(f.target)?.key ?? null : null })) };
+  }
+  let role: string | null = null;
+  let memberCount = 1;
+  async function myRole() {
+    if (role) return role;
+    const { data } = await sb().from("members").select("role,user_id").eq("workspace_id", ws);
+    const rows = (data ?? []) as { role: string; user_id: string }[];
+    memberCount = rows.length || 1;
+    role = rows.find((x) => x.user_id === user.id)?.role ?? "viewer";
+    return role;
   }
 
   async function save(r: RecordRow | null, body: Record<string, unknown>) {
@@ -251,17 +289,169 @@ export async function serve(co: Checkout, opts: { port: number; host?: string })
       return;
     }
     if (parts[0] === "state" && m === "GET") {
+      role = null;
+      const shared = sidebarJson(false);
+      const personal = sidebarJson(true);
       return send(200, {
         mode: "local",
-        user: { email: user.email },
+        user: { email: user.email, id: user.id },
+        role: await myRole(),
         workspace: { id: ws, name: co.config.workspaceName ?? ws },
         root: co.root,
         layout: co.config.layout,
         types: state.snap.types.map(typeJson),
         records: state.snap.records.map(summary),
-        tree: tree(),
-        hasSidebar: state.views.some((v) => v.key === "sidebar"),
+        views: dataViews().map(viewJson),
+        // one tree or two sections is a personal setting; alone in a workspace, one tree by default
+        sidebar: { workspace: shared, personal, display: (personal.definition.display as string | undefined) ?? (memberCount > 1 ? "split" : "merged") },
+        members: memberCount,
+        // older clients
+        tree: shared.tree,
+        hasSidebar: shared.exists,
       });
+    }
+    // ---- views (tables, boards, lists, calendars)
+    if (parts[0] === "view" && parts[1]) {
+      const personal = url.searchParams.get("personal") === "1";
+      const v = state.views.find((x) => x.key === parts[1] && !!x.owner === personal) ?? (personal ? undefined : state.views.find((x) => x.key === parts[1]));
+      if (m === "GET") {
+        if (!v || isTreeDef(v.key, v.definition)) throw new HttpError(404, "No such view");
+        const d = v.definition as { from: string; where?: string; sort?: string; limit?: number };
+        const t = state.snap.types.find((x) => x.key === d.from);
+        const thisId = url.searchParams.get("this") || null;
+        const ctx = { typeOf: state.snap.typeMap, titles: new Map(state.snap.all.map((r) => [r.id, r.title])), thisId };
+        let rows: RecordRow[] = [];
+        let problem: string | null = null;
+        try {
+          rows = t ? state.snap.records.filter((r) => r.type_id === t.id && matches(r, parseWhere(d.where), ctx)) : [];
+          rows = sortRows(rows, d.sort ?? "title", ctx);
+          if (d.limit) rows = rows.slice(0, d.limit);
+          if (!t) problem = `No type "${d.from}"`;
+        } catch (e) {
+          problem = (e as Error).message;
+        }
+        return send(200, { view: viewJson(v), records: rows.map(recordJson), problem, this: thisId ? summaryOf(thisId) : null });
+      }
+      if (m === "PUT") {
+        const b = await readBody();
+        const def = (b.definition ?? {}) as Record<string, unknown>;
+        const errors = validateDataView(def, state.snap.types);
+        if (errors.length) throw new HttpError(422, errors.join("; "), { problems: errors });
+        const res = await saveView(ws, parts[1], String(b.name ?? v?.name ?? parts[1]), def, b.baseRev ?? v?.rev ?? null, personal);
+        if (!res.ok) throw new HttpError(res.kind === "conflict" ? 409 : 422, res.message);
+        await refresh("view", []);
+        return send(200, { view: viewJson(res.view) });
+      }
+      if (m === "DELETE") {
+        if (parts[1] === "sidebar") throw new HttpError(400, "The sidebar can't be removed");
+        await deleteView(ws, parts[1], personal);
+        await refresh("view", []);
+        return send(200, { ok: true });
+      }
+    }
+    if (parts[0] === "views" && m === "POST") {
+      // create: picks a free key from the name
+      const b = await readBody();
+      const personal = !!b.personal;
+      const def = (b.definition ?? {}) as Record<string, unknown>;
+      const errors = validateDataView(def, state.snap.types);
+      if (errors.length) throw new HttpError(422, errors.join("; "), { problems: errors });
+      const base = String(b.name ?? "view").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "view";
+      let key = base === "sidebar" ? "sidebar-view" : base;
+      for (let i = 2; state.views.some((x) => x.key === key && !!x.owner === personal); i++) key = `${base}-${i}`;
+      const res = await saveView(ws, key, String(b.name ?? key), def, null, personal);
+      if (!res.ok) throw new HttpError(422, res.message);
+      await refresh("view", []);
+      return send(200, { view: viewJson(res.view) });
+    }
+    // ---- sidebars
+    if (parts[0] === "sidebar" && m === "PUT") {
+      const b = await readBody();
+      const personal = b.scope === "personal";
+      const def = (b.definition ?? {}) as Record<string, unknown>;
+      const errors = validateTree(def, state.snap.types, personal ? dataViews() : dataViews().filter((x) => !x.owner));
+      if (errors.length) throw new HttpError(422, errors.join("; "), { problems: errors });
+      const cur = sidebarRow(personal);
+      if (!personal && !["owner", "admin"].includes(await myRole())) throw new HttpError(403, "Only owners and admins arrange the workspace sidebar. Add things to your personal sidebar instead.");
+      const res = await saveView(ws, "sidebar", personal ? "My sidebar" : "Sidebar", def, b.baseRev === undefined ? cur?.rev ?? null : b.baseRev, personal);
+      if (!res.ok) throw new HttpError(res.kind === "conflict" ? 409 : 422, res.message);
+      await refresh("sidebar", []);
+      return send(200, { sidebar: sidebarJson(personal) });
+    }
+    // ---- types
+    if (parts[0] === "type" && parts[1] && m === "PUT") {
+      const t = state.snap.types.find((x) => x.key === parts[1]);
+      if (!t) throw new HttpError(404, "No such type");
+      const b = await readBody();
+      const patch: Record<string, unknown> = {};
+      if (b.display !== undefined) {
+        if (!["document", "fields"].includes(b.display)) throw new HttpError(422, "display must be document or fields");
+        patch.display = b.display;
+      }
+      if (!Object.keys(patch).length) throw new HttpError(400, "Nothing to change");
+      const { data, error } = await sb().from("types").update(patch).eq("id", t.id).select("id");
+      if (error) throw dbError(error);
+      if (!data.length) throw new HttpError(403, "Only owners and admins can change types.");
+      await refresh("types", []);
+      return send(200, { ok: true });
+    }
+    // ---- sharing
+    if (parts[0] === "members" && m === "GET") {
+      const [members, invites] = await Promise.all([fetchMembers(ws), fetchInvites(ws).catch(() => [])]);
+      return send(200, { members, invites, role: await myRole() });
+    }
+    if (parts[0] === "invites" && m === "POST") {
+      const b = await readBody();
+      const email = String(b.email ?? "").trim().toLowerCase();
+      const r = String(b.role ?? "member");
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new HttpError(422, "That isn't an email address.");
+      if (!["admin", "member", "viewer"].includes(r)) throw new HttpError(422, "Role must be admin, member or viewer.");
+      const { error } = await sb().from("invites").upsert({ workspace_id: ws, email, role: r }, { onConflict: "workspace_id,email" });
+      if (error) throw new HttpError(403, dbError(error).message.includes("row-level") ? "Only owners and admins can invite people." : dbError(error).message);
+      return send(200, { ok: true });
+    }
+    if (parts[0] === "invites" && parts[1] && m === "DELETE") {
+      const { error } = await sb().from("invites").delete().eq("id", parts[1]).eq("workspace_id", ws);
+      if (error) throw dbError(error);
+      return send(200, { ok: true });
+    }
+    if (parts[0] === "members" && parts[1] && (m === "PUT" || m === "DELETE")) {
+      const q = m === "PUT"
+        ? sb().from("members").update({ role: String((await readBody()).role) }).eq("workspace_id", ws).eq("user_id", parts[1]).select("user_id")
+        : sb().from("members").delete().eq("workspace_id", ws).eq("user_id", parts[1]).select("user_id");
+      const { data, error } = await q;
+      if (error) throw dbError(error);
+      if (!data?.length) throw new HttpError(403, "Only owners and admins can change members.");
+      role = null;
+      return send(200, { ok: true });
+    }
+    if (parts[0] === "workspaces" && m === "GET") {
+      const { data, error } = await sb().from("workspaces").select("id,name,members(role,user_id)");
+      if (error) throw dbError(error);
+      const list = (data as { id: string; name: string; members: { role: string; user_id: string }[] }[]).map((w) => ({ id: w.id, name: w.name, role: w.members.find((x) => x.user_id === user.id)?.role ?? null, current: w.id === ws }));
+      // invites addressed to me (admins can also see the ones they sent)
+      const mine = (await myInvites().catch(() => [])).filter((i) => i.email.toLowerCase() === (user.email ?? "").toLowerCase());
+      return send(200, { workspaces: list, invites: mine });
+    }
+    if (parts[0] === "workspaces" && m === "POST") {
+      const b = await readBody();
+      const name = String(b.name ?? "").trim();
+      if (!name) throw new HttpError(422, "Give the workspace a name.");
+      const { data, error } = await sb().rpc("create_workspace", { p_name: name });
+      if (error) throw dbError(error);
+      return send(200, { workspace: data });
+    }
+    if (parts[0] === "invites" && parts[1] && parts[2] === "accept" && m === "POST") {
+      const { error } = await sb().rpc("accept_invite", { p_invite: parts[1] });
+      if (error) throw dbError(error);
+      return send(200, { ok: true });
+    }
+    if (parts[0] === "record" && parts[1] && parts[2] === "restore" && m === "POST") {
+      const { data, error } = await sb().from("records").update({ deleted_at: null }).eq("id", parts[1]).eq("workspace_id", ws).select("id");
+      if (error) throw dbError(error);
+      if (!data.length) throw new HttpError(404, "No such record");
+      await refresh("restore", [parts[1]]);
+      return send(200, { ok: true });
     }
     if (parts[0] === "record" && parts[1]) {
       const r = state.snap.byId.get(parts[1]);

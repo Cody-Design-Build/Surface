@@ -462,11 +462,19 @@ Everything degrades gracefully: it's readable in any text editor, renders in any
 
 **Storage:**
 
-- **Both are saved views:** the workspace sidebar is the view `sidebar`; personal sidebars are views owned by one member (planned: an owner column on `views`).
-- **In the checkout,** `.surface/views/sidebar.yaml` holds the workspace sidebar and `.surface/views/sidebar.personal.yaml` the signed-in member's own. Both are readable and agents can edit them.
+- **Both are saved views:** the workspace sidebar is the view `sidebar`; personal sidebars are views owned by one member (`views.owner`, migration 0005). Personal data views work the same way.
+- **In the checkout,** `.surface/views/sidebar.yaml` holds the workspace sidebar and `.surface/views/personal/sidebar.yaml` the signed-in member's own (with their personal views beside it). Both are readable and agents can edit them.
 - **Nesting lives on the records** (the `parent` field). It's data; the sidebar only displays it.
 
-**Built:** a single sidebar from `.surface/views/sidebar.yaml` with groups, records, unfolding queries and `each`, resolved by the CLI and the app. **Planned:** view entries that open full-page, placed versus generated dragging, pinning, undo, personal sidebars and the display setting.
+**Built (Oct 17):** both sidebars, in the CLI (`surface tree [--personal]`, `tree init --personal`) and the app:
+
+- view entries that open full-page or unfold (`unfold: true`), with `each` under every result and `label:` to rename an entry;
+- placed entries drag to reorder, nest and move or copy between sections (⌥ copies), with a line or box marker and a tag next to the cursor saying what the drop will do;
+- generated entries can't be rearranged (the tag says why) but pin a copy when dropped on placed entries;
+- menus: add a folder, record or view; rename; duplicate; copy to the other section; switch a view between open and unfold; remove from sidebar (never deletes the record or view);
+- the workspace section is arranged by owners and admins only; everyone arranges their own;
+- the display setting (two sections or one tree) in Settings, saved in the personal sidebar as `display:`; one tree by default when you're the only member;
+- undo for every sidebar change (⌘Z, or the toast's Undo).
 
 ### Layer 3: views and composite pages (data)
 
@@ -795,8 +803,8 @@ A file watcher with continuous three-way merging. It's only worth building if pu
 
 **Decided (Oct 17).** Anyone can create as many workspaces as they like and share each one with whoever it's for: a whole team, a few people, one client, or nobody.
 
-- **Create:** `surface workspace create <name>` (built) or from the app (planned).
-- **Share:** invite people by email with a role (planned: `surface workspace invite <email> --role member`, and a Share panel in the app). Membership and roles are already enforced by the database (built).
+- **Create:** `surface workspace create <name>` or from the app's Share panel (built).
+- **Share (built, Oct 17):** invite people by email with a role: `surface workspace invite <email> --role member`, or the app's Share panel. Owners and admins invite, change roles and remove members. Invitees see pending invites in the Share panel or `surface workspace invites` and accept with Join or `surface workspace join <id>` (migration 0005: `invites`, `accept_invite`). Membership and roles are enforced by the database.
 - **Each workspace is separate:** its own types, records, views, workspace sidebar and members. Each member also has their own personal sidebar in it (§5a).
 - **Local and sync:** a workspace in local mode lives on one computer and has one user. Sharing it means turning on sync first (`surface sync enable`, `LOCAL.md` §6), which keeps every ID, link and revision.
 - **You can belong to several workspaces,** shown together in one app (like Slack teams or Anytype spaces), for example:
@@ -887,16 +895,21 @@ The app gives people a coherent home for their work. Other surfaces can expose a
 
 `app/` (React, CodeMirror 6, Vite), served by `surface serve`:
 
-- **Sidebar:** the tree from `.surface/views/sidebar.yaml`, or a group per type when there is none. Twirl-downs, add a page inside any record, slide away with ⌘\.
+- **Sidebar:** workspace and personal sections (or one tree) as in §5a: placed and generated entries, view entries, pinning, menus, undo. Slides away with ⌘\\.
 - **Editor:** live preview. Markdown markers step aside except where the cursor is. It renders headings, emphasis, inline and fenced code, links, `[[wikilinks]]` (with title completion), #tags, task checkboxes, lists, quotes, callouts (`> [!note]`), dividers and images (`![](…)`, `![[…]]`). Slash menu for blocks; shortcuts for bold, italic, code, tasks and headings. Hovering a block shows a ⋮⋮ handle: drag to move the paragraph, heading, list item, quote, table or code block, click to select it; ⌥↑/⌥↓ move lines. A move is a text edit, so the file stays plain Markdown.
 - **Page:** a title above typed properties (select, multi-select, date, checkbox, number, text and link pickers), parent breadcrumbs, pages inside, and links from other records. A leading `# Title` heading is hidden while editing and kept in step with the title in the file.
 - **Groups:** a sidebar group opens as a table of its records.
+- **Views (full page):** a saved view opens as a page with layout tabs: **table** (sort by any column, edit cells in place, add rows), **board** (columns by a select or checkbox field; dragging a card sets that field, and the slot says what it will set), **list**, and **calendar** (month grid by a date field; dragging an item to a day sets the date). A filter box narrows by title. New records start with the view's simple conditions filled in (`status=Doing`, `job=this`). Under a record (`each`), `this` is that record, shown as a breadcrumb.
+- **View editor:** pickers for type, conditions (field, is / is not / contains / before / after, value; `this` for links), sort, layouts (board field, calendar date, table columns) and who sees it (everyone, or only me). It writes the same definition as `.surface/views/<key>.yaml`.
+- **Records by type:** a type opens as a **document** (fields above the text) or as **fields** (properties first, notes on request) for things like contacts and budget lines. Set in Settings or `surface type edit <key> --display fields`.
+- **Move to…:** changes data explicitly. Pick a target, then what it means: set a link field that points to the target's type, or put it inside (parent).
+- **Undo:** ⌘Z / ⇧⌘Z for sidebar edits, board and calendar moves, cell edits, Move to… and deletes (outside the editor, which keeps its own undo). Each change shows a toast with Undo.
+- **Share and Settings:** members, roles, invites, your workspaces and creating one; sidebar display and type display.
 - **Find:** ⌘K finds by title and full text, or creates a page.
 - **Saving:** autosave through the same write path as `surface push`, with revision checks. A conflict offers keep mine or use theirs. Changes made elsewhere arrive within a few seconds.
 - **Look:** light and dark, one accent, system fonts.
-- **To change:** the first version lets a sidebar drag set a page's `parent`. That conflicts with §5a (the sidebar never changes fields) and goes when the §5a sidebar is built.
 
-In this version the app reaches Supabase through the local server, using the CLI's sign-in. Hosted mode needs the app to talk to Supabase directly (planned). Not built yet: shell commands and agent runs, image paste, rendered tables, board views, filters and sorting in tables, tabs.
+In this version the app reaches Supabase through the local server, using the CLI's sign-in. Hosted mode needs the app to talk to Supabase directly (planned). Not built yet: shell commands and agent runs, image paste, rendered Markdown tables, live embeds in pages, field and type editing screens, switching workspaces inside the app (it shows the one the folder is checked out from).
 
 **Open:** first screens beyond the editor, the management flows (types, fields, team), and whether `surface serve` starts at login (launchd on the Mac, a systemd user service on Linux) or on demand. The earlier research in `research/APP-TECH.md` is input, not a decision to restore a Rust core, local database or CRDT engine. Supabase remains the truth.
 
@@ -988,11 +1001,12 @@ Gaps identified Oct 13 (updated Oct 14), in suggested order:
 
 **MVP: built Oct 14** (`MVP.md`). The Supabase types engine plus `surface` CLI implements the foundational Markdown surface. `cli/test/e2e.ts` defines 15 end-to-end scenarios against a real Supabase project.
 
-**Built beyond the initial MVP:**
+**Built beyond the initial MVP** (e2e: 16 scenarios; app: `app/qa/qa-views.mjs`, 24 browser checks):
 
 1. `link:` layouts and folder tools: `surface layout`, `mv`, `folder rename`, `folders`, and moving records by query.
 2. Nesting and saved trees: `parent`, `.surface/views/sidebar.yaml`, `surface tree`, and migration 0004.
 3. The app's first version in local mode: `surface serve` and `app/` (§9).
+4. Sidebars, views and sharing (Oct 17, migration 0005): personal views and sidebars, full-page views, the view editor, record display per type, invites and roles, undo.
 
 **Previously identified next work on the Markdown surface (planned):**
 
@@ -1004,7 +1018,7 @@ Gaps identified Oct 13 (updated Oct 14), in suggested order:
 
 **Product work also planned:**
 
-- The dedicated app, next: full-page views (table with cell editing, board, layout tabs, a New view panel), then the sidebar model of §5a (open/unfold view entries, pinning, undo, workspace and personal sidebars), then calendar, Markdown tables, image paste, and type, field and team management.
+- The dedicated app: **built Oct 17**: full-page views (table, board, list, calendar, layout tabs, view editor), the §5a sidebar (workspace and personal, placed and generated, pinning, undo, display setting), Move to…, record display by type, and the Share and Settings panels. **Next:** Markdown tables, image paste, live view embeds in pages, type and field editing screens, and switching workspaces in the app.
 - The app's hosted mode for team access without an install, and live updates for other connected clients.
 - Additional surfaces, from generated reports to interactive widgets, artifacts and integrations in other hosts.
 

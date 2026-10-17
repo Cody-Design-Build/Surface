@@ -32,7 +32,7 @@ export function Properties({ fields, values, errors, records, onChange, onOpen }
   );
 }
 
-function Value({ f, value, records, onChange, onOpen }: { f: FieldDef; value: unknown; records: Summary[]; onChange: (v: unknown) => void; onOpen: (id: string) => void }) {
+export function Value({ f, value, records, onChange, onOpen }: { f: FieldDef; value: unknown; records: Summary[]; onChange: (v: unknown) => void; onOpen: (id: string) => void }) {
   switch (f.kind) {
     case "checkbox":
       return (

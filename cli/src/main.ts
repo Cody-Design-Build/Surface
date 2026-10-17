@@ -6,12 +6,12 @@ import readline from "node:readline";
 import { checkLayout, findCheckout, saveCheckout, type Checkout, type Layout } from "./config.ts";
 import { clearSession, dbError, requireUser, sb, UserError } from "./client.ts";
 import {
-  fetchRecord, fetchRecords, fetchTypes, fetchViews, fieldByKey, KINDS, pushRecord, saveView, typeByKey,
+  deleteView, fetchInvites, fetchMembers, fetchRecord, fetchRecords, fetchTypes, fetchViews, fieldByKey, KINDS, myInvites, pushRecord, saveView, typeByKey,
   type FieldDef, type Kind, type RecordRow, type TypeRow,
 } from "./db.ts";
 import { localEdits, localViewEdits, makeResolver, pull, push, snapshot, status, prepare, type FileResult } from "./checkout.ts";
 import { matches, parseWhere, sortRows, type QueryCtx } from "./query.ts";
-import { asTreeDef, defaultTree, drawTree, resolveTree, validateTree, type TreeNode } from "./tree.ts";
+import { asTreeDef, defaultTree, drawTree, isTreeDef, resolveTree, validateDataView, validateTree, type TreeNode } from "./tree.ts";
 import { cliValue, normalize } from "./normalize.ts";
 import { basename, parse, render } from "./markdown.ts";
 import { writeAgentFiles } from "./skills.ts";
@@ -19,7 +19,7 @@ import { writeAgentFiles } from "./skills.ts";
 // ---------------------------------------------------------------------------
 // Arguments
 // ---------------------------------------------------------------------------
-const BOOL = new Set(["force", "dry-run", "new", "json", "multiple", "single", "required", "optional", "deleted", "yes", "help", "all", "paths", "open"]);
+const BOOL = new Set(["force", "dry-run", "new", "json", "multiple", "single", "required", "optional", "deleted", "yes", "help", "all", "paths", "open", "personal"]);
 
 interface Args {
   _: string[];
@@ -195,6 +195,75 @@ const commands: Record<string, Cmd> = {
       console.log(green(`Deleted workspace ${id}. Checkouts of it are now disconnected; their files are untouched.`));
       return;
     }
+    if (sub === "members") {
+      const ws = await workspaceId(a);
+      const members = await fetchMembers(ws);
+      table([["EMAIL", "ROLE", "SINCE"], ...members.map((m) => [m.email, m.role, new Date(m.created_at).toLocaleDateString()])]);
+      const invites = await fetchInvites(ws).catch(() => []);
+      if (invites.length) {
+        console.log(bold("\nInvited, not yet accepted:"));
+        table([["EMAIL", "ROLE", "ID"], ...invites.map((i) => [i.email, i.role, i.id])]);
+      }
+      return;
+    }
+    if (sub === "invite") {
+      const ws = await workspaceId(a);
+      const email = a._[1];
+      const role = flag(a, "role") ?? "member";
+      if (!email) throw new UserError("Usage: surface workspace invite <email> [--role admin|member|viewer]");
+      if (!["admin", "member", "viewer"].includes(role)) throw new UserError("--role must be admin, member or viewer.");
+      const { error } = await sb().from("invites").upsert({ workspace_id: ws, email: email.toLowerCase(), role }, { onConflict: "workspace_id,email" });
+      if (error) throw dbError(error);
+      console.log(green(`Invited ${email} as ${role}. They join with \`surface workspace join\` after signing in with that email.`));
+      return;
+    }
+    if (sub === "uninvite") {
+      const ws = await workspaceId(a);
+      const email = (a._[1] ?? "").toLowerCase();
+      const { data, error } = await sb().from("invites").delete().eq("workspace_id", ws).eq("email", email).select("id");
+      if (error) throw dbError(error);
+      console.log(data.length ? green(`Cancelled the invite for ${email}.`) : `No invite for ${email}.`);
+      return;
+    }
+    if (sub === "role") {
+      const ws = await workspaceId(a);
+      const [email, role] = [a._[1], a._[2]];
+      if (!email || !["owner", "admin", "member", "viewer"].includes(role ?? "")) throw new UserError("Usage: surface workspace role <email> owner|admin|member|viewer");
+      const m = (await fetchMembers(ws)).find((x) => x.email.toLowerCase() === email.toLowerCase());
+      if (!m) throw new UserError(`${email} isn't a member. Invite them with \`surface workspace invite ${email}\`.`);
+      const { data, error } = await sb().from("members").update({ role }).eq("workspace_id", ws).eq("user_id", m.user_id).select("role");
+      if (error) throw dbError(error);
+      if (!data.length) throw new UserError("Only owners and admins can change roles.");
+      console.log(green(`${email} is now ${role}.`));
+      return;
+    }
+    if (sub === "remove-member") {
+      const ws = await workspaceId(a);
+      const email = a._[1] ?? "";
+      const m = (await fetchMembers(ws)).find((x) => x.email.toLowerCase() === email.toLowerCase());
+      if (!m) throw new UserError(`${email} isn't a member.`);
+      const { data, error } = await sb().from("members").delete().eq("workspace_id", ws).eq("user_id", m.user_id).select("user_id");
+      if (error) throw dbError(error);
+      if (!data.length) throw new UserError("Only owners and admins can remove members.");
+      console.log(green(`Removed ${email}. Files already on their computer stay there; they can no longer pull or push.`));
+      return;
+    }
+    if (sub === "join" || sub === "invites") {
+      const mine = await myInvites();
+      const pick = a._[1];
+      if (sub === "invites" || (!pick && mine.length !== 1)) {
+        if (!mine.length) return void console.log("No invites for you right now.");
+        table([["ID", "WORKSPACE", "ROLE"], ...mine.map((i) => [i.id, i.workspace, i.role])]);
+        if (sub === "join") console.log("\nJoin one with `surface workspace join <id>`.");
+        return;
+      }
+      const inv = pick ? mine.find((i) => i.id === pick || i.workspace.toLowerCase() === pick.toLowerCase()) : mine[0];
+      if (!inv) throw new UserError(`No invite "${pick}". \`surface workspace invites\` lists yours.`);
+      const { error } = await sb().rpc("accept_invite", { p_invite: inv.id });
+      if (error) throw dbError(error);
+      console.log(green(`Joined "${inv.workspace}" as ${inv.role}. Check it out with \`surface init <folder> --workspace ${inv.workspace_id}\`.`));
+      return;
+    }
     if (sub === "list" || !sub) {
       const { data, error } = await sb().from("workspaces").select("id,name,members(role,user_id)");
       if (error) throw dbError(error);
@@ -202,7 +271,7 @@ const commands: Record<string, Cmd> = {
       table([["ID", "NAME", "YOUR ROLE"], ...data.map((w) => [w.id, w.name, (w.members as { role: string; user_id: string }[]).find((m) => m.user_id === me)?.role ?? ""])]);
       return;
     }
-    throw new UserError("Usage: surface workspace [list | create <name> | delete <name> --yes]");
+    throw new UserError("Usage: surface workspace [list | create <name> | delete <name> --yes | members | invite <email> [--role r] | uninvite <email> | role <email> <role> | remove-member <email> | invites | join [id]]");
   },
 
   async init(a) {
@@ -366,7 +435,7 @@ const commands: Record<string, Cmd> = {
     } else if (sub === "show") {
       const t = typeByKey(types, key ?? "");
       if (a.flags.json) return console.log(JSON.stringify(t, null, 2));
-      console.log(`${bold(t.name)} (${t.key})${t.is_builtin ? dim(" built in") : ""}  folder: ${t.folder ?? "-"}`);
+      console.log(`${bold(t.name)} (${t.key})${t.is_builtin ? dim(" built in") : ""}  folder: ${t.folder ?? "-"}  opens as: ${t.display === "fields" ? "fields" : "document"}`);
       table([["FIELD", "KIND", "DETAILS"], ...t.fields.map((f) => [f.key, f.kind, fieldDetails(f, types)])]);
     } else if (sub === "edit") {
       const t = typeByKey(types, key ?? "");
@@ -375,7 +444,11 @@ const commands: Record<string, Cmd> = {
       if (flag(a, "folder")) patch.folder = flag(a, "folder");
       if (flag(a, "icon")) patch.icon = flag(a, "icon");
       if (flag(a, "key")) patch.key = flag(a, "key");
-      if (!Object.keys(patch).length) throw new UserError("Nothing to change: use --name, --key, --folder or --icon.");
+      if (flag(a, "display")) {
+        if (!["document", "fields"].includes(flag(a, "display")!)) throw new UserError("--display must be document (body first) or fields (properties first).");
+        patch.display = flag(a, "display");
+      }
+      if (!Object.keys(patch).length) throw new UserError("Nothing to change: use --name, --key, --folder, --icon or --display.");
       const { error } = await sb().from("types").update(patch).eq("id", t.id);
       if (error) throw dbError(error);
       console.log(green(`Updated type "${t.key}".`));
@@ -678,47 +751,115 @@ const commands: Record<string, Cmd> = {
     const ws = await workspaceId(a);
     const co = findCheckout();
     const sub = a._[0];
+    const personal = !!a.flags.personal;
     const types = await fetchTypes(ws);
     const views = await fetchViews(ws);
     const key = flag(a, "view") ?? "sidebar";
-    const existing = views.find((v) => v.key === key);
+    const skey = personal ? `personal/${key}` : key;
+    const existing = views.find((v) => v.key === key && !!v.owner === personal);
+    const dataViews = views.filter((v) => !isTreeDef(v.key, v.definition));
     if (sub === "init") {
-      if (existing && !a.flags.force) throw new UserError(`The "${key}" view already exists. Edit .surface/views/${key}.yaml and push, or use --force to reset it.`);
-      const def = defaultTree(types);
-      const res = await saveView(ws, key, key === "sidebar" ? "Sidebar" : key, def as unknown as Record<string, unknown>, existing?.rev ?? null);
+      if (existing && !a.flags.force) throw new UserError(`That sidebar already exists. Edit .surface/views/${skey}.yaml and push, or use --force to reset it.`);
+      const def = personal ? { display: "split", items: [] } : defaultTree(types);
+      const res = await saveView(ws, key, personal ? "My sidebar" : key === "sidebar" ? "Sidebar" : key, def as unknown as Record<string, unknown>, existing?.rev ?? null, personal);
       if (!res.ok) throw new UserError(res.message);
       await refreshCheckout(co);
-      console.log(green(`Created the "${key}" tree${co ? ` (.surface/views/${key}.yaml)` : ""}. Edit it, then \`surface push\`.`));
+      console.log(green(`Created ${personal ? "your personal sidebar" : `the "${key}" tree`}${co ? ` (.surface/views/${skey}.yaml)` : ""}. Edit it, then \`surface push\`.`));
       return;
     }
     if (sub === "check") {
       if (!co) throw new UserError("Run inside a checkout to check .surface/views files.");
-      const file = path.join(co.root, ".surface", "views", `${key}.yaml`);
+      const file = path.join(co.root, ".surface", "views", `${skey}.yaml`);
       const YAML = (await import("yaml")).default;
       const { surface_view: _v, name: _n, ...def } = YAML.parse(fs.readFileSync(file, "utf8")) ?? {};
-      const errors = validateTree(def, types);
+      const errors = validateTree(def, types, dataViews);
       if (errors.length) {
         for (const e of errors) console.log(red(`✗ ${e}`));
         process.exitCode = 1;
       } else console.log("The tree is valid.");
       return;
     }
-    if (sub) throw new UserError("Usage: surface tree [init [--force] | check] [--view key] [--json] [--paths]");
-    if (!existing) throw new UserError(`No "${key}" tree yet. Create a starting one with \`surface tree init\`.`);
+    if (sub) throw new UserError("Usage: surface tree [init [--force] | check] [--personal] [--view key] [--json] [--paths]");
+    if (!existing) throw new UserError(personal ? "No personal sidebar yet. Create one with `surface tree init --personal`." : `No "${key}" tree yet. Create a starting one with \`surface tree init\`.`);
     const records = await fetchRecords(ws);
-    const nodes = resolveTree(asTreeDef(existing.definition), records, types);
+    const nodes = resolveTree(asTreeDef(existing.definition), records, types, dataViews);
     if (a.flags.json) return console.log(JSON.stringify(nodes, null, 2));
     const pathOf = a.flags.paths && co ? (id: string) => co.state.records[id]?.path : undefined;
     console.log(drawTree(nodes, pathOf));
-    if (co && localViewEdits(co).includes(key)) console.log(yellow(`\n.surface/views/${key}.yaml has unpushed edits (shown above is the pushed version).`));
+    if (co && localViewEdits(co).includes(skey)) console.log(yellow(`\n.surface/views/${skey}.yaml has unpushed edits (shown above is the pushed version).`));
   },
 
   async views(a) {
     await requireUser();
     const ws = await workspaceId(a);
     const views = await fetchViews(ws);
-    if (!views.length) return console.log("No saved views yet. `surface tree init` creates the sidebar tree.");
-    table([["KEY", "NAME", "REV", "UPDATED"], ...views.map((v) => [v.key, v.name, String(v.rev), new Date(v.updated_at).toLocaleString()])]);
+    if (!views.length) return console.log("No saved views yet. `surface view new` makes a table or board; `surface tree init` the sidebar.");
+    const kind = (v: (typeof views)[number]) => (isTreeDef(v.key, v.definition) ? "sidebar" : ((v.definition.layouts as { show: string }[] | undefined) ?? [{ show: "table" }]).map((l) => l.show).join(", "));
+    table([["KEY", "NAME", "SHOWS", "WHOSE", "REV"], ...views.map((v) => [v.key, v.name, kind(v), v.owner ? "yours" : "workspace", String(v.rev)])]);
+  },
+
+  async view(a) {
+    await requireUser();
+    const ws = await workspaceId(a);
+    const co = findCheckout();
+    const sub = a._[0];
+    const types = await fetchTypes(ws);
+    const views = await fetchViews(ws);
+    const personal = !!a.flags.personal;
+    if (sub === "new") {
+      const name = a._.slice(1).join(" ");
+      const from = flag(a, "from");
+      if (!name || !from) throw new UserError('Usage: surface view new "Name" --from <type> [--where "…"] [--sort key] [--show table,board] [--by field] [--date field] [--columns a,b] [--key k] [--personal]');
+      const key = flag(a, "key") ?? name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+      if (views.some((v) => v.key === key && !!v.owner === personal)) throw new UserError(`A view "${key}" already exists. Pick another --key, or edit .surface/views/${personal ? "personal/" : ""}${key}.yaml.`);
+      const shows = list(flag(a, "show")) ?? ["table"];
+      // board:status and calendar:due name the field inline; --by/--date work too
+      const layouts = shows.map((raw) => {
+        const [show, inline] = raw.split(":");
+        return {
+        show,
+        ...(show === "table" && flag(a, "columns") ? { columns: list(flag(a, "columns")) } : {}),
+        ...(show === "board" ? { by: inline || flag(a, "by") } : {}),
+        ...(show === "calendar" ? { date: inline || flag(a, "date") } : {}),
+        };
+      });
+      const def: Record<string, unknown> = { from, ...(flag(a, "where") ? { where: flag(a, "where") } : {}), ...(flag(a, "sort") ? { sort: flag(a, "sort") } : {}), layouts };
+      const errors = validateDataView(def, types);
+      if (errors.length) throw new UserError(errors.join("\n"));
+      const res = await saveView(ws, key, name, def, null, personal);
+      if (!res.ok) throw new UserError(res.message);
+      await refreshCheckout(co);
+      console.log(green(`Created the view "${name}" (${key}). Add it to a sidebar with \`- view: ${key}\`.`));
+      return;
+    }
+    if (sub === "rm" || sub === "remove") {
+      const key = a._[1];
+      if (!key || key === "sidebar") throw new UserError("Usage: surface view rm <key> [--personal]   (the sidebar itself can't be removed)");
+      await deleteView(ws, key, personal);
+      await refreshCheckout(co);
+      console.log(green(`Removed the view "${key}". Sidebar entries pointing to it now show as not found.`));
+      return;
+    }
+    if (sub === "show" || (sub && !["new", "rm"].includes(sub))) {
+      const key = sub === "show" ? a._[1] : sub;
+      const v = views.find((x) => x.key === key && (personal ? !!x.owner : true));
+      if (!v) throw new UserError(`No view "${key}". \`surface views\` lists them.`);
+      if (isTreeDef(v.key, v.definition)) throw new UserError(`"${key}" is a sidebar: use \`surface tree${v.owner ? " --personal" : ""}\`.`);
+      const d = v.definition as { from: string; where?: string; sort?: string };
+      const records = await fetchRecords(ws);
+      const t = typeByKey(types, d.from);
+      const typeOf = new Map(types.map((x) => [x.id, x]));
+      const titles = new Map(records.map((r) => [r.id, r.title]));
+      const thisRef = flag(a, "this");
+      const thisId = thisRef ? (await findRecord(ws, thisRef, co)).id : null;
+      const ctx: QueryCtx = { typeOf, titles, thisId };
+      const rows = sortRows(records.filter((r) => r.type_id === t.id && matches(r, parseWhere(d.where), ctx)), d.sort ?? "title", ctx);
+      if (a.flags.json) return console.log(JSON.stringify(rows.map((r) => ({ id: r.id, title: r.title })), null, 2));
+      console.log(bold(v.name) + dim(`  ${rows.length} record(s)`));
+      for (const r of rows) console.log(`  ${r.title}`);
+      return;
+    }
+    throw new UserError('Usage: surface view new "Name" --from <type> … | view show <key> [--this record] | view rm <key>   (list with `surface views`)');
   },
 
   async serve(a) {
@@ -820,7 +961,7 @@ const HELP = `surface: typed records in Supabase, as Markdown files you can use 
 
 Account
   signup | login | logout | whoami
-  workspace [list | create <name> | delete <name> --yes]
+  workspace [list | create <name> | delete <name> --yes]   (sharing: see below)
 
 Checkout
   init <folder> [--workspace <id|name> | --create <name>] [--layout <layout>] [--only type,type]
@@ -836,7 +977,7 @@ Checkout
 Types
   types                               list types
   type add <key> [--name N] [--folder F]
-  type show <key> | type edit <key> [--name --key --folder --icon]
+  type show <key> | type edit <key> [--name --key --folder --icon --display document|fields]
   type rm <key> [--move-to <type> | --force]
   field add <type> <key> --kind <kind> [--options a,b] [--target <type>] [--multiple] [--required] [--name Label]
   field edit <type> <key> [--key --name --kind --options --add-option --remove-option --required --optional --multiple --single --target]
@@ -859,12 +1000,24 @@ Folders (where files live, in the folder layout)
 App
   serve [--port 4317] [--open]        run the Surface app for this checkout on http://127.0.0.1
 
-Views tree (navigation; never moves files)
-  tree [--paths] [--json]             show the sidebar tree
-  tree init [--force]                 create a starting tree (one group per type)
-  tree check                          validate .surface/views/sidebar.yaml before pushing
+Sidebars (organization only: arranging never changes records)
+  tree [--personal] [--paths] [--json] show the workspace sidebar, or your own
+  tree init [--personal] [--force]    create one (workspace: a group per type; personal: empty)
+  tree check [--personal]             validate .surface/views/[personal/]sidebar.yaml before pushing
+  Edit the YAML, then \`surface push\`. Items: group / record / view (+ unfold, each, label) / query.
+
+Views (tables, boards, lists, calendars over records)
   views                               list saved views
-  Edit .surface/views/sidebar.yaml, then \`surface push\`. Items: group / record / query (+ each, items, nested).
+  view new "Name" --from <type> [--where "…"] [--sort key] [--show table,board,list,calendar]
+           [--by <select field>] [--date <date field>] [--columns a,b] [--key k] [--personal]
+  view show <key> [--this <record>]   list what a view matches
+  view rm <key> [--personal]
+
+Sharing
+  workspace members                   who's in this workspace, and pending invites
+  workspace invite <email> [--role admin|member|viewer]
+  workspace uninvite <email> | role <email> <role> | remove-member <email>
+  workspace invites | join [id]       invites for you; accept one
 
 Options: --workspace <id|name> works with any command outside a checkout.
 `;

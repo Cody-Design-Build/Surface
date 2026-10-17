@@ -1,6 +1,6 @@
 # Surface app
 
-The dedicated Surface app: Views sidebar, a live-preview Markdown editor, typed properties and group tables. One web build; today it runs in local mode, served by `surface serve` (see `docs/SPEC.md` §9).
+The dedicated Surface app: workspace and personal sidebars, a live-preview Markdown editor, typed properties, and full-page views (table, board, list, calendar). One web build; today it runs in local mode, served by `surface serve` (see `docs/SPEC.md` §9).
 
 ```sh
 npm install
@@ -13,8 +13,14 @@ Hot reload (`npm run dev`) is not wired yet: the server's token cookie and Origi
 
 | File | What it does |
 |---|---|
-| `src/App.tsx` | Routing (`#/r/<id>`, `#/g/<group>`), keyboard shortcuts, live updates |
-| `src/Sidebar.tsx` | The sidebar |
+| `src/App.tsx` | Routing (`#/r/<id>`, `#/g/<group>`, `#/v/<view>`), keyboard shortcuts, live updates, panels, toast |
+| `src/Sidebar.tsx` | Workspace and personal sidebars: placed vs generated entries, drag, pin, menus |
+| `src/treeEdit.ts` | Edits to a sidebar definition by location (insert, move, remove) |
+| `src/ViewPage.tsx` | A saved view as a page: table, board, list, calendar |
+| `src/ViewEditor.tsx` | Create or edit a view with pickers |
+| `src/Panels.tsx` | Move to…, Settings, Share, record picker |
+| `src/edits.ts` | Record changes with undo entries |
+| `src/undo.ts` | The undo stack (⌘Z outside the editor) |
 | `src/Page.tsx` | Title, properties, editor, autosave and conflicts |
 | `src/Editor.tsx` | CodeMirror setup: slash menu, `[[` completion, shortcuts |
 | `src/livePreview.ts` | Live preview decorations |
@@ -23,3 +29,7 @@ Hot reload (`npm run dev`) is not wired yet: the server's token cookie and Origi
 | `src/GroupView.tsx` | A group as a table |
 | `src/Switcher.tsx` | ⌘K find or create |
 | `src/api.ts` | Calls to the local server |
+
+## QA
+
+`qa/qa-views.mjs` (24 checks: sidebars, pin, reorder, board drag, cell edit, undo, Move to…, view editor, settings, share, calendar) and `qa/qa-drag.mjs` (editor block handles) drive Chrome with puppeteer-core against a running `surface serve` on port 4317. Run them from a folder with `puppeteer-core` installed; they write screenshots to `shots/`. `qa-views.mjs` expects the demo workspace (jobs, tasks, selections, budget lines and the views in `.surface/views/`).

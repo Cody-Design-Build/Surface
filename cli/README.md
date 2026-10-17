@@ -128,6 +128,17 @@ surface tree init                      # starting tree: a group per type
 surface tree --paths                   # draw it, with file paths
 # edit .surface/views/sidebar.yaml, then:
 surface tree check && surface push
+
+surface view new "Job tasks" --from task --where "job=this" --sort due --show board:status,table
+surface view new "My week" --from task --where "status!=Done" --show calendar:due,list --personal
+surface tree init --personal           # your own sidebar (.surface/views/personal/sidebar.yaml)
+surface tree --personal
+surface type edit budget_line --display fields   # opens fields-first in the app
+
+surface workspace invite anna@example.com --role member   # admin | member | viewer
+surface workspace members              # members and pending invites
+surface workspace invites              # invites addressed to you
+surface workspace join <id>
 ```
 
 `.surface/views/sidebar.yaml`:
@@ -142,6 +153,20 @@ items:
           - query: { from: task, where: "project=this", label: Tasks }
   - record: "[[How We Estimate]]"        # one record, with its nested pages
   - query: { from: page, where: "folder= && parent=", label: Inbox }
+```
+
+Sidebar entries can also be saved views: `- view: job-tasks` opens it as a full page; add `unfold: true` to list its records in the tree instead, `each:` to put entries under every result (`this` = that result), and `label:` to rename the entry. The workspace sidebar can use shared views only; your personal sidebar can use both. `display: merged` (personal sidebar) shows one tree instead of two sections.
+
+```yaml
+items:
+  - group: Jobs
+    items:
+      - view: all-jobs
+        unfold: true
+        each:
+          - { view: job-pages, unfold: true, label: Pages }
+          - { view: job-tasks, label: Tasks }
+          - { view: budget, label: Budget }
 ```
 
 Every record in the tree also shows the records nested under it (`nested: false` turns that off).

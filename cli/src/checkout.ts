@@ -4,7 +4,7 @@ import path from "node:path";
 import { type Checkout, saveCheckout } from "./config.ts";
 import YAML from "yaml";
 import { fetchRecords, fetchTypes, fetchViews, pushRecord, saveView, type RecordRow, type TypeRow } from "./db.ts";
-import { validateTree } from "./tree.ts";
+import { isTreeDef, validateDataView, validateTree } from "./tree.ts";
 import { basename, hash, isBuiltinKey, parse, planPaths, render } from "./markdown.ts";
 import { normalize, type Resolver } from "./normalize.ts";
 import { writeAgentFiles } from "./skills.ts";
@@ -82,22 +82,30 @@ export async function snapshot(co: Checkout): Promise<Snapshot> {
 }
 
 const VIEWS_DIR = path.join(".surface", "views");
-const viewPath = (key: string) => path.join(VIEWS_DIR, `${key}.yaml`);
+/** State keys: "key" for workspace views, "personal/key" for the signed-in member's own. */
+export const viewPath = (skey: string) => path.join(VIEWS_DIR, `${skey}.yaml`);
+export const viewSKey = (v: { key: string; owner: string | null }) => (v.owner ? `personal/${v.key}` : v.key);
+const splitSKey = (skey: string) => (skey.startsWith("personal/") ? { key: skey.slice(9), personal: true } : { key: skey, personal: false });
 
-/** View files edited since Surface last wrote them, plus new ones. */
+/** View files edited since Surface last wrote them, plus new ones (as state keys). */
 export function localViewEdits(co: Checkout): string[] {
-  const dir = path.join(co.root, VIEWS_DIR);
-  if (!fs.existsSync(dir)) return [];
   const known = co.state.views ?? {};
-  return fs
-    .readdirSync(dir)
-    .filter((f) => f.endsWith(".yaml"))
-    .map((f) => f.slice(0, -5))
-    .filter((key) => hash(fs.readFileSync(path.join(dir, `${key}.yaml`), "utf8")) !== known[key]?.hash);
+  const out: string[] = [];
+  for (const sub of ["", "personal"]) {
+    const dir = path.join(co.root, VIEWS_DIR, sub);
+    if (!fs.existsSync(dir)) continue;
+    for (const f of fs.readdirSync(dir)) {
+      if (!f.endsWith(".yaml")) continue;
+      const skey = (sub ? `${sub}/` : "") + f.slice(0, -5);
+      if (hash(fs.readFileSync(path.join(dir, f), "utf8")) !== known[skey]?.hash) out.push(skey);
+    }
+  }
+  return out;
 }
 
-export function renderView(name: string, definition: Record<string, unknown>): string {
-  return `# Surface view. Edit, then run \`surface push\`. Format: see \`surface tree --help\`.\n${YAML.stringify({ surface_view: 1, name, ...definition }, { lineWidth: 0 })}`;
+export function renderView(name: string, definition: Record<string, unknown>, personal = false): string {
+  const what = "items" in definition ? (personal ? "Your personal sidebar (only you see it)" : "Surface sidebar") : personal ? "Your personal view (only you see it)" : "Surface view";
+  return `# ${what}. Edit, then run \`surface push\`. Format: see \`surface tree --help\` / \`surface view --help\`.\n${YAML.stringify({ surface_view: 1, name, ...definition }, { lineWidth: 0 })}`;
 }
 
 export interface PullReport {
@@ -160,19 +168,20 @@ export async function pull(co: Checkout, opts: { force?: boolean } = {}): Promis
   const editedViews = new Set(localViewEdits(co));
   const nextViews: NonNullable<typeof co.state.views> = {};
   for (const v of views) {
-    const rel = viewPath(v.key);
-    if (editedViews.has(v.key) && !opts.force && fs.existsSync(path.join(co.root, rel))) {
+    const skey = viewSKey(v);
+    const rel = viewPath(skey);
+    if (editedViews.has(skey) && !opts.force && fs.existsSync(path.join(co.root, rel))) {
       report.skipped.push(rel);
-      if (co.state.views?.[v.key]) nextViews[v.key] = co.state.views[v.key];
+      if (co.state.views?.[skey]) nextViews[skey] = co.state.views[skey];
       continue;
     }
-    const text = renderView(v.name, v.definition);
+    const text = renderView(v.name, v.definition, !!v.owner);
     const abs = path.join(co.root, rel);
     if (!fs.existsSync(abs) || fs.readFileSync(abs, "utf8") !== text) {
       writeFile(co, rel, text);
       report.written.push(rel);
     }
-    nextViews[v.key] = { rev: v.rev, hash: hash(text) };
+    nextViews[skey] = { rev: v.rev, hash: hash(text) };
   }
   for (const key of Object.keys(co.state.views ?? {})) {
     if (nextViews[key] || editedViews.has(key)) continue;
@@ -192,8 +201,10 @@ export async function pull(co: Checkout, opts: { force?: boolean } = {}): Promis
 export async function pushViews(co: Checkout, types: TypeRow[], opts: { dryRun?: boolean; only?: string[] } = {}): Promise<FileResult[]> {
   const results: FileResult[] = [];
   const keys = localViewEdits(co).filter((k) => !opts.only || opts.only.includes(k));
-  for (const key of keys) {
-    const rel = viewPath(key);
+  const allViews = await fetchViews(co.config.workspace);
+  for (const skey of keys) {
+    const { key, personal } = splitSKey(skey);
+    const rel = viewPath(skey);
     let def: Record<string, unknown>;
     try {
       def = YAML.parse(fs.readFileSync(path.join(co.root, rel), "utf8")) ?? {};
@@ -206,23 +217,27 @@ export async function pushViews(co: Checkout, types: TypeRow[], opts: { dryRun?:
       continue;
     }
     const { surface_view: _v, name, ...definition } = def as Record<string, unknown>;
-    const errors = "items" in definition || key === "sidebar" ? validateTree(definition, types) : [];
+    // the workspace sidebar can only point at shared views; a personal one sees both
+    const viewsForCheck = allViews
+      .filter((v) => !isTreeDef(v.key, v.definition) && (personal || !v.owner))
+      .map((v) => ({ key: v.key, name: v.name, definition: v.definition }));
+    const errors = isTreeDef(key, definition) ? validateTree(definition, types, viewsForCheck) : validateDataView(definition, types);
     if (errors.length) {
       results.push({ path: rel, status: "rejected", notices: [], errors });
       continue;
     }
-    const isNew = !co.state.views?.[key];
+    const isNew = !co.state.views?.[skey];
     if (opts.dryRun) {
       results.push({ path: rel, status: isNew ? "created" : "pushed", notices: [], errors: [] });
       continue;
     }
-    const res = await saveView(co.config.workspace, key, typeof name === "string" ? name : key, definition, co.state.views?.[key]?.rev ?? null);
+    const res = await saveView(co.config.workspace, key, typeof name === "string" ? name : key, definition, co.state.views?.[skey]?.rev ?? null, personal);
     if (!res.ok) {
       results.push({ path: rel, status: res.kind === "conflict" ? "conflict" : "rejected", notices: [], errors: [res.message] });
       continue;
     }
     // mark clean, so the pull afterwards rewrites it in canonical form
-    co.state.views = { ...(co.state.views ?? {}), [key]: { rev: res.view.rev, hash: hash(fs.readFileSync(path.join(co.root, rel), "utf8")) } };
+    co.state.views = { ...(co.state.views ?? {}), [skey]: { rev: res.view.rev, hash: hash(fs.readFileSync(path.join(co.root, rel), "utf8")) } };
     results.push({ path: rel, status: isNew ? "created" : "pushed", notices: [], errors: [] });
   }
   return results;
@@ -359,7 +374,7 @@ export async function push(
   const mdFiles = given?.filter((f) => !isView(f));
   const files = given ? (mdFiles!.length ? candidates(co, mdFiles) : []) : candidates(co, undefined);
   if (!given || viewFiles.length) {
-    const vr = await pushViews(co, snap.types, { dryRun: opts.dryRun, only: viewFiles.length ? viewFiles.map((f) => path.basename(f, ".yaml")) : undefined });
+    const vr = await pushViews(co, snap.types, { dryRun: opts.dryRun, only: viewFiles.length ? viewFiles.map((f) => path.relative(VIEWS_DIR, f).replace(/\\/g, "/").replace(/\.yaml$/, "")) : undefined });
     results.push(...vr);
   }
   let changed = results.some((r) => r.status === "pushed" || r.status === "created") && !opts.dryRun;

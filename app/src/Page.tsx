@@ -4,6 +4,7 @@ import { Editor, focusEditor } from "./Editor.tsx";
 import { setImageBase } from "./livePreview.ts";
 import { Icon, typeIcon } from "./Icon.tsx";
 import { Properties } from "./Properties.tsx";
+import { deleteRecord } from "./edits.ts";
 
 export type SaveStatus = "saved" | "saving" | "error" | "conflict";
 
@@ -17,6 +18,7 @@ interface Props {
   createPage: (parent: string | null) => void;
   onStatus: (s: SaveStatus, msg?: string) => void;
   onDeleted: () => void;
+  onMove: () => void;
 }
 
 // Many files start with "# Title". The app shows the title above the text, so that heading is
@@ -36,7 +38,8 @@ interface Pending {
   fields?: Record<string, unknown>;
 }
 
-export function Page({ id, app, remoteTick, remoteIds, open, openTitle, createPage, onStatus, onDeleted }: Props) {
+export function Page({ id, app, remoteTick, remoteIds, open, openTitle, createPage, onStatus, onDeleted, onMove }: Props) {
+  const [showText, setShowText] = useState(false);
   const [rec, setRec] = useState<RecordFull | null>(null);
   const [backlinks, setBacklinks] = useState<Backlink[]>([]);
   const [title, setTitle] = useState("");
@@ -235,7 +238,7 @@ export function Page({ id, app, remoteTick, remoteIds, open, openTitle, createPa
   if (!rec) return <div className="page-loading" />;
 
   return (
-    <article className="page">
+    <article className={`page ${type?.display === "fields" ? "is-fields" : ""}`}>
       <header className="page-head">
         <div className="crumbs">
           {crumbs.map((c) => (
@@ -255,6 +258,9 @@ export function Page({ id, app, remoteTick, remoteIds, open, openTitle, createPa
                 <button className="menu-item" onClick={() => (createPage(id), setMenu(false))}>
                   <Icon name="nest" size={14} /> Add a page inside
                 </button>
+                <button className="menu-item" onClick={() => (onMove(), setMenu(false))}>
+                  <Icon name="move" size={14} /> Move to…
+                </button>
                 {rec.path ? (
                   <button className="menu-item" onClick={() => (navigator.clipboard.writeText(`${app.root}/${rec.path}`), setMenu(false))}>
                     <Icon name="copy" size={14} /> Copy file path
@@ -268,8 +274,7 @@ export function Page({ id, app, remoteTick, remoteIds, open, openTitle, createPa
                   className="menu-item danger"
                   onClick={async () => {
                     setMenu(false);
-                    if (!confirm(`Delete "${rec.title}"? You can restore it with \`surface restore ${rec.id}\`.`)) return;
-                    await api.remove(rec.id);
+                    await deleteRecord(rec);
                     onDeleted();
                   }}
                 >
@@ -340,6 +345,11 @@ export function Page({ id, app, remoteTick, remoteIds, open, openTitle, createPa
           />
         ) : null}
 
+        {type?.display === "fields" && !editorValue.trim() && !showText ? (
+          <button className="add-notes" onClick={() => setShowText(true)}>
+            <Icon name="page" size={14} /> Add notes
+          </button>
+        ) : (
         <Editor
           docKey={rec.id}
           value={editorValue}
@@ -351,6 +361,7 @@ export function Page({ id, app, remoteTick, remoteIds, open, openTitle, createPa
           openLink={openTitle}
           onEscapeUp={() => titleRef.current?.focus()}
         />
+        )}
 
         {children.length || backlinks.length ? (
           <footer className="page-foot">

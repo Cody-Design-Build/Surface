@@ -27,6 +27,8 @@ export interface TypeRow {
   folder: string | null;
   fields: FieldDef[];
   is_builtin: boolean;
+  /** How a record of this type opens: body first, or properties first. */
+  display?: "document" | "fields";
 }
 
 export interface RecordRow {
@@ -132,6 +134,8 @@ export interface ViewRow {
   definition: Record<string, unknown>;
   rev: number;
   updated_at: string;
+  /** null = shared with the workspace; a user id = that member's own */
+  owner: string | null;
 }
 
 export async function fetchViews(ws: string): Promise<ViewRow[]> {
@@ -140,11 +144,52 @@ export async function fetchViews(ws: string): Promise<ViewRow[]> {
   return data as ViewRow[];
 }
 
-export async function saveView(ws: string, key: string, name: string | null, definition: Record<string, unknown>, baseRev: number | null): Promise<{ ok: true; view: ViewRow } | { ok: false; kind: "conflict" | "invalid"; message: string }> {
-  const { data, error } = await sb().rpc("save_view", { p_workspace: ws, p_key: key, p_name: name, p_definition: definition, p_base_rev: baseRev });
+export async function saveView(ws: string, key: string, name: string | null, definition: Record<string, unknown>, baseRev: number | null, personal = false): Promise<{ ok: true; view: ViewRow } | { ok: false; kind: "conflict" | "invalid"; message: string }> {
+  const { data, error } = await sb().rpc("save_view", { p_workspace: ws, p_key: key, p_name: name, p_definition: definition, p_base_rev: baseRev, p_personal: personal });
   if (error) {
     if (error.message.startsWith("conflict: ")) return { ok: false, kind: "conflict", message: error.message.slice(10) };
     return { ok: false, kind: "invalid", message: dbError(error).message };
   }
   return { ok: true, view: data as ViewRow };
+}
+
+export async function deleteView(ws: string, key: string, personal = false): Promise<void> {
+  let q = sb().from("views").delete().eq("workspace_id", ws).eq("key", key);
+  q = personal ? q.not("owner", "is", null) : q.is("owner", null);
+  const { error } = await q;
+  if (error) throw dbError(error);
+}
+
+// ---------------------------------------------------------------------------
+// Members and invites
+// ---------------------------------------------------------------------------
+export interface MemberRow {
+  user_id: string;
+  email: string;
+  role: string;
+  created_at: string;
+}
+export interface InviteRow {
+  id: string;
+  workspace_id: string;
+  email: string;
+  role: string;
+  created_at: string;
+}
+
+export async function fetchMembers(ws: string): Promise<MemberRow[]> {
+  const { data, error } = await sb().rpc("workspace_members", { p_workspace: ws });
+  if (error) throw dbError(error);
+  return data as MemberRow[];
+}
+export async function fetchInvites(ws: string): Promise<InviteRow[]> {
+  const { data, error } = await sb().from("invites").select("*").eq("workspace_id", ws).order("created_at");
+  if (error) throw dbError(error);
+  return data as InviteRow[];
+}
+/** Invites addressed to the signed-in user, with the workspace name. */
+export async function myInvites(): Promise<(InviteRow & { workspace: string })[]> {
+  const { data, error } = await sb().from("invites").select("*, workspaces(name)").order("created_at");
+  if (error) throw dbError(error);
+  return (data as (InviteRow & { workspaces: { name: string } | null })[]).map((i) => ({ ...i, workspace: i.workspaces?.name ?? i.workspace_id }));
 }
