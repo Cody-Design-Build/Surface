@@ -213,12 +213,15 @@ export function Share({ app, onClose, onToast }: { app: AppState; onClose: () =>
   const [workspaces, setWorkspaces] = useState<{ id: string; name: string; role: Role | null; current: boolean }[]>([]);
   const [mine, setMine] = useState<Invite[]>([]);
   const [newWs, setNewWs] = useState("");
+  const [shared, setShared] = useState<{ shared: boolean; cloud: string | null } | null>(null);
+  const [sendText, setSendText] = useState<{ title: string; to: string; subject: string; body: string } | null>(null);
   const input = useRef<HTMLInputElement>(null);
   const isAdmin = app.role === "owner" || app.role === "admin";
   const load = async () => {
     const [m, w] = await Promise.all([api.members(), api.workspaces()]);
     setMembers(m.members);
     setInvites(m.invites);
+    setShared({ shared: m.shared !== false, cloud: m.cloud ?? null });
     setWorkspaces(w.workspaces);
     setMine(w.invites);
   };
@@ -228,8 +231,9 @@ export function Share({ app, onClose, onToast }: { app: AppState; onClose: () =>
   const invite = async () => {
     setError(null);
     try {
-      await api.invite(email.trim(), role);
+      const res = await api.invite(email.trim(), role);
       onToast(`Invited ${email.trim()} as ${role}`);
+      if (res.message) setSendText({ title: `Send this to ${email.trim()}`, to: email.trim(), subject: res.message.subject, body: res.message.body });
       setEmail("");
       load();
     } catch (e) {
@@ -238,8 +242,35 @@ export function Share({ app, onClose, onToast }: { app: AppState; onClose: () =>
   };
   return (
     <Panel title={`Share ${app.workspace.name}`} onClose={onClose} wide>
-      {app.mode === "local" && app.members <= 1 ? <p className="panel-note">Only you are in this workspace. Invite someone and they'll see its records, views and workspace sidebar, never your personal sidebar.</p> : null}
-      {isAdmin ? (
+      {shared && !shared.shared ? (
+        <div className="share-setup">
+          <strong>This workspace is only on this computer.</strong>
+          <p>To use it on your other computers or share it with people, put it in your own cloud (a Supabase project you own; Surface has no hosted service).</p>
+          <code>{shared.cloud ? "surface sync enable" : "surface cloud setup"}</code>
+          <p className="panel-note">{shared.cloud ? `Run it in the workspace folder. Your cloud: ${shared.cloud}` : "Run it in the workspace folder; it walks you through connecting a project. Or ask an agent to follow skills/surface-setup."}</p>
+        </div>
+      ) : null}
+      {shared?.shared ? (
+        <div className="share-devices">
+          <span>Use it on another computer of yours</span>
+          <button className="btn-soft" onClick={async () => {
+            try { const d = await api.deviceInvite(); setSendText({ title: "On your other computer", to: d.email, subject: `Surface: "${d.name ?? app.workspace.name}" on another computer`, body: d.body }); }
+            catch (e) { setError((e as Error).message); }
+          }}>Get the join command</button>
+        </div>
+      ) : null}
+      {sendText ? (
+        <div className="share-send">
+          <div className="share-send-head"><strong>{sendText.title}</strong><button className="icon-btn" aria-label="Close" onClick={() => setSendText(null)}><Icon name="close" size={13} /></button></div>
+          <textarea readOnly value={sendText.body} rows={Math.min(24, sendText.body.split("\n").length + 7)} onFocus={(e) => e.currentTarget.select()} />
+          <div className="share-send-actions">
+            <button className="btn-soft" onClick={() => { void navigator.clipboard.writeText(sendText.body); onToast("Copied"); }}>Copy</button>
+            <a className="btn-soft" href={`mailto:${encodeURIComponent(sendText.to)}?subject=${encodeURIComponent(sendText.subject)}&body=${encodeURIComponent(sendText.body)}`}>Email it</a>
+          </div>
+          <p className="panel-note">Nothing secret in it: your project's address and public key, and the email it's for.</p>
+        </div>
+      ) : null}
+      {shared?.shared && isAdmin ? (
         <div className="invite-row">
           <input ref={input} className="ve-input" placeholder="Email address" value={email} onChange={(e) => setEmail(e.target.value)} onKeyDown={(e) => e.key === "Enter" && invite()} />
           <select className="ve-input ve-op" value={role} onChange={(e) => setRole(e.target.value as Role)}>
@@ -249,9 +280,9 @@ export function Share({ app, onClose, onToast }: { app: AppState; onClose: () =>
           </select>
           <button className="btn-primary" disabled={!email.trim()} onClick={invite}>Invite</button>
         </div>
-      ) : (
+      ) : shared?.shared ? (
         <p className="panel-note">Owners and admins invite people.</p>
-      )}
+      ) : null}
       {error ? <div className="ve-error">{error}</div> : null}
       <ul className="people">
         {members.map((m) => (
@@ -322,7 +353,7 @@ export function Share({ app, onClose, onToast }: { app: AppState; onClose: () =>
           </li>
         ))}
       </ul>
-      <p className="panel-note">They join when they sign in with that email (`surface workspace join`, or the app once it's hosted).</p>
+      {shared?.shared ? <p className="panel-note">Each invite gives you a message with a one-line <code>surface join</code> command. They install Surface, run it, and get their own copy that syncs.</p> : null}
 
       <h4 className="panel-h">Your workspaces</h4>
       <ul className="people">

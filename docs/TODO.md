@@ -51,6 +51,10 @@ Everything still to decide, in one place. Tick an item when it's decided, and re
 
 ## Sharing and permissions
 
+- [x] Local → your cloud → share: `surface cloud setup`, `surface share device`, `surface share invite`, `surface join`, Share panel (Oct 18, `CLOUD.md`). `npm run test:team` 8/8.
+- [ ] Share panel: start cloud setup from the app (today it shows the command), and accept an invite code pasted into the app.
+- [ ] Remove a computer: list a person's computers and revoke one (today: remove the person, or sign out on that computer).
+- [ ] Windows: an install script (install.sh is bash; WSL works).
 - [ ] Member roles in detail. (SPEC §7a)
 - [ ] Member roles beyond owner/admin/editor/viewer, if any.
 

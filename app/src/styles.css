@@ -903,6 +903,16 @@ select.ve-input { padding-right: 4px; }
 .surface-grid .rdg-group-row > [role="gridcell"][aria-selected="true"] { outline: none; }
 .surface-grid .rdg-group-row .sg-group { position: relative; z-index: 3; }
 .sg-opt-head-row { display: flex; align-items: center; justify-content: space-between; }
+
+/* Share panel: not-in-cloud setup, other-computer join, the message to send */
+.share-setup, .share-send { border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; margin: 0 0 12px; background: var(--bg-side); display: flex; flex-direction: column; gap: 6px; }
+.share-setup p { margin: 0; color: var(--text-soft); font-size: 13px; }
+.share-setup code { align-self: flex-start; padding: 3px 8px; border-radius: 5px; background: var(--bg-active); font-size: 12.5px; }
+.share-devices { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0 0 12px; font-size: 13px; color: var(--text-soft); }
+.share-send-head { display: flex; align-items: center; justify-content: space-between; }
+.share-send textarea { width: 100%; font: 12px/1.45 var(--font-mono, ui-monospace, monospace); padding: 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg-raised); color: var(--text); resize: vertical; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-all; }
+.share-send-actions { display: flex; gap: 6px; }
+.share-send-actions a { text-decoration: none; }
 .sg-opt-link { font-size: 11px; font-weight: 500; text-transform: none; letter-spacing: 0; color: var(--accent); }
 .sg-group-key { overflow: visible; }
 .sg-chev { display: inline-flex; color: var(--text-muted); transition: transform 0.12s; }

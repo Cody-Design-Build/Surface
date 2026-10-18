@@ -107,6 +107,82 @@ The code contains the team database's address and your email, nothing secret. It
   return { subject, body, code };
 }
 
+// ---------------------------------------------------------------------------
+// Sharing a workspace: with your other computers, and with other people
+// ---------------------------------------------------------------------------
+export const NOT_SHARED =
+  "This workspace is only on this computer. To share it, put it in your cloud first: `surface sync enable` (no cloud yet? `surface cloud setup`).";
+
+/** Where sharing happens for a workspace: its cloud copy (local store) or itself (cloud store). */
+export async function shareTarget(ws: string): Promise<{ db: any; workspace: string }> {
+  const { storeKind, sb, cloudClient, UserError } = await import("./client.ts");
+  if (storeKind() !== "local") return { db: sb(), workspace: ws };
+  const { syncCall } = await import("./sync.ts");
+  const s = await syncCall("status", ws);
+  if (!s || s.hub.kind !== "cloud") throw new UserError(NOT_SHARED);
+  return { db: cloudClient(), workspace: s.hub.workspace };
+}
+
+async function workspaceName(db: any, ws: string): Promise<string | undefined> {
+  const { data } = await db.from("workspaces").select("name").eq("id", ws).maybeSingle();
+  return (data as { name?: string } | null)?.name;
+}
+
+/** Invite someone by email; returns the message (with their join code) to send them. */
+export async function createInvite(ws: string, email: string, role: string) {
+  const { UserError, dbError } = await import("./client.ts");
+  const e = email.trim().toLowerCase();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) throw new UserError("That isn't an email address.");
+  if (!["admin", "member", "viewer"].includes(role)) throw new UserError("Role must be admin, member or viewer.");
+  const { db, workspace } = await shareTarget(ws);
+  const { error } = await db.from("invites").upsert({ workspace_id: workspace, email: e, role }, { onConflict: "workspace_id,email" });
+  if (error) throw /row-level/.test(error.message) ? new UserError("Only owners and admins can invite people.") : dbError(error);
+  const c = cloudConfig()!;
+  const { data: me } = await db.auth.getUser();
+  return inviteMessage({ url: c.url, key: c.publishableKey, workspace, workspaceName: await workspaceName(db, workspace), email: e, project: c.name }, me.user?.email ?? undefined);
+}
+
+/** A join code for YOUR other computer: no invite needed, you're already a member. */
+export async function deviceInvite(ws: string) {
+  const { UserError } = await import("./client.ts");
+  const { db, workspace } = await shareTarget(ws);
+  const { data: me } = await db.auth.getUser();
+  if (!me.user?.email) throw new UserError("Sign in to your cloud first: surface login");
+  const c = cloudConfig()!;
+  const name = await workspaceName(db, workspace);
+  const code = encodeInvite({ url: c.url, key: c.publishableKey, workspace, workspaceName: name, email: me.user.email, project: c.name });
+  const body = `On your other computer:
+
+1. Install Surface (once):
+
+   git clone https://github.com/Cody-Design-Build/Surface.git ~/Developer/Surface
+   ~/Developer/Surface/install.sh
+
+2. Run:
+
+   surface join ${code}
+
+It connects to your cloud, asks for your password (${me.user.email}), and puts a copy of "${name ?? "the workspace"}" on that computer. Both computers keep a full copy and sync.
+`;
+  return { code, body, email: me.user.email, name };
+}
+
+/** Members and pending invites of a workspace, from wherever it's shared (or just you, if it isn't). */
+export async function shareState(ws: string) {
+  const { fetchMembers, fetchInvites } = await import("./db.ts");
+  try {
+    const { db, workspace } = await shareTarget(ws);
+    const [{ data: members }, { data: invites }] = await Promise.all([
+      db.rpc("workspace_members", { p_workspace: workspace }),
+      db.from("invites").select("*").eq("workspace_id", workspace).order("created_at"),
+    ]);
+    return { shared: true, cloud: cloudConfig()?.url ?? null, workspace, members: (members ?? []) as { user_id: string; email: string; role: string; created_at: string }[], invites: (invites ?? []) as { id: string; email: string; role: string; created_at: string }[] };
+  } catch (e) {
+    if (!(e instanceof Error) || !/only on this computer/.test(e.message)) throw e;
+    return { shared: false, cloud: cloudConfig()?.url ?? null, workspace: ws, members: await fetchMembers(ws), invites: await fetchInvites(ws).catch(() => []) };
+  }
+}
+
 export function mailtoUrl(to: string, subject: string, body: string): string {
   return `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 }

@@ -189,8 +189,9 @@ export const api = {
   saveType: (type: string, patch: { name?: string; folder?: string; display?: "document" | "fields"; fields?: FieldDef[] }) => call<{ ok: true }>("PUT", `/api/type/${type}`, patch),
   createType: (body: { key: string; name: string; display?: "document" | "fields" }) => call<{ ok: true; key: string }>("POST", "/api/types", body),
   setTypeDisplay: (type: string, display: "document" | "fields") => call<{ ok: true }>("PUT", `/api/type/${type}`, { display }),
-  members: () => call<{ members: Member[]; invites: Invite[]; role: Role }>("GET", "/api/members"),
-  invite: (email: string, role: Role) => call<{ ok: true }>("POST", "/api/invites", { email, role }),
+  members: () => call<{ members: Member[]; invites: Invite[]; role: Role; shared?: boolean; cloud?: string | null }>("GET", "/api/members"),
+  invite: (email: string, role: Role) => call<{ ok: true; message?: ShareMessage }>("POST", "/api/invites", { email, role }),
+  deviceInvite: () => call<{ code: string; body: string; email: string; name?: string }>("POST", "/api/share/device"),
   cancelInvite: (id: string) => call<{ ok: true }>("DELETE", `/api/invites/${id}`),
   setRole: (userId: string, role: Role) => call<{ ok: true }>("PUT", `/api/members/${userId}`, { role }),
   removeMember: (userId: string) => call<{ ok: true }>("DELETE", `/api/members/${userId}`),
@@ -199,6 +200,12 @@ export const api = {
   createWorkspace: (name: string) => call<{ workspace: { id: string; name: string } }>("POST", "/api/workspaces", { name }),
   acceptInvite: (id: string) => call<{ ok: true }>("POST", `/api/invites/${id}/accept`),
 };
+
+export interface ShareMessage {
+  subject: string;
+  body: string;
+  code: string;
+}
 
 export interface SyncState {
   enabled: boolean;

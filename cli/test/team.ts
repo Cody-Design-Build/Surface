@@ -14,7 +14,7 @@ import assert from "node:assert/strict";
 const BIN = path.resolve(import.meta.dirname, "../bin/surface");
 const REAL = process.env.SURFACE_REAL_CONFIG_DIR ?? path.join(os.homedir(), ".config", "surface-cli");
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "surface-team-"));
-type Who = "owner" | "mate";
+type Who = "owner" | "laptop" | "mate";
 const cfg = (w: Who) => path.join(tmp, w, ".cfg");
 const env = (w: Who, extra: Record<string, string> = {}) => ({ ...process.env, HOME: path.join(tmp, w), SURFACE_STORE: "", SURFACE_CONFIG_DIR: cfg(w), SURFACE_DATA_DIR: path.join(tmp, w, ".data"), NO_COLOR: "1", ...extra });
 const run = (w: Who, args: string[], cwd = path.join(tmp, w), extra: Record<string, string> = {}) => {
@@ -30,7 +30,7 @@ const ok = (s: string) => console.log(`ok ${++step} ${s}`);
 const mateEmail = process.env.SURFACE_TEAM_TEST_EMAIL ?? `assistant+surface-team-${Date.now()}@codydesignbuild.com`; // Supabase refuses example.com
 let hubWs = "";
 try {
-  for (const w of ["owner", "mate"] as Who[]) fs.mkdirSync(cfg(w), { recursive: true });
+  for (const w of ["owner", "laptop", "mate"] as Who[]) fs.mkdirSync(cfg(w), { recursive: true });
   // owner: this computer's cloud and sign-in, but a fresh local database
   fs.copyFileSync(path.join(REAL, "cloud.json"), path.join(cfg("owner"), "cloud.json"));
   fs.symlinkSync(path.join(REAL, "session.json"), path.join(cfg("owner"), "session.json"));
@@ -39,15 +39,32 @@ try {
   run("owner", ["init", vault, "--create", "Team test"]);
   run("owner", ["type", "add", "job"], vault);
   run("owner", ["new", "job", "Kitchen remodel"], vault);
+  assert.match(run("owner", ["share"], vault), /Only on this computer/);
+  assert.throws(() => run("owner", ["share", "device"], vault), /only on this computer/);
+  ok("step 1: a local workspace; share says it's only on this computer");
   const en = run("owner", ["sync", "enable"], vault);
   hubWs = /workspace ([0-9a-z]{12})/.exec(en)![1];
-  ok("owner: local workspace synced to the cloud");
+  assert.match(run("owner", ["share"], vault), /In your cloud/);
+  ok("step 2: sync enable puts it in the cloud; share shows the owner");
+
+  // the same person's second computer: `share device` → `join` with their own account
+  const dev = run("owner", ["share", "device"], vault);
+  const devCode = /surface join (surface-invite:[A-Za-z0-9_-]+)/.exec(dev)?.[1];
+  assert.ok(devCode, dev);
+  fs.symlinkSync(path.join(REAL, "session.json"), path.join(cfg("laptop"), "session.json"));
+  run("laptop", ["join", devCode!, "--dir", path.join(tmp, "laptop", "Team")]);
+  assert.ok(fs.readdirSync(path.join(tmp, "laptop", "Team", "Jobs")).some((f) => f.startsWith("Kitchen remodel")));
+  run("laptop", ["new", "job", "Deck from laptop"], path.join(tmp, "laptop", "Team"));
+  run("laptop", ["sync"], path.join(tmp, "laptop", "Team"));
+  run("owner", ["sync"], vault);
+  assert.ok(fs.readdirSync(path.join(vault, "Jobs")).some((f) => f.startsWith("Deck from laptop")));
+  ok("step 3: your other computer joins with `share device`; edits flow both ways");
 
   // mate starts with nothing: no cloud, no account
   assert.match(run("mate", ["cloud"]), /No cloud/);
   ok("new computer: no cloud configured, works locally");
 
-  const inv = run("owner", ["workspace", "invite", mateEmail], vault);
+  const inv = run("owner", ["share", "invite", mateEmail], vault);
   const code = /surface join (surface-invite:[A-Za-z0-9_-]+)/.exec(inv)?.[1];
   assert.ok(code, "invite prints a join code:\n" + inv);
   assert.ok(!/sb_secret_|service_role/.test(inv), "no secrets in the invite");
@@ -67,7 +84,7 @@ try {
     ok("join with a new account stops at the confirmation email");
     const { execFileSync: x } = await import("node:child_process");
     const me = x(BIN, ["whoami"], { env: { ...process.env, SURFACE_STORE: "cloud", SURFACE_CONFIG_DIR: REAL }, encoding: "utf8" }).trim();
-    const inv2 = run("owner", ["workspace", "invite", me], vault);
+    const inv2 = run("owner", ["share", "invite", me], vault);
     const code2 = /surface join (surface-invite:[A-Za-z0-9_-]+)/.exec(inv2)![1];
     fs.rmSync(path.join(cfg("mate")), { recursive: true, force: true });
     fs.mkdirSync(cfg("mate"), { recursive: true });

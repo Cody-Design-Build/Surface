@@ -25,21 +25,20 @@ surface data                         # the table app (Airtable-style), on port 4
 
 `surface doctor` checks the install; `surface help` lists every command. Re-run `install.sh` to update.
 
-### Sync and teams: bring your own Supabase
+### Then, if you want: your cloud, and sharing
 
-Surface has **no hosted service**. To sync between computers or share with a team, you connect your **own** [Supabase](https://supabase.com) project (the free tier is enough to start). Nobody else's project is involved. One person sets it up once:
+Surface grows in three steps: **local** (above) → **your cloud** → **share**. Surface has **no hosted service**: the cloud is a [Supabase](https://supabase.com) project *you* own (the free tier is enough to start), and nobody else's project is involved.
 
 ```sh
-surface cloud connect https://<ref>.supabase.co sb_publishable_…   # Project Settings → API
-surface cloud schema --out surface-schema.sql                      # paste into the SQL editor, Run
-surface signup
-cd ~/Surface && surface sync enable                                # this workspace is now in your cloud
-surface workspace invite anna@yourco.com --mail                    # emails her a one-line join command
+cd ~/Surface
+surface cloud setup                          # guided: your Supabase project, its tables, your account, sync this workspace
+surface share device                         # a one-line join command for your other computer
+surface share invite anna@yourco.com --mail  # emails Anna a one-line join command
 ```
 
-Your teammate installs Surface and runs the one line from the email: `surface join surface-invite:…`. It connects to your project, creates her account, and copies the workspace to her computer. Each computer keeps a full copy, works offline, and syncs record by record.
+On the other computer (yours or Anna's): install Surface, then run the line, `surface join surface-invite:…`. It connects to your project, signs in (or creates the account), and copies the workspace there. Every computer keeps a full copy, works offline, and syncs record by record. The app's **Share** panel does the same.
 
-Full guide: [`docs/CLOUD.md`](docs/CLOUD.md). For agents: [`skills/surface-setup`](skills/surface-setup/SKILL.md) walks through install, cloud setup and joining.
+Rather have an agent do it? Ask it to follow [`skills/surface-setup`](skills/surface-setup/SKILL.md); with Supabase's MCP server it can create the project for you. Full guide: [`docs/CLOUD.md`](docs/CLOUD.md).
 
 ## Thesis
 

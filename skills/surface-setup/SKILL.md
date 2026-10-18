@@ -1,110 +1,101 @@
 ---
 name: surface-setup
-description: Install Surface; set up a private cloud or join a team.
-version: 0.1.0
+description: Install Surface; set up its cloud; share with devices/people.
+version: 0.2.0
 author: David Cody (Cody-Design-Build), Hermes Agent
 license: MIT
 platforms: [linux, macos]
 metadata:
   hermes:
-    tags: [surface, setup, supabase, onboarding, teams]
+    tags: [surface, setup, supabase, onboarding, sharing, teams]
     related_skills: []
 ---
 
 # Surface setup
 
-Gets someone from nothing to a working Surface: installed and local (the default), optionally connected to **their own** Supabase project for sync and teams, or joined to a team that invited them. Surface has no hosted service. Never point anyone at a project they don't own or weren't invited to.
+Takes someone through Surface's three steps: **local** (install, works with no account), **their cloud** (their own Supabase project, for sync), and **share** (their other computers, other people). Surface has no hosted service. Never point anyone at a project they don't own or weren't invited to. Full guide for humans: `docs/CLOUD.md`.
 
 ## When to Use
 
 - "Install Surface", "set up Surface on my laptop"
-- "Sync Surface between my computers", "share Surface with my team", "set up a cloud"
-- Someone has a `surface-invite:` code or an invite email
-- `surface` errors say "No cloud is set up on this computer"
+- "Sync Surface between my computers", "set up the cloud", "share with my team"
+- They have a `surface-invite:` code or an invite email
+- `surface` says "No cloud is set up on this computer" or "only on this computer"
 
-Don't use for: day-to-day record work inside a checkout (that's the checkout's own `surface` skill in `.agents/skills/surface/`).
+Don't use for: record work inside a checkout (the checkout's own `.agents/skills/surface/` skill covers that).
 
-## Decide the path first
+## Pick the step
 
-Ask only if it isn't clear from the request:
+Check state first, then do only what's missing:
 
-1. **Local only:** one computer, no account. Stop after Install.
-2. **Joining a team:** they have a `surface-invite:` code. Install, then Join.
-3. **Their own cloud:** sync their computers or host a team. Install, then Cloud.
+```
+terminal(command="surface doctor; surface cloud; surface share")
+```
 
-## Install (all paths)
+- No `surface` command: **Step 1**.
+- "No cloud" and they want sync or sharing: **Step 2**.
+- "In your cloud": **Step 3**.
+- They have a `surface-invite:` code: Step 1 if needed, then **Join**.
+
+## Step 1: local
 
 ```
 terminal(command="git clone https://github.com/Cody-Design-Build/Surface.git ~/Developer/Surface && ~/Developer/Surface/install.sh", timeout=600)
 ```
 
-Done when the output ends with "Surface is set up." If it warns that `~/.local/bin` isn't on PATH, add the line it prints to the shell rc file, or call `~/.local/bin/surface` by full path for the rest of the session. Check with `terminal(command="surface doctor")`: it should print "All good."
+Done when the output ends "Surface is set up." and `surface doctor` prints "All good." If it warns `~/.local/bin` isn't on PATH, add the line it prints to the shell rc file (or use `~/.local/bin/surface` for this session).
 
-## Join a team (invite code)
+## Step 2: their cloud
+
+**With Supabase's MCP server connected** (tools `list_organizations`, `create_project`, `apply_migration`, `get_project_url`, `get_publishable_keys`). To connect it: `claude mcp add --transport http supabase "https://mcp.supabase.com/mcp?features=account,database,development,docs"`, then they sign in through the browser prompt (OAuth, they pick the org; no token).
+
+1. `list_organizations`: ask which one. Cost: `get_cost` → tell them the price → `confirm_cost` only on a yes (or the client's cost form). `create_project` with a name and a region near them; poll `get_project` until healthy (minutes).
+2. `terminal(command="surface cloud schema --out surface-schema.sql")`, then `apply_migration` with name `surface_schema` and the file's contents. Done when `list_tables` includes `workspaces`, `records`, `types`, `views`, `invites`.
+3. `get_project_url` and `get_publishable_keys`: take the **publishable** key (`sb_publishable_…`), never a secret one.
+4. `terminal(command="surface cloud connect <url> <key> --name '<label>'")`
+5. In the workspace folder, `terminal(command="surface cloud setup")`. It skips the done parts and does sign-up and `sync enable`. **They type the password**; never ask for it, echo it or pass it in a command.
+
+**Without MCP:** run `terminal(command="cd ~/Surface && surface cloud setup")` with them. It prompts for the project URL and publishable key (they create the project at supabase.com/dashboard and copy both from *Project Settings → API*), writes `surface-schema.sql` and prints the SQL-editor link for them to paste and Run, then signs up and syncs.
+
+Done when `surface cloud` shows the project, "Signed in: <email>", "Surface tables: ready", and `surface share` says "In your cloud".
+
+Then recommend, for teams: custom SMTP in *Authentication → Emails* (the built-in mailer sends a few emails an hour), and know that email confirmation is on by default. MCP can't change these; they do it in the dashboard.
+
+## Step 3: share
+
+In the workspace folder:
+
+- **Their other computer:** `terminal(command="surface share device")`. Prints install steps and a `surface join surface-invite:…` line to run there (`--mail` emails it to themselves).
+- **Another person:** `terminal(command="surface share invite <email> --role member")`. Prints a subject and body to send (`--mail` opens a draft). Roles: admin, member, viewer.
+- **Who has it:** `terminal(command="surface share")`.
+
+The code holds the project URL, publishable key, workspace id and email. That's safe to email; nothing secret.
+
+## Join (on the joining computer)
 
 ```
 terminal(command="surface join 'surface-invite:…'", timeout=300)
 ```
 
-It asks for a password (new or existing account for the invited email). The person types it themselves. Never ask for it, echo it, or put it in a command. Outcomes:
+They type the password (new account or existing) when asked. Outcomes:
 
-- "Done. … is in ~/Surface-<name>": finished. Open with `cd ~/Surface-<name> && surface serve`.
-- "Check … for a confirmation email": they click the link, then run the same command again.
-- "too many signup emails": the team's project hit Supabase's email limit. Wait, or ask their admin.
-- "connected to another cloud": add `--force` only if they confirm they want to switch projects.
-
-## Set up their own cloud
-
-**If the Supabase MCP server is connected** (tools like `list_organizations`, `create_project`, `apply_migration`, `get_publishable_keys`): the agent can do steps 1, 2 and 4 itself. Setup for the person: `claude mcp add --transport http supabase "https://mcp.supabase.com/mcp?features=account,database,development,docs"`, then sign in through the browser prompt. It uses OAuth and they pick the organization; there's no token to paste.
-
-- `list_organizations`: ask which org. Then `get_cost` and `confirm_cost` (or the client's cost form): tell them the price, free or paid, and only continue on a yes. Then `create_project` (name, region near them). Poll `get_project` until it's healthy, a few minutes.
-- Run `surface cloud schema --out surface-schema.sql`, then `apply_migration` with name `surface_schema` and the file's contents as the query. Done when `list_tables` shows `workspaces`, `records`, `types`, `views`, `invites`.
-- `get_project_url` and `get_publishable_keys`: take the **publishable** key (`sb_publishable_…`), never a secret one. Go to step 3.
-- MCP can't change Auth settings: the email confirmation and SMTP advice in step 6 stays manual (dashboard).
-- Scope the MCP connection to the new project afterwards (`?project_ref=<ref>`), or remove it. Surface itself never needs it.
-
-**Without MCP**, by hand:
-
-1. They create a project at supabase.com/dashboard (free tier is fine). You can't do this for them: it's their account.
-2. They copy the **Project URL** and the **publishable key** (`sb_publishable_…`, or the legacy anon key) from *Project Settings → API*. Never the secret/service-role key; Surface rejects it.
-3. Connect:
-   ```
-   terminal(command="surface cloud connect <url> <publishable key> --name '<team name>'")
-   ```
-4. If it says the tables are missing, write the schema and have them run it in the SQL editor (the command prints the exact link):
-   ```
-   terminal(command="surface cloud schema --out surface-schema.sql")
-   ```
-5. Account and first workspace:
-   ```
-   terminal(command="surface signup")      # interactive; they type the password
-   terminal(command="cd ~/Surface && surface sync enable")
-   terminal(command="surface cloud")
-   ```
-   Done when `surface cloud` shows the project, "Signed in: <email>", and "Surface tables: ready".
-6. Recommend, for teams: custom SMTP in *Authentication → Emails* (the built-in mailer sends only a few emails an hour).
-
-## Invite teammates
-
-From inside the workspace folder, as owner or admin:
-
-```
-terminal(command="surface workspace invite <email> --role member")
-```
-
-It prints a subject and body to send (`--mail` opens a draft in their email app). The body contains a `surface join` code with the project URL, publishable key and invitee email. That's safe to email; there are no secrets in it.
+- "Done. … is in ~/Surface-<name>": finished; open with `cd ~/Surface-<name> && surface serve`.
+- "Check … for a confirmation email": they click it, then run the same command again.
+- "too many signup emails": the project hit Supabase's email limit; wait, or the admin sets up SMTP.
+- "connected to another cloud": add `--force` only if they confirm switching projects.
+- "aren't a member": the invite is for a different email; the inviter re-sends to the right one.
 
 ## Pitfalls
 
-- `surface login` / `signup` need a cloud configured first (`surface cloud connect` or `surface join`).
-- An invite is tied to one email. The teammate must sign in as exactly that address.
-- `install.sh` is bash: macOS and Linux. On Windows use WSL.
-- Joining copies the workspace into a new local database. Edits sync while `surface serve` runs, or with `surface sync`.
-- Config is per user in `~/.config/surface-cli/` (`cloud.json`, `session.json`). Don't commit or paste `session.json`.
-- Supabase MCP `create_project` can cost money on paid orgs: always show the cost and get a yes first. Never use `execute_sql` to read or change a team's records; Surface's CLI does that, under row-level security.
+- Sharing needs step 2 first; `share` / `invite` on a local-only workspace refuses with "only on this computer".
+- An invite is tied to one email. A device code is for the same person's account.
+- Never use the Supabase secret/service-role key, and never `execute_sql` against a team's records. Surface's CLI works under row-level security.
+- `create_project` can cost money on paid orgs: show the cost and get a yes.
+- `install.sh` is bash (macOS, Linux). On Windows use WSL.
+- `~/.config/surface-cli/session.json` is private: never paste or commit it. `cloud.json` is shareable.
 
 ## Verification
 
-- Local: `surface doctor` prints "All good."
-- Cloud: `surface cloud` shows the project, signed in, tables ready.
-- Team: the teammate's folder has the workspace files, and `surface sync status` in it shows "Hub: the cloud".
+- Step 1: `surface doctor` → "All good."
+- Step 2: `surface cloud` → project, signed in, tables ready; `surface share` → "In your cloud".
+- Step 3: on the joined computer, the folder has the workspace's files and `surface sync status` shows "Hub: the cloud".

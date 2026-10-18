@@ -491,28 +491,42 @@ export async function serve(co: Checkout, opts: { port: number; host?: string; w
     }
     // ---- sharing
     if (parts[0] === "members" && m === "GET") {
-      const [members, invites] = await Promise.all([fetchMembers(ws), fetchInvites(ws).catch(() => [])]);
-      return send(200, { members, invites, role: await myRole() });
+      // a local workspace that syncs is shared through its cloud copy
+      const { shareState } = await import("./cloud.ts");
+      const s = await shareState(ws).catch(async () => ({ shared: false, cloud: null, workspace: ws, members: await fetchMembers(ws), invites: await fetchInvites(ws).catch(() => []) }));
+      return send(200, { members: s.members, invites: s.invites, role: await myRole(), shared: s.shared, cloud: s.cloud });
     }
     if (parts[0] === "invites" && m === "POST") {
       const b = await readBody();
-      const email = String(b.email ?? "").trim().toLowerCase();
-      const r = String(b.role ?? "member");
-      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new HttpError(422, "That isn't an email address.");
-      if (!["admin", "member", "viewer"].includes(r)) throw new HttpError(422, "Role must be admin, member or viewer.");
-      const { error } = await sb().from("invites").upsert({ workspace_id: ws, email, role: r }, { onConflict: "workspace_id,email" });
-      if (error) throw new HttpError(403, dbError(error).message.includes("row-level") ? "Only owners and admins can invite people." : dbError(error).message);
-      return send(200, { ok: true });
+      const { createInvite } = await import("./cloud.ts");
+      try {
+        const msg = await createInvite(ws, String(b.email ?? ""), String(b.role ?? "member"));
+        return send(200, { ok: true, message: msg });
+      } catch (e) {
+        throw new HttpError(422, (e as Error).message);
+      }
+    }
+    if (parts[0] === "share" && parts[1] === "device" && m === "POST") {
+      const { deviceInvite } = await import("./cloud.ts");
+      try {
+        return send(200, await deviceInvite(ws));
+      } catch (e) {
+        throw new HttpError(422, (e as Error).message);
+      }
     }
     if (parts[0] === "invites" && parts[1] && m === "DELETE") {
-      const { error } = await sb().from("invites").delete().eq("id", parts[1]).eq("workspace_id", ws);
+      const { shareTarget } = await import("./cloud.ts");
+      const t = await shareTarget(ws).catch(() => ({ db: sb(), workspace: ws }));
+      const { error } = await t.db.from("invites").delete().eq("id", parts[1]).eq("workspace_id", t.workspace);
       if (error) throw dbError(error);
       return send(200, { ok: true });
     }
     if (parts[0] === "members" && parts[1] && (m === "PUT" || m === "DELETE")) {
+      const { shareTarget } = await import("./cloud.ts");
+      const t = await shareTarget(ws).catch(() => ({ db: sb(), workspace: ws }));
       const q = m === "PUT"
-        ? sb().from("members").update({ role: String((await readBody()).role) }).eq("workspace_id", ws).eq("user_id", parts[1]).select("user_id")
-        : sb().from("members").delete().eq("workspace_id", ws).eq("user_id", parts[1]).select("user_id");
+        ? t.db.from("members").update({ role: String((await readBody()).role) }).eq("workspace_id", t.workspace).eq("user_id", parts[1]).select("user_id")
+        : t.db.from("members").delete().eq("workspace_id", t.workspace).eq("user_id", parts[1]).select("user_id");
       const { data, error } = await q;
       if (error) throw dbError(error);
       if (!data?.length) throw new HttpError(403, "Only owners and admins can change members.");
