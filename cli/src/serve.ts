@@ -350,6 +350,23 @@ export async function serve(co: Checkout, opts: { port: number; host?: string; w
         hasSidebar: shared.exists,
       });
     }
+    // ---- sync state for this workspace (local store only)
+    if (parts[0] === "sync" && (m === "GET" || m === "POST")) {
+      if (storeKind() !== "local") return send(200, { enabled: false, store: "cloud" });
+      const { syncStatus, syncWorkspace, resolveConflict } = await import("./sync.ts");
+      if (m === "POST") {
+        const b = await readBody();
+        if (b.resolve) await resolveConflict(ws, String(b.resolve));
+        else {
+          await syncWorkspace(ws);
+          await refresh("sync");
+        }
+      }
+      const s = await syncStatus(ws);
+      if (!s) return send(200, { enabled: false, store: "local" });
+      const offline = !!s.last_error?.startsWith("offline");
+      return send(200, { enabled: true, store: "local", hub: s.hub.kind === "cloud" ? "the cloud" : s.hub.url, hubWorkspace: s.hub.workspace, lastSync: s.last_sync, error: offline ? null : s.last_error, offline, pending: Object.values(s.pending as Record<string, number>).reduce((a, b) => a + b, 0), conflicts: s.conflicts });
+    }
     // ---- views (tables, boards, lists, calendars)
     if (parts[0] === "view" && parts[1]) {
       const personal = url.searchParams.get("personal") === "1";
@@ -732,7 +749,7 @@ export async function serve(co: Checkout, opts: { port: number; host?: string; w
     // Workspaces with sync on trade changes with their hub in the background.
     if (process.env.SURFACE_SYNC !== "off") {
       const { startSyncLoop } = await import("./sync.ts");
-      syncLoop = startSyncLoop(() => void refresh("sync"), Number(process.env.SURFACE_SYNC_MS ?? 5000));
+      syncLoop = startSyncLoop(() => void refresh("sync"), Number(process.env.SURFACE_SYNC_MS ?? 5000), () => broadcast({ type: "sync" }));
     }
   }
   const { announceRunning } = await import("./open.ts");

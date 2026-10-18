@@ -29,6 +29,7 @@ export interface SyncReport {
   conflicts: string[];
   errors: string[];
   offline?: boolean;
+  scan?: "full" | "incremental";
 }
 
 class Offline extends Error {}
@@ -181,7 +182,7 @@ export async function runSyncOp(op: string, args: unknown[]) {
 }
 
 /** For `surface serve`: sync every few seconds, and soon after a local change. */
-export function startSyncLoop(onChange: () => void, everyMs = 5000) {
+export function startSyncLoop(onChange: () => void, everyMs = 5000, onTick: () => void = () => {}) {
   let running = false;
   let again = false;
   const tick = async () => {
@@ -192,6 +193,7 @@ export function startSyncLoop(onChange: () => void, everyMs = 5000) {
       if (reps.some((r) => r.pulled || r.conflicts.length)) onChange();
       for (const r of reps) for (const e of r.errors) console.error(`sync ${r.workspace}: ${e}`);
       for (const r of reps) for (const c of r.conflicts) console.error(`sync ${r.workspace}: conflict: ${c}`);
+      if (reps.length) onTick();
     } catch (e) {
       console.error("sync:", (e as Error).message);
     } finally {
@@ -456,22 +458,49 @@ async function applyRecord(ws: string, h: Row, lt: TypeRow, ht: TypeRow | undefi
   }, { applying: true });
 }
 
+// Incremental pull: only records the hub changed since the cursor (its own updated_at clock, with a
+// margin for transactions that committed late). A full id:rev comparison runs every FULL_SCAN_MS as a
+// safety net, and catches records removed from the hub outright.
+const FULL_SCAN_MS = Number(process.env.SURFACE_SYNC_FULL_MS ?? 10 * 60_000);
+const CURSOR_MARGIN_MS = 2 * 60_000;
+
 async function pullRecords(ws: string, hub: Hub, client: Client, types: Types, rep: SyncReport) {
-  const remote: { id: string; rev: number; deleted_at: string | null }[] = [];
+  const cur = await localAdmin(async (tx) => (await tx.query<any>("select pull_cursor, full_scan_at from surface_local.sync_workspaces where workspace_id = $1", [ws])).rows[0]);
+  const fullScan = !cur?.pull_cursor || !cur.full_scan_at || Date.now() - new Date(cur.full_scan_at).getTime() > FULL_SCAN_MS;
+  const since = fullScan ? null : new Date(new Date(cur.pull_cursor).getTime() - CURSOR_MARGIN_MS).toISOString();
+  const remote: { id: string; rev: number; deleted_at: string | null; updated_at: string }[] = [];
   for (let from = 0; ; from += 1000) {
-    const page = must(await client.from("records").select("id,rev,deleted_at").eq("workspace_id", hub.workspace).order("id").range(from, from + 999), "list hub records");
+    let q = client.from("records").select("id,rev,deleted_at,updated_at").eq("workspace_id", hub.workspace);
+    if (since) q = q.gte("updated_at", since);
+    const page = must(await q.order("id").range(from, from + 999), "list hub records");
     remote.push(...page);
     if (page.length < 1000) break;
   }
+  rep.scan = fullScan ? "full" : "incremental";
+  const newest = remote.reduce<string | null>((m, r) => (!m || r.updated_at > m ? r.updated_at : m), cur?.pull_cursor ?? null);
   const marks = await localAdmin(async (tx) => (await tx.query<any>("select key, synced, dirty from surface_local.sync_rows where workspace_id = $1 and kind = 'record'", [ws])).rows);
   const markOf = new Map(marks.map((m: any) => [m.key, m]));
+  const saveCursor = () => localAdmin((tx) => tx.query(
+    `update surface_local.sync_workspaces set pull_cursor = $2${fullScan ? ", full_scan_at = now()" : ""} where workspace_id = $1`, [ws, newest]));
+  if (fullScan) {
+    // records we had synced that the hub no longer has at all (removed with their type): delete here too
+    const there = new Set(remote.map((r) => r.id));
+    const gone = marks.filter((m: any) => m.synced && !m.dirty && !there.has(m.key)).map((m: any) => m.key);
+    if (gone.length) {
+      await localAdmin(async (tx) => {
+        await tx.query("update public.records set deleted_at = now() where id = any($1) and deleted_at is null", [gone]);
+        await tx.query("update surface_local.sync_rows set synced = null where workspace_id = $1 and kind = 'record' and key = any($2)", [ws, gone]);
+      }, { applying: true });
+      rep.pulled += gone.length;
+    }
+  }
   const changed = remote.filter((r) => {
     const m = markOf.get(r.id);
     if (m?.dirty) return false; // ours goes up first; a clash becomes a conflict copy on the next push
     if (!m) return !r.deleted_at;
     return m.synced !== String(r.rev);
   }).map((r) => r.id);
-  if (!changed.length) return;
+  if (!changed.length) return void (await saveCursor());
   const full: Row[] = [];
   for (const ids of chunks(changed, 200)) full.push(...must(await client.from("records").select("*").in("id", ids), "read hub records"));
   // apply parents and link targets first; anything still failing goes in without links, then again with them
@@ -507,6 +536,8 @@ async function pullRecords(ws: string, hub: Hub, client: Client, types: Types, r
       rep.errors.push(`${h.title}: ${(e as Error).message}`);
     }
   }
+  // move the cursor only when everything applied; otherwise the next round tries the same window again
+  if (!rep.errors.length) await saveCursor();
 }
 
 function linkTargets(fields: Record<string, unknown> | null, t: TypeRow | undefined): string[] {

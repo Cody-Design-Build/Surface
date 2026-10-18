@@ -67,6 +67,8 @@ create table if not exists surface_local.sync_rows (
   primary key (workspace_id, kind, key)
 );
 alter table surface_local.sync_rows add column if not exists hub_id text;
+alter table surface_local.sync_workspaces add column if not exists pull_cursor timestamptz;   -- hub clock: newest updated_at seen
+alter table surface_local.sync_workspaces add column if not exists full_scan_at timestamptz;  -- last full id:rev comparison
 create table if not exists surface_local.sync_conflicts (
   id           bigint generated always as identity primary key,
   workspace_id text not null,
@@ -232,7 +234,7 @@ export async function localInfo() {
 // ---------------------------------------------------------------------------
 // Query descriptors: built by the client below, run here or by `surface serve`
 // ---------------------------------------------------------------------------
-type Filter = { col: string; op: "eq" | "is" | "in" | "not_is"; value: unknown };
+type Filter = { col: string; op: "eq" | "is" | "in" | "not_is" | "gte"; value: unknown };
 export type Desc =
   | { kind: "user" }
   | { kind: "rpc"; fn: string; args: Row }
@@ -384,6 +386,7 @@ async function run(d: Desc): Promise<Result> {
   const whereSql = () => {
     const w = d.filters.map((f) => {
       if (f.op === "is") return `t.${id(f.col)} is null`;
+      if (f.op === "gte") return (vals.push(f.value), `t.${id(f.col)} >= $${vals.length}`);
       if (f.op === "not_is") return `t.${id(f.col)} is not null`;
       if (f.op === "in") return (vals.push((f.value as unknown[]).map(String)), `t.${id(f.col)}::text = any($${vals.length}::text[])`);
       return (vals.push(f.value), `t.${id(f.col)} = $${vals.length}`);
@@ -537,6 +540,10 @@ class Query implements PromiseLike<Result> {
   not(col: string, op: string, value: unknown) {
     if (op !== "is" || value !== null) throw new Error("not() supports (col, 'is', null) only");
     this.d.filters.push({ col, op: "not_is", value });
+    return this;
+  }
+  gte(col: string, value: unknown) {
+    this.d.filters.push({ col, op: "gte", value });
     return this;
   }
   in(col: string, value: unknown[]) {

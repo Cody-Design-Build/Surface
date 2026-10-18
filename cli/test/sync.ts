@@ -167,6 +167,14 @@ try {
   assert.equal(find("b", "task", "Order tile")!.fields.due, "2026-11-01");
   ok("a new field and its value reach B");
 
+  // later rounds pull incrementally (only what changed since the cursor), and still get changes
+  run("a", ["set", t1, "status=todo"]);
+  run("a", ["sync"]);
+  const inc = run("b", ["sync"], { env: { SURFACE_SYNC_DEBUG: "1" } });
+  assert.match(inc, /incremental/);
+  assert.equal(find("b", "task", "Order tile")!.fields.status, "todo");
+  ok("incremental pull: only changes since the last round");
+
   // conflict: both edit the same record; the second to sync keeps a conflict copy
   run("a", ["set", t1, "status=done"]);
   run("b", ["set", t1, "status=todo", "body=B's note"]);
@@ -251,6 +259,13 @@ try {
   });
   // `surface sync` on A while serve owns the database goes through serve
   assert.match(run("a", ["sync"]), /up, \d+ down/);
+  // the app's sync state: enabled, hub, nothing waiting, no conflicts; then a conflict shows up there
+  const ss = await fetch(`http://127.0.0.1:${A_PORT}/api/sync`, { headers: hdr }).then((r) => r.json());
+  assert.equal(ss.enabled, true);
+  assert.equal(ss.pending, 0);
+  assert.equal(ss.conflicts.length, 0);
+  assert.ok(ss.lastSync);
+  ok("the app sees sync state (/api/sync)");
   await stop(aServe.proc);
   ok("serve syncs on its own: app edits go up, others' edits come down");
 

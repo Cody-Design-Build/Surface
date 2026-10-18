@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, type AppState, type SidebarInfo, type TreeDef, type TreeItem, type TreeNode, type ViewInfo } from "./api.ts";
 import { Icon, typeIcon } from "./Icon.tsx";
+import { SyncBadge } from "./SyncBadge.tsx";
 import { insert, isInside, itemAt, move, remove, update, type Where } from "./treeEdit.ts";
 
 // The sidebar organizes. Nothing here changes a record's fields.
@@ -529,6 +530,7 @@ export function Sidebar(props: Props) {
             <Icon name="settings" size={15} />
           </button>
         </div>
+        <SyncBadge className="side-sync" onOpenRecord={openRecord} />
         <button className="search-btn" onClick={openSwitcher}>
           <Icon name="search" size={15} />
           <span>Search</span>

@@ -200,6 +200,23 @@ export const api = {
   acceptInvite: (id: string) => call<{ ok: true }>("POST", `/api/invites/${id}/accept`),
 };
 
+export interface SyncState {
+  enabled: boolean;
+  store: "local" | "cloud";
+  hub?: string;
+  hubWorkspace?: string;
+  lastSync?: string | null;
+  error?: string | null;
+  offline?: boolean;
+  pending?: number;
+  conflicts?: { id: number; record_id: string; copy_id: string; title: string; at: string }[];
+}
+export const syncApi = {
+  status: () => call<SyncState>("GET", "/api/sync"),
+  now: () => call<SyncState>("POST", "/api/sync", {}),
+  resolve: (recordId: string) => call<SyncState>("POST", "/api/sync", { resolve: recordId }),
+};
+
 export function subscribe(onChange: (msg: { type: string; reason?: string; ids?: string[] }) => void, onStatus: (online: boolean) => void) {
   let es: EventSource | null = null;
   let timer: number | undefined;

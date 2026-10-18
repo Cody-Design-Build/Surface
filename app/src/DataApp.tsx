@@ -9,6 +9,7 @@ import { TableNav } from "./TableNav.tsx";
 import { GroupPanel, SortPanel } from "./DataToolbar.tsx";
 import { parseGroup, parseSort } from "./Grid.tsx";
 import { ViewEditor } from "./ViewEditor.tsx";
+import { SyncBadge } from "./SyncBadge.tsx";
 import { defaultsFrom, deleteRecord } from "./edits.ts";
 import { did, onUndo, redo, typingTarget, undo } from "./undo.ts";
 
@@ -114,6 +115,7 @@ export function DataApp() {
         {!workspaces.length && <option value={app.workspace.id}>{app.workspace.name}</option>}
         {workspaces.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
       </select></label>
+      <SyncBadge className="data-sync" tick={tick} onOpenRecord={openRecord} />
       <span className="data-connection"><i className={online ? "is-online" : ""} />{switching ? "Opening workspace…" : online ? "Connected" : "Reconnecting…"}</span>
       <span className="data-account">{app.user.email}</span>
     </header>

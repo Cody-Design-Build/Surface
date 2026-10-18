@@ -930,11 +930,11 @@ const commands: Record<string, Cmd> = {
       if (!data.user) throw new UserError("Sign in to the cloud first (`surface login`), or sync with another Surface: --hub http://host:4317 --token …");
       return { kind: "cloud" };
     };
-    const print = (reps: { workspace: string; pushed: number; pulled: number; conflicts: string[]; errors: string[]; offline?: boolean }[]) => {
+    const print = (reps: { workspace: string; pushed: number; pulled: number; conflicts: string[]; errors: string[]; offline?: boolean; scan?: string }[]) => {
       if (!reps.length) console.log("No workspaces sync on this computer. Turn it on with `surface sync enable`.");
       for (const r of reps) {
         if (r.offline) console.log(yellow(`${r.workspace}: offline; changes stay here and go up when the hub is back.`));
-        else console.log(`${r.workspace}: ${green(`${r.pushed} up, ${r.pulled} down`)}${r.conflicts.length ? yellow(`, ${r.conflicts.length} conflict(s)`) : ""}`);
+        else console.log(`${r.workspace}: ${green(`${r.pushed} up, ${r.pulled} down`)}${r.conflicts.length ? yellow(`, ${r.conflicts.length} conflict(s)`) : ""}${process.env.SURFACE_SYNC_DEBUG ? dim(` (${r.scan ?? "?"})`) : ""}`);
         for (const c of r.conflicts) console.log(yellow(`  conflict: ${c}`));
         for (const e of r.errors) console.log(red(`  ${e}`));
       }
