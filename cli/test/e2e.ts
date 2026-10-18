@@ -1,6 +1,6 @@
 // End-to-end test, against either store:
 //   npm test                 the local store (Surface's own Postgres in a temp folder, no account)
-//   npm run test:cloud       the hosted Supabase project; needs a test account:
+//   npm run test:cloud       the Supabase project this computer is connected to; needs a test account:
 //                            SURFACE_TEST_EMAIL + SURFACE_TEST_PASSWORD (or ~/.hermes/secrets/surface-test-user.txt)
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -16,6 +16,13 @@ const email = process.env.SURFACE_TEST_EMAIL ?? "agent-test@surface.dev";
 const password =
   store === "local" ? "" : process.env.SURFACE_TEST_PASSWORD ?? fs.readFileSync(path.join(os.homedir(), ".hermes/secrets/surface-test-user.txt"), "utf8").trim();
 const env = { ...process.env, SURFACE_STORE: store, SURFACE_CONFIG_DIR: path.join(tmp, ".cfg"), SURFACE_DATA_DIR: path.join(tmp, ".data"), SURFACE_PASSWORD: password, NO_COLOR: "1" };
+// the cloud run uses YOUR project: the one this computer is connected to (`surface cloud connect`)
+if (store === "cloud") {
+  const real = path.join(process.env.SURFACE_REAL_CONFIG_DIR ?? path.join(os.homedir(), ".config", "surface-cli"), "cloud.json");
+  if (!fs.existsSync(real)) throw new Error("npm run test:cloud needs a cloud: run `surface cloud connect <url> <key>` first (your own Supabase project).");
+  fs.mkdirSync(env.SURFACE_CONFIG_DIR, { recursive: true });
+  fs.copyFileSync(real, path.join(env.SURFACE_CONFIG_DIR, "cloud.json"));
+}
 console.log(`store: ${store}`);
 
 function run(args: string[], opts: { cwd?: string; fail?: boolean } = {}): string {
@@ -227,10 +234,16 @@ try {
   run(["pull", "--force"]);
   run(["type", "edit", "task", "--display", "fields"]);
   assert.match(run(["type", "show", "task"]), /fields/);
-  run(["workspace", "invite", "someone@example.com", "--role", "viewer"]);
-  assert.match(run(["workspace", "members"]), /someone@example\.com\s+viewer/);
-  run(["workspace", "uninvite", "someone@example.com"]);
-  assert.doesNotMatch(run(["workspace", "members"]), /someone@example\.com/);
+  if (store === "cloud") {
+    run(["workspace", "invite", "someone@example.com", "--role", "viewer"]);
+    assert.match(run(["workspace", "members"]), /someone@example\.com\s+viewer/);
+    run(["workspace", "uninvite", "someone@example.com"]);
+    assert.doesNotMatch(run(["workspace", "members"]), /someone@example\.com/);
+  } else {
+    // a workspace only on this computer can't be shared until it's in a cloud (`surface sync enable`)
+    assert.match(run(["workspace", "invite", "someone@example.com"], { fail: true }), /only on this computer/);
+    assert.match(run(["workspace", "members"]), /owner/);
+  }
   ok("data views (board:field shorthand), personal views and sidebar, type display, invites");
 
   const flat = path.join(tmp, "flat");

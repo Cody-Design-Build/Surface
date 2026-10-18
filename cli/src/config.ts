@@ -3,13 +3,31 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 
-// Public project values (src/project.json). The publishable key is designed to be shipped
-// in clients; row-level security does the protecting. Override with env vars.
-const project = JSON.parse(fs.readFileSync(new URL("./project.json", import.meta.url), "utf8")) as { url: string; publishableKey: string };
-export const SUPABASE_URL = process.env.SURFACE_SUPABASE_URL ?? project.url;
-export const PUBLISHABLE_KEY = process.env.SURFACE_PUBLISHABLE_KEY ?? project.publishableKey;
-
 export const CONFIG_DIR = process.env.SURFACE_CONFIG_DIR ?? path.join(os.homedir(), ".config", "surface-cli"); // ~/.config/surface holds an older, unrelated tool
+
+// The cloud (optional): YOUR OWN Supabase project. Surface ships with none and has no hosted
+// service. `surface cloud connect` (or a team invite's `surface join`) writes cloud.json; the env
+// vars override it. The URL and publishable key aren't secrets (they're designed to ship in
+// clients; row-level security protects the data), so a team can pass them around by email.
+export interface CloudConfig {
+  url: string;
+  publishableKey: string;
+  name?: string;
+}
+export const CLOUD_FILE = path.join(CONFIG_DIR, "cloud.json");
+export function cloudConfig(): CloudConfig | null {
+  const url = process.env.SURFACE_SUPABASE_URL;
+  const key = process.env.SURFACE_PUBLISHABLE_KEY;
+  if (url && key) return { url, publishableKey: key };
+  try {
+    const c = JSON.parse(fs.readFileSync(CLOUD_FILE, "utf8")) as CloudConfig;
+    if (c.url && c.publishableKey) return { ...c, url: url || c.url };
+  } catch {}
+  return null;
+}
+export function saveCloudConfig(c: CloudConfig) {
+  writeJson(CLOUD_FILE, c);
+}
 
 export function readJson<T>(file: string, fallback: T): T {
   try {

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // surface: a types engine on Supabase, with Markdown checkouts.
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import readline from "node:readline";
 import { checkLayout, findCheckout, saveCheckout, type Checkout, type Layout } from "./config.ts";
@@ -148,6 +149,7 @@ type Cmd = (a: Args) => Promise<void>;
 
 const commands: Record<string, Cmd> = {
   async signup(a) {
+    (await import("./client.ts")).cloudClient(); // no cloud configured: say so before asking anything
     const email = flag(a, "email") ?? (await prompt("Email: "));
     const password = process.env.SURFACE_PASSWORD ?? (await prompt("Choose a password: ", true));
     const { cloudClient } = await import("./client.ts");
@@ -158,6 +160,7 @@ const commands: Record<string, Cmd> = {
   },
 
   async login(a) {
+    (await import("./client.ts")).cloudClient(); // no cloud configured: say so before asking anything
     const email = flag(a, "email") ?? (await prompt("Email: "));
     const password = process.env.SURFACE_PASSWORD ?? (await prompt("Password: ", true));
     // the account is always the cloud's, whatever this computer's store: a local-store computer
@@ -204,7 +207,7 @@ const commands: Record<string, Cmd> = {
   async store(a) {
     const { storeKind, setStoreKind } = await import("./client.ts");
     const k = a._[0];
-    if (!k) return void console.log(storeKind() === "local" ? "local: this computer's own database, no account" : "cloud: the hosted database (signed in)");
+    if (!k) return void console.log(storeKind() === "local" ? "local: this computer's own database, no account" : "cloud: works directly against your Supabase project (signed in)");
     if (k !== "local" && k !== "cloud") throw new UserError("Usage: surface store [local | cloud]");
     setStoreKind(k);
     console.log(green(`This computer now uses the ${k} store.`) + (k === "cloud" ? " Run `surface login` if you haven't." : ""));
@@ -247,9 +250,35 @@ const commands: Record<string, Cmd> = {
       const role = flag(a, "role") ?? "member";
       if (!email) throw new UserError("Usage: surface workspace invite <email> [--role admin|member|viewer]");
       if (!["admin", "member", "viewer"].includes(role)) throw new UserError("--role must be admin, member or viewer.");
-      const { error } = await sb().from("invites").upsert({ workspace_id: ws, email: email.toLowerCase(), role }, { onConflict: "workspace_id,email" });
+      // a local workspace that syncs: the invite goes to the cloud copy (that's what teammates join)
+      const { storeKind, cloudClient } = await import("./client.ts");
+      const { cloudConfig } = await import("./config.ts");
+      let target = ws;
+      let name: string | undefined;
+      let db = sb();
+      if (storeKind() === "local") {
+        const { syncCall } = await import("./sync.ts");
+        const s = await syncCall("status", ws);
+        if (!s || s.hub.kind !== "cloud") throw new UserError("This workspace is only on this computer. To share it, put it in your cloud first: `surface sync enable` (set up a cloud with `surface cloud connect` if you haven't).");
+        target = s.hub.workspace;
+        db = cloudClient();
+      }
+      const { error } = await db.from("invites").upsert({ workspace_id: target, email: email.toLowerCase(), role }, { onConflict: "workspace_id,email" });
       if (error) throw dbError(error);
-      console.log(green(`Invited ${email} as ${role}. They join with \`surface workspace join\` after signing in with that email.`));
+      const { data: w } = await db.from("workspaces").select("name").eq("id", target).maybeSingle();
+      name = (w as { name?: string } | null)?.name;
+      const c = cloudConfig()!;
+      const { data: me } = await db.auth.getUser();
+      const { inviteMessage, mailtoUrl } = await import("./cloud.ts");
+      const msg = inviteMessage({ url: c.url, key: c.publishableKey, workspace: target, workspaceName: name, email: email.toLowerCase(), project: c.name }, me.user?.email ?? undefined);
+      console.log(green(`Invited ${email} as ${role}.`) + " Send them this:\n");
+      console.log(bold(`Subject: ${msg.subject}`));
+      console.log(msg.body);
+      if (a.flags.mail) {
+        const { openWindow } = await import("./open.ts");
+        openWindow(mailtoUrl(email, msg.subject, msg.body), { tab: true });
+        console.log(dim("Opened a draft in your email app."));
+      } else console.log(dim("(--mail opens it as a draft in your email app)"));
       return;
     }
     if (sub === "uninvite") {
@@ -918,6 +947,121 @@ const commands: Record<string, Cmd> = {
     await new Promise(() => {});
   },
 
+  async cloud(a) {
+    const sub = a._[0] ?? "status";
+    const cloud = await import("./cloud.ts");
+    const { cloudConfig } = await import("./config.ts");
+    const { resetClients, cloudClient } = await import("./client.ts");
+    if (sub === "connect") {
+      const [url, key] = [a._[1], a._[2]];
+      if (!url || !key) throw new UserError("Usage: surface cloud connect <project url> <publishable key> [--name label]\n  Both are in your Supabase dashboard: Project Settings → API (or Data API). Use the publishable key, never the secret one.");
+      let saved;
+      try {
+        saved = cloud.connect({ url, publishableKey: key, name: flag(a, "name") });
+      } catch (e) {
+        throw new UserError((e as Error).message);
+      }
+      resetClients();
+      if (saved.replaced) console.log(yellow(`Replaced the previous cloud (${saved.replaced.url}). Workspaces synced with it stop syncing until you reconnect it.`));
+      console.log(green(`This computer's cloud is now ${cloudConfig()!.url}.`));
+      // is the schema there?
+      const { error } = await cloudClient().from("workspaces").select("id").limit(1);
+      if (error && /relation|does not exist|schema cache|not find/i.test(error.message)) {
+        console.log(yellow("\nThis project doesn't have Surface's tables yet. Set it up once:"));
+        console.log(`  surface cloud schema --out surface-schema.sql`);
+        const sql = cloud.dashboardSqlUrl(cloudConfig()!.url);
+        console.log(`  then paste the file into ${sql ?? "your project's SQL editor"} and Run.`);
+      } else if (error) console.log(yellow(`Couldn't check the project: ${error.message}`));
+      else console.log("Surface's tables are there. Next: `surface signup` (or `surface login`), then `surface sync enable` in a workspace to put it in the cloud.");
+      return;
+    }
+    if (sub === "schema") {
+      const sql = cloud.schemaSql();
+      const out = flag(a, "out");
+      if (out) {
+        fs.writeFileSync(out, sql);
+        const link = cloudConfig() ? cloud.dashboardSqlUrl(cloudConfig()!.url) : null;
+        console.log(green(`Wrote ${out} (${sql.split("\n").length} lines).`) + ` Paste it into ${link ?? "your Supabase project's SQL editor (Dashboard → SQL Editor → New query)"} and Run.`);
+      } else process.stdout.write(sql);
+      return;
+    }
+    if (sub === "disconnect") {
+      cloud.disconnect();
+      resetClients();
+      console.log("This computer no longer has a cloud. Local workspaces keep working; synced ones stop syncing.");
+      return;
+    }
+    if (sub === "status") {
+      const c = cloudConfig();
+      if (!c) {
+        console.log("No cloud: this computer keeps everything locally, which is the default and needs no account.");
+        console.log(dim("To sync between computers or share with a team, use your own Supabase project: see `surface help cloud` or docs/CLOUD.md."));
+        return;
+      }
+      console.log(`Cloud: ${c.url}${c.name ? ` (${c.name})` : ""}`);
+      const { data } = await cloudClient().auth.getUser();
+      console.log(`Signed in: ${data.user?.email ?? "no (surface login)"}`);
+      const { error } = await cloudClient().from("workspaces").select("id").limit(1);
+      console.log(`Surface tables: ${error ? red(`not ready (${error.message}): run \`surface cloud schema\``) : green("ready")}`);
+      return;
+    }
+    throw new UserError("Usage: surface cloud [status | connect <url> <key> | schema [--out file] | disconnect]");
+  },
+
+  async join(a) {
+    const code = a._[0];
+    if (!code) throw new UserError("Usage: surface join <invite code>   (the surface-invite:… line from your invite)");
+    const { decodeInvite, connect } = await import("./cloud.ts");
+    const { cloudConfig } = await import("./config.ts");
+    const { resetClients, cloudClient, storeKind, setStoreKind } = await import("./client.ts");
+    let inv;
+    try {
+      inv = decodeInvite(code);
+    } catch (e) {
+      throw new UserError((e as Error).message);
+    }
+    const cur = cloudConfig();
+    if (cur && cur.url !== inv.url && !a.flags.force) throw new UserError(`This computer is connected to another cloud (${cur.url}). Re-run with --force to switch to ${inv.url}; workspaces synced with the old one stop syncing.`);
+    connect({ url: inv.url, publishableKey: inv.key, name: inv.project });
+    resetClients();
+    if (storeKind() !== "local") setStoreKind("local");
+    console.log(green(`Connected to the team's database (${inv.url}).`));
+    // account: sign in, or create one
+    let { data: u } = await cloudClient().auth.getUser();
+    if (!u.user || u.user.email?.toLowerCase() !== inv.email.toLowerCase()) {
+      const password = process.env.SURFACE_PASSWORD ?? (await prompt(`Password for ${inv.email} (new or existing): `, true));
+      const tryIn = await cloudClient().auth.signInWithPassword({ email: inv.email, password });
+      if (tryIn.error) {
+        const up = await cloudClient().auth.signUp({ email: inv.email, password });
+        if (up.error) {
+          if (/rate limit/i.test(up.error.message)) throw new UserError(`The team's database is sending too many signup emails right now (Supabase's email limit). Try again in an hour, or ask the admin to set up custom SMTP (Auth → Emails) or to create your account. (${up.error.message})`);
+          throw new UserError(`Couldn't sign in or create the account: ${tryIn.error.message} / ${up.error.message}`);
+        }
+        if (!up.data.session) {
+          console.log(yellow(`Check ${inv.email} for a confirmation email, click it, then run the same \`surface join\` command again.`));
+          return;
+        }
+        console.log(green(`Created your account (${inv.email}).`));
+      } else console.log(green(`Signed in as ${inv.email}.`));
+      u = (await cloudClient().auth.getUser()).data;
+    }
+    // accept the invite if not a member yet (accepting re-sets the role, so never for existing members)
+    let { data: w } = await cloudClient().from("workspaces").select("id,name").eq("id", inv.workspace).maybeSingle();
+    if (!w) {
+      const { data: invites } = await cloudClient().from("invites").select("id").eq("workspace_id", inv.workspace);
+      for (const i of (invites ?? []) as { id: string }[]) await cloudClient().rpc("accept_invite", { p_invite: i.id });
+      w = (await cloudClient().from("workspaces").select("id,name").eq("id", inv.workspace).maybeSingle()).data;
+    }
+    if (!w) throw new UserError(`You're signed in, but you aren't a member of that workspace yet. Ask the person who invited you to check the invite is for ${inv.email}.`);
+    const { syncCall } = await import("./sync.ts");
+    const here = ((await syncCall("list")) as { workspace_id: string; hub: { workspace: string } }[]).find((h) => h.hub.workspace === inv.workspace);
+    if (here) return void console.log(`"${(w as { name: string }).name}" is already on this computer (local workspace ${here.workspace_id}).`);
+    const name = (w as { name: string }).name;
+    const dir = path.resolve(flag(a, "dir") ?? path.join(os.homedir(), `Surface-${name.replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "")}`));
+    await commands.sync({ _: ["join", inv.workspace, dir], flags: {} });
+    console.log(green(`\nDone. "${name}" is in ${dir}.`) + ` Open it with: cd "${dir}" && surface serve`);
+  },
+
   async sync(a) {
     const { storeKind } = await import("./client.ts");
     if (storeKind() !== "local") throw new UserError("Sync is for workspaces in this computer's own database. This computer uses the cloud store directly (`surface store local` to switch).");
@@ -1175,8 +1319,16 @@ Views (tables, boards, lists, calendars over records)
   view show <key> [--this <record>]   list what a view matches
   view rm <key> [--personal]
 
+Cloud (optional: YOUR OWN Supabase project; Surface has no hosted service. Without one, everything stays local.)
+  cloud                               which cloud this computer uses, if any; signed in?; tables ready?
+  cloud connect <url> <publishable key> [--name label]   use your Supabase project (Dashboard → Project Settings → API)
+  cloud schema [--out file]           the SQL that sets up Surface's tables in a new project (paste in the SQL editor)
+  cloud disconnect                    forget it; local workspaces keep working
+  signup | login | logout             your account in that cloud
+  join <invite code>                  a teammate's one step: connect, sign in or sign up, copy the workspace here
+
 Sync (workspaces in this computer's own database; each computer keeps a full local copy)
-  sync enable [--hub URL --token T]   start syncing this workspace (default hub: the cloud, after \`surface login\`)
+  sync enable [--hub URL --token T]   start syncing this workspace (default hub: your cloud, after \`surface login\`)
   sync join <hub workspace> <folder> [--hub URL --token T]   copy a synced workspace to this computer
   sync [now] [--all]                  sync now (\`surface serve\` also syncs every few seconds)
   sync status                         hub, last sync, changes waiting to go up, conflicts
@@ -1186,7 +1338,8 @@ Sync (workspaces in this computer's own database; each computer keeps a full loc
 
 Sharing
   workspace members                   who's in this workspace, and pending invites
-  workspace invite <email> [--role admin|member|viewer]
+  workspace invite <email> [--role admin|member|viewer] [--mail]
+                                      invite, and print a message with their \`surface join\` code (--mail: draft in your email app)
   workspace uninvite <email> | role <email> <role> | remove-member <email>
   workspace invites | join [id]       invites for you; accept one
 
@@ -1195,6 +1348,7 @@ Options: --workspace <id|name> works with any command outside a checkout.
 
 async function main() {
   const [cmd, ...rest] = process.argv.slice(2);
+  if (cmd === "help" && rest[0] === "cloud") return void console.log(HELP.slice(HELP.indexOf("Cloud ("), HELP.indexOf("Sync (")));
   if (!cmd || cmd === "help" || cmd === "--help" || cmd === "-h") return void console.log(HELP);
   const fn = commands[cmd];
   if (!fn) throw new UserError(`Unknown command "${cmd}". Run \`surface help\`.`);

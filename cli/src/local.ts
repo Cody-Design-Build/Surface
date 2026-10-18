@@ -1,6 +1,6 @@
 // Local store: Surface's own Postgres on this computer (PGlite), no account.
 //
-// It runs the same migrations as the hosted database (supabase/migrations) behind a tiny
+// It runs the same migrations as a cloud (Supabase) project (supabase/migrations) behind a tiny
 // auth shim, and acts as the one local user under the same role and row-level security.
 // It answers the subset of the supabase-js client the CLI uses (from/select/eq/…, rpc,
 // auth.getUser), so every command works the same against either store.
@@ -571,7 +571,7 @@ class Query implements PromiseLike<Result> {
   }
 }
 
-const noAccount = { data: null, error: { message: "This computer uses the local store: no account needed. To use a hosted workspace, run `surface setup --cloud`." } };
+const noAccount = { data: null, error: { message: "This computer uses the local store: no account needed. To sync or share, connect your own Supabase project: surface cloud connect <url> <key>." } };
 
 /** A client for another Surface's database, reached through its `surface serve` (a sync hub). */
 export function remoteClient(url: string, token: string) {

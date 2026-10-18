@@ -133,13 +133,15 @@ export async function setup(flags: Record<string, string | boolean>) {
     warn(`${path.dirname(link)} isn't on your PATH. Add it: echo 'export PATH="$HOME/.local/bin:$PATH"' >> ${rc}  (then open a new terminal)`);
   }
 
-  step(`4. Where your data lives: ${cloud ? "the hosted database (account)" : "this computer (no account)"}`);
+  step(`4. Where your data lives: ${cloud ? "your cloud (your Supabase project, signed in)" : "this computer (no account)"}`);
   setStoreKind(cloud ? "cloud" : "local");
   if (cloud) {
     const who = spawnSync(BIN, ["whoami"], { encoding: "utf8" });
     if (who.status === 0) ok(`signed in as ${who.stdout.trim()}`);
     else {
-      console.log("  Sign in to the hosted database:");
+      const { cloudConfig } = await import("./config.ts");
+      if (!cloudConfig()) throw new UserError("--cloud needs your own Supabase project. Connect it first: surface cloud connect <url> <publishable key>   (docs/CLOUD.md)");
+      console.log(`  Sign in to your cloud (${cloudConfig()!.url}):`);
       const r = spawnSync(BIN, ["login"], { stdio: "inherit" });
       if (r.status !== 0) throw new UserError("Sign-in failed. Re-run `surface setup --cloud`, or `surface signup` first.");
     }

@@ -16,23 +16,30 @@ git clone https://github.com/Cody-Design-Build/Surface.git ~/Developer/Surface
 ~/Developer/Surface/install.sh
 ```
 
-That gets Node if needed, installs everything, puts `surface` on your PATH (`~/.local/bin`), creates this computer's own database and an empty workspace in `~/Surface`. No account needed. Then:
+That gets Node if needed, installs everything, puts `surface` on your PATH (`~/.local/bin`), and creates this computer's own database with an empty workspace in `~/Surface`. **No account, no cloud, nothing leaves your computer.** Then:
 
 ```sh
 cd ~/Surface && surface serve        # the app: open the link it prints
 surface data                         # the table app (Airtable-style), on port 4318
 ```
 
-**Use a team workspace from the cloud** (works offline; syncs when online):
+`surface doctor` checks the install; `surface help` lists every command. Re-run `install.sh` to update.
+
+### Sync and teams: bring your own Supabase
+
+Surface has **no hosted service**. To sync between computers or share with a team, you connect your **own** [Supabase](https://supabase.com) project (the free tier is enough to start). Nobody else's project is involved. One person sets it up once:
 
 ```sh
-surface login                        # your Surface account
-surface sync list                    # your cloud workspaces, with the join command for each
-surface sync join <workspace id> ~/Surface-cdb-os
-cd ~/Surface-cdb-os && surface data  # sync runs while the app is open; or `surface sync`
+surface cloud connect https://<ref>.supabase.co sb_publishable_…   # Project Settings → API
+surface cloud schema --out surface-schema.sql                      # paste into the SQL editor, Run
+surface signup
+cd ~/Surface && surface sync enable                                # this workspace is now in your cloud
+surface workspace invite anna@yourco.com --mail                    # emails her a one-line join command
 ```
 
-`surface doctor` checks the install; `surface help` lists every command. Re-run `install.sh` to update. Sync design: [`docs/LOCAL.md`](docs/LOCAL.md) §1b.
+Your teammate installs Surface and runs the one line from the email: `surface join surface-invite:…`. It connects to your project, creates her account, and copies the workspace to her computer. Each computer keeps a full copy, works offline, and syncs record by record.
+
+Full guide: [`docs/CLOUD.md`](docs/CLOUD.md). For agents: [`skills/surface-setup`](skills/surface-setup/SKILL.md) walks through install, cloud setup and joining.
 
 ## Thesis
 

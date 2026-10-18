@@ -2,7 +2,7 @@
 import path from "node:path";
 import fs from "node:fs";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { CONFIG_DIR, PUBLISHABLE_KEY, SUPABASE_URL, readJson, writeJson } from "./config.ts";
+import { CONFIG_DIR, cloudConfig, readJson, writeJson } from "./config.ts";
 import { localClient } from "./local.ts";
 
 const SESSION_FILE = path.join(CONFIG_DIR, "session.json");
@@ -29,38 +29,48 @@ let client: SupabaseClient | null = null;
 const STORE_FILE = path.join(CONFIG_DIR, "store.json");
 
 /** Where this computer's data lives: "local" (Surface's own Postgres, no account) or "cloud"
- *  (the hosted database, signed in). SURFACE_STORE overrides; computers that signed in to the
+ *  (your Supabase project, signed in). SURFACE_STORE overrides; computers that signed in to the
  *  cloud before local mode existed stay on the cloud. */
 export function storeKind(): "local" | "cloud" {
   const env = process.env.SURFACE_STORE;
   if (env === "local" || env === "cloud") return env;
   const saved = readJson<{ store?: string }>(STORE_FILE, {}).store;
   if (saved === "local" || saved === "cloud") return saved;
-  return fs.existsSync(SESSION_FILE) ? "cloud" : "local";
+  return fs.existsSync(SESSION_FILE) && cloudConfig() ? "cloud" : "local";
 }
 export function setStoreKind(kind: "local" | "cloud") {
   writeJson(STORE_FILE, { store: kind });
   client = null;
 }
 
+const NO_CLOUD =
+  "No cloud is set up on this computer. Surface works fully without one. To sync or share, connect your own Supabase project with `surface cloud connect <url> <publishable key>`, or ask your team for their `surface join` command.";
+
+function makeCloud(): SupabaseClient {
+  const c = cloudConfig();
+  if (!c) throw new UserError(NO_CLOUD);
+  return createClient(c.url, c.publishableKey, {
+    auth: { storage: fileStorage, persistSession: true, autoRefreshToken: true, detectSessionInUrl: false },
+  });
+}
+
 export function sb(): SupabaseClient {
   if (!client && storeKind() === "local") client = localClient() as unknown as SupabaseClient;
-  if (!client) {
-    client = createClient(SUPABASE_URL, PUBLISHABLE_KEY, {
-      auth: { storage: fileStorage, persistSession: true, autoRefreshToken: true, detectSessionInUrl: false },
-    });
-  }
+  if (!client) client = makeCloud();
   return client;
 }
 
-/** The hosted database, whatever this computer's store is (a sync hub for local workspaces). */
+/** Your cloud (Supabase) project, whatever this computer's store is (a sync hub for local workspaces). */
 let cloud: SupabaseClient | null = null;
 export function cloudClient(): SupabaseClient {
   if (storeKind() === "cloud") return sb();
-  cloud ??= createClient(SUPABASE_URL, PUBLISHABLE_KEY, {
-    auth: { storage: fileStorage, persistSession: true, autoRefreshToken: true, detectSessionInUrl: false },
-  });
+  cloud ??= makeCloud();
   return cloud;
+}
+/** Forget clients after the cloud project changes. */
+export function resetClients() {
+  client = null;
+  cloud = null;
 }
 
 export async function requireUser() {

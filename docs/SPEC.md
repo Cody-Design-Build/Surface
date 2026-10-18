@@ -1006,7 +1006,7 @@ The working checklist of everything still to decide is `TODO.md`; tick items the
 
 **Database and hosting**
 
-1. Hosting long-term for sync mode: Surface-hosted Supabase for everyone, a project per team, or self-hosted?
+1. **Decided (Oct 18):** no hosted service. Each user or team connects their own Supabase project; Surface ships with none (`CLOUD.md`).
 1a. Local mode's open questions: `LOCAL.md` §10.
 2. When to add live updates to the plugin, browser experience and other connected surfaces.
 
@@ -1064,7 +1064,7 @@ Gaps identified Oct 13 (updated Oct 14), in suggested order:
 
 ## 14. Build plan
 
-**MVP: built Oct 14** (`MVP.md`). The Supabase types engine plus `surface` CLI implements the foundational Markdown surface. `cli/test/e2e.ts` defines 15 end-to-end scenarios against a real Supabase project.
+**MVP: built Oct 14** (`MVP.md`). The Supabase types engine plus `surface` CLI implements the foundational Markdown surface. `cli/test/e2e.ts` defines the end-to-end scenarios, run against a local database or any Supabase project.
 
 **Built beyond the initial MVP** (e2e: 16 scenarios; app: `app/qa/qa-views.mjs`, 24 browser checks):
 

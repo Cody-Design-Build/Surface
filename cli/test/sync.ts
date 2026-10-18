@@ -4,8 +4,9 @@
 // Covers: enable, join, edits both ways, a link and parent, conflict copies, deletes, delete vs edit,
 // offline edits that go up when the hub is back, and the serve loop syncing an app edit on its own.
 //   npm run test:sync                the hub is another `surface serve`
-//   npm run test:sync:cloud          the hub is the hosted database, using this computer's sign-in
-//                                    (~/.config/surface-cli/session.json); creates and deletes a test workspace
+//   npm run test:sync:cloud          the hub is your Supabase project, using this computer's sign-in
+//                                    and cloud (~/.config/surface-cli/session.json + cloud.json, from
+//                                    `surface cloud connect` + `surface login`); creates and deletes a test workspace
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -35,6 +36,7 @@ function signIn(who: Who) {
   const cfg = path.join(tmp, who, ".cfg");
   fs.mkdirSync(cfg, { recursive: true });
   fs.symlinkSync(path.join(REAL_CFG, "session.json"), path.join(cfg, "session.json"));
+  fs.copyFileSync(path.join(REAL_CFG, "cloud.json"), path.join(cfg, "cloud.json")); // which Supabase project (yours)
   fs.writeFileSync(path.join(cfg, "store.json"), JSON.stringify({ store: "local" }));
 }
 /** Ask the cloud directly, as the real signed-in user. */

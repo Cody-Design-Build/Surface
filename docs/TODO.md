@@ -42,7 +42,8 @@ Everything still to decide, in one place. Tick an item when it's decided, and re
 
 ## Database and hosting
 
-- [ ] Where sync mode is hosted long term: Surface-hosted Supabase, one project per team, or self-hosted. (SPEC §12.1)
+- [x] Where the cloud lives: decided Oct 18: each user or team brings their own Supabase project; Surface has no hosted service (`CLOUD.md`). Invites carry a `surface join` code. (SPEC §12.1)
+- [ ] Teams beyond invites: in-app invite flow (today: CLI and the Share panel), Windows install, a hosted option (if ever) as a separate, paid product.
 - [ ] Where the local database lives: outside the checkout only, or optionally inside it. (LOCAL §10.2)
 - [ ] Pricing: local free, sync paid? A business decision. (LOCAL §10.4)
 - [ ] Mobile: sync mode with the hosted app? (LOCAL §10.5, SPEC §13.9)

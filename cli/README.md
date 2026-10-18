@@ -18,7 +18,7 @@ git clone https://github.com/Cody-Design-Build/Surface.git ~/Developer/Surface
 4. creates a first workspace and checks it out to `~/Surface`;
 5. with `--service`, starts the web UI at login (launchd on a Mac, a systemd user service on Linux).
 
-Flags: `--dir <folder>`, `--name <workspace>`, `--service`, `--port <n>`, `--rebuild`, and `--cloud` to use the hosted database with an account instead. Re-running is safe and also updates (it pulls the code first). `surface doctor` checks everything.
+Flags: `--dir <folder>`, `--name <workspace>`, `--service`, `--port <n>`, `--rebuild`, and `--cloud` to work directly against your own Supabase project instead (connect it first with `surface cloud connect`; see `../docs/CLOUD.md`). Re-running is safe and also updates (it pulls the code first). `surface doctor` checks everything.
 
 **A remote Linux machine:** run the same two lines over SSH, then `surface setup --service` (and `loginctl enable-linger $USER` if it should keep running after you log out). The web UI listens on that machine's 127.0.0.1 only; reach it from your own computer with `ssh -L 4317:127.0.0.1:4317 you@that-machine` and open the link `surface serve` printed (`journalctl --user -u surface | grep Open` shows it for the service).
 

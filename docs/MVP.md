@@ -33,7 +33,7 @@ Markdown comes first because it is a shared working language for LLMs and humans
 
 ## Database
 
-Migrations are in [`supabase/migrations/`](../supabase/migrations/). The current project is `surface` (`njzrcmzvubhexegbdoeh`, us-west-2).
+Migrations are in [`supabase/migrations/`](../supabase/migrations/). They run on any Supabase project: each user or team brings their own (`docs/CLOUD.md`).
 
 | Table | Holds |
 |---|---|
@@ -86,6 +86,6 @@ Records have stable IDs. Filenames are readable and unique within a checkout, wi
 
 ## Verification and next work
 
-[`cli/test/e2e.ts`](../cli/test/e2e.ts) defines 15 end-to-end scenarios against the real Supabase project. Run `npm test` from `cli/` with the test account configured. It creates and deletes a temporary test workspace.
+[`cli/test/e2e.ts`](../cli/test/e2e.ts) defines end-to-end scenarios. `npm test` runs them against a local database; `npm run test:cloud` against the Supabase project this computer is connected to (`surface cloud connect`) with a test account. It creates and deletes a temporary test workspace.
 
 Next work and unresolved release ordering are recorded in [SPEC §14](SPEC.md#14-build-plan). The Markdown workflow establishes the foundation; the dedicated app and other surfaces build on it.
