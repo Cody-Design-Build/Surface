@@ -3,7 +3,7 @@
 // change a record or a table. Tables not placed in a folder are listed after the folders.
 import { useEffect, useRef, useState } from "react";
 import { api, type AppState, type TablesItem, type TypeInfo } from "./api.ts";
-import { Icon, typeIcon } from "./Icon.tsx";
+import { Icon } from "./Icon.tsx";
 
 type Folder = { name: string; tables: string[] };
 const readFolders = (app: AppState): Folder[] =>
@@ -12,7 +12,7 @@ const readFolders = (app: AppState): Folder[] =>
     .map((it) => ({ name: it.group!, tables: (it.items ?? []).map((x) => x.query?.from).filter((k): k is string => !!k && app.types.some((t) => t.key === k)) }));
 const toDefinition = (folders: Folder[]): { items: TablesItem[] } => ({ items: folders.map((f) => ({ group: f.name, items: f.tables.map((from) => ({ query: { from } })) })) });
 
-export function TableNav({ app, active, search, disabled, onOpen, onChanged, toast }: { app: AppState; active?: string; search: string; disabled: boolean; onOpen: (key: string) => void; onChanged: () => void; toast: (m: string) => void }) {
+export function TableNav({ app, active, search, disabled, onOpen, onChanged, toast, newFolderSignal }: { app: AppState; active?: string; search: string; disabled: boolean; onOpen: (key: string) => void; onChanged: () => void; toast: (m: string) => void; newFolderSignal?: number }) {
   const canArrange = app.role === "owner" || app.role === "admin";
   const [folders, setFolders] = useState<Folder[]>(() => readFolders(app));
   const [closed, setClosed] = useState<Set<string>>(() => new Set(JSON.parse(localStorage.getItem("surface-data-folders-closed") ?? "[]")));
@@ -20,6 +20,9 @@ export function TableNav({ app, active, search, disabled, onOpen, onChanged, toa
   const [naming, setNaming] = useState<{ folder?: string; forTable?: string } | null>(null);
   const [nameDraft, setNameDraft] = useState("");
   const saving = useRef(false);
+  const [dragging, setDragging] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<string | null>(null); // folder name, or "" for "no folder"
+  useEffect(() => { if (newFolderSignal) { setNameDraft(""); setNaming({}); } }, [newFolderSignal]);
   useEffect(() => { if (!saving.current) setFolders(readFolders(app)); }, [app.tables?.rev, app.types.length]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!menu) return;
@@ -27,12 +30,19 @@ export function TableNav({ app, active, search, disabled, onOpen, onChanged, toa
     document.addEventListener("mousedown", close);
     return () => document.removeEventListener("mousedown", close);
   }, [menu]);
-  const persist = async (next: Folder[]) => {
+  // Saves are chained and each uses the revision the previous save returned, so quick
+  // successive changes (new folder, then move a table into it) never send a stale revision.
+  const rev = useRef<number | null>(app.tables?.rev ?? null);
+  useEffect(() => { if (!saving.current) rev.current = app.tables?.rev ?? null; }, [app.tables?.rev]);
+  const queue = useRef<Promise<void>>(Promise.resolve());
+  const persist = (next: Folder[]) => {
     const previous = folders;
     setFolders(next); setMenu(null); saving.current = true;
-    try { await api.saveTables(toDefinition(next), app.tables?.rev ?? null); onChanged(); }
-    catch (e) { setFolders(previous); toast(e instanceof Error ? e.message : String(e)); }
-    finally { saving.current = false; }
+    queue.current = queue.current.then(async () => {
+      try { const res = await api.saveTables(toDefinition(next), rev.current); rev.current = res.tables.rev; }
+      catch (e) { setFolders(previous); toast(e instanceof Error ? e.message : String(e)); }
+    }).finally(() => { saving.current = false; onChanged(); });
+    return queue.current;
   };
   const toggle = (name: string) => setClosed((c) => {
     const n = new Set(c); if (n.has(name)) n.delete(name); else n.add(name);
@@ -57,9 +67,11 @@ export function TableNav({ app, active, search, disabled, onOpen, onChanged, toa
   const count = (key: string) => app.records.filter((r) => r.type === key).length;
 
   const tableRow = (t: TypeInfo, nested: boolean) => (
-    <div key={t.key} className={`data-table-row ${nested ? "is-nested" : ""}`}>
+    <div key={t.key} className={`data-table-row ${nested ? "is-nested" : ""} ${dragging === t.key ? "is-dragging" : ""}`}
+      draggable={canArrange && !term} onDragStart={(e) => { e.dataTransfer.setData("text/plain", t.key); e.dataTransfer.effectAllowed = "move"; setDragging(t.key); }}
+      onDragEnd={() => { setDragging(null); setDropTarget(null); }}>
       <button className={`data-table-link ${active === t.key ? "is-active" : ""}`} disabled={disabled} title={t.name} onClick={() => onOpen(t.key)}>
-        <Icon name={typeIcon(t.key)} size={16} /><span>{t.name}</span><small>{count(t.key)}</small>
+        <Icon name="table" size={15} /><span>{t.name}</span><small>{count(t.key)}</small>
       </button>
       {canArrange && <button className="data-row-more" aria-label={`Organize ${t.name}`} title="Move to folder" onClick={() => setMenu(menu?.key === t.key ? null : { kind: "table", key: t.key })}><Icon name="more" size={14} /></button>}
       {menu?.kind === "table" && menu.key === t.key && (
@@ -78,16 +90,20 @@ export function TableNav({ app, active, search, disabled, onOpen, onChanged, toa
   );
   return (
     <nav className="data-table-tree">
+      {naming && !naming.folder && <div className="data-table-row data-folder-row"><span className="data-folder-chev" /><Icon name="folder" size={15} />{nameInput}</div>}
       {folders.map((f) => {
         const tables = f.tables.map((k) => app.types.find((t) => t.key === k)!).filter((t) => t && matches(t));
         if (term && !tables.length) return null;
         const open = !closed.has(f.name) || !!term;
         return (
-          <div key={f.name} className="data-folder">
-            <div className="data-table-row">
+          <div key={f.name} className={`data-folder ${dropTarget === f.name ? "is-drop" : ""}`}
+            onDragOver={(e) => { if (!dragging) return; e.preventDefault(); setDropTarget(f.name); }}
+            onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDropTarget((d) => (d === f.name ? null : d)); }}
+            onDrop={(e) => { e.preventDefault(); const key = e.dataTransfer.getData("text/plain"); setDropTarget(null); setDragging(null); if (key && !f.tables.includes(key)) void moveTo(key, f.name); }}>
+            <div className="data-table-row data-folder-row">
               {naming?.folder === f.name ? nameInput : (
                 <button className="data-folder-head" aria-expanded={open} title={f.name} onClick={() => toggle(f.name)}>
-                  <span className={`data-folder-chev ${open ? "is-open" : ""}`}><Icon name="chevron" size={12} /></span><Icon name="folder" size={15} /><span>{f.name}</span><small>{f.tables.length}</small>
+                  <span className={`data-folder-chev ${open ? "is-open" : ""}`}><Icon name="chevron" size={12} /></span><Icon name="folder" size={15} /><span className="data-folder-name">{f.name}</span>
                 </button>
               )}
               {canArrange && naming?.folder !== f.name && <button className="data-row-more" aria-label={`Folder ${f.name} options`} onClick={() => setMenu(menu?.key === f.name ? null : { kind: "folder", key: f.name })}><Icon name="more" size={14} /></button>}
@@ -99,13 +115,17 @@ export function TableNav({ app, active, search, disabled, onOpen, onChanged, toa
               )}
             </div>
             {open && tables.map((t) => tableRow(t, true))}
-            {open && !tables.length && <div className="data-folder-empty">Empty folder</div>}
+            {open && !tables.length && <div className="data-folder-empty">{canArrange ? "Drag tables here" : "Empty folder"}</div>}
           </div>
         );
       })}
-      {loose.map((t) => tableRow(t, false))}
-      {naming && !naming.folder && <div className="data-table-row">{nameInput}</div>}
-      {canArrange && !naming && !term && <button className="data-new-folder" onClick={() => setNaming({})}><Icon name="folder" size={14} />New folder</button>}
+      <div className={`data-loose ${dropTarget === "" ? "is-drop" : ""}`}
+        onDragOver={(e) => { if (!dragging || !placed.has(dragging)) return; e.preventDefault(); setDropTarget(""); }}
+        onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDropTarget((d) => (d === "" ? null : d)); }}
+        onDrop={(e) => { e.preventDefault(); const key = e.dataTransfer.getData("text/plain"); setDropTarget(null); setDragging(null); if (key && placed.has(key)) void moveTo(key, null); }}>
+        {loose.map((t) => tableRow(t, false))}
+        {dragging && placed.has(dragging) && !loose.length && <div className="data-folder-empty">Drop here to take it out of the folder</div>}
+      </div>
     </nav>
   );
 }

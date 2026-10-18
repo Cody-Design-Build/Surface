@@ -125,7 +125,7 @@ try {
   await click([...document.querySelectorAll(".data-table-link")].find(el => el.textContent.includes(`Contacts ${suffix}`)));
   await until(() => document.querySelector(".data-footer")?.textContent.includes("2 records"), "contact table again");
   pass("unsaved record drafts are guarded on back/forward and navigation, prompting once");
-  await click(button("Filters"));
+  await click(button("Filter"));
   await until(() => document.querySelector('[aria-label="Filter table"]'), "filter editor");
   await click(button("Add a condition"));
   const selects = document.querySelectorAll(".ve-cond select");
@@ -155,8 +155,45 @@ try {
   await until(() => document.querySelector(".data-view-tabs .is-active")?.textContent.includes(`Top one ${suffix}`), "limited view open");
   await until(() => document.querySelector(".data-footer")?.textContent.startsWith("1 record"), "limit applied");
   pass("saved view row limit is honored");
+  // Airtable-style Group: multi-level, persisted in the view, groups shown with counts, collapse/expand all.
+  await act(async () => { location.hash = `/table/${contactKey}`; await pause(60); });
+  await until(() => document.querySelector(".data-view-tabs .is-active")?.textContent.includes("All records"), "all records");
+  await until(() => document.querySelector(".data-grid-area") && button("Group"), `group button (buttons: ${[...document.querySelectorAll(".data-toolbar button")].map(b => b.textContent.trim()).join(" | ")})`);
+  await click(button("Group"));
+  await until(() => document.querySelector('[role="dialog"][aria-label="Group records"]'), "group panel");
+  await input(document.querySelector('[aria-label="Pick a field to group by"]'), "status");
+  await until(() => document.querySelector('[aria-label="Add subgroup"]'), "subgroup offered");
+  await input(document.querySelector('[aria-label="Add subgroup"]'), "organization");
+  await input(document.querySelector('[aria-label="Group level 2 direction"]'), "DESC");
+  await until(() => button("Grouped by 2 fields"), "group button summary");
+  await until(() => document.querySelectorAll(".sg-group").length >= 2, "group rows rendered");
+  const groupTexts = [...document.querySelectorAll(".sg-group")].map(el => el.textContent);
+  assert(groupTexts.some(t => t.includes("Active") && t.includes("Status")), `status group shown (${groupTexts.join(" | ")})`);
+  await click(button("Collapse all"));
+  await until(() => [...document.querySelectorAll('[role="row"][aria-level="1"]')].every(r => r.getAttribute("aria-expanded") === "false"), "collapsed");
+  await click(button("Expand all"));
+  await until(() => [...document.querySelectorAll('[role="row"][aria-level="1"]')].every(r => r.getAttribute("aria-expanded") === "true"), "expanded");
+  await act(async () => { document.body.dispatchEvent(new window.MouseEvent("mousedown", { bubbles: true })); });
+  // Sort panel, then save as a view: both persist in the definition and the server accepts multi-level group
+  // the default table view sorts by title, so the button already summarizes one sort level
+  await click([...document.querySelectorAll(".data-toolbar button")].find(el => /^Sort(ed by \d+ fields?)?$/.test(el.textContent.trim())));
+  await until(() => document.querySelector('[role="dialog"][aria-label="Sort records"]'), "sort panel");
+  await input(document.querySelector('[aria-label="Sort level 1 direction"]'), "DESC");
+  await until(() => button("Sorted by 1 field"), "sort summary");
+  await act(async () => { document.body.dispatchEvent(new window.MouseEvent("mousedown", { bubbles: true })); });
+  await click(button("Save as view"));
+  await input(document.querySelector('.data-save-body input'), `Grouped ${suffix}`);
+  await click(document.querySelector('.data-save-body button'));
+  await until(() => [...document.querySelectorAll(".data-view-tabs button")].some(el => el.textContent.includes(`Grouped ${suffix}`)), "grouped view saved");
+  const groupedView = (await settled("/api/state")).views.find(v => v.name === `Grouped ${suffix}`);
+  assert.equal(groupedView.definition.layouts[0].group, "status,-organization");
+  assert.equal(groupedView.definition.sort, "-title");
+  const tooDeep = await settled("/api/views", "POST", { name: `Too deep ${suffix}`, personal: true, definition: { from: contactKey, layouts: [{ show: "table", group: "status,organization,email,title" }] } });
+  assert.equal(tooDeep.status, 422, "more than three group levels is rejected");
+  pass("Airtable-style Group (up to 3 levels, direction, collapse/expand all) and Sort persist in saved views");
   // New table: generic, name only; no domain-specific relationships are offered or created.
-  await click(document.querySelector('[aria-label="New table"]'));
+  await click(document.querySelector('[aria-label="Add table or folder"]'));
+  await click([...document.querySelectorAll(".data-add-menu .menu-item")].find(el => el.textContent.includes("New table")));
   await until(() => document.querySelector('[aria-label="New table"][role="dialog"]'), "new table dialog");
   const dialogText = document.querySelector('[role="dialog"][aria-label="New table"]').textContent;
   assert(!/job/i.test(dialogText), "new-table dialog offers no business-specific links");
@@ -186,16 +223,20 @@ try {
   assert.equal(cond.kind, "select"); assert.deepEqual(cond.options, ["Option 1", "Option 2"]);
   pass("fields are created with an explicit field type; relationships are link fields to a chosen table");
   // Folders in the tables list: organization only, shared, persisted as the "tables" tree view.
-  await click(button("New folder"));
+  await click(document.querySelector('[aria-label="Add table or folder"]'));
+  await click([...document.querySelectorAll(".data-add-menu .menu-item")].find(el => el.textContent.includes("New folder")));
+  await until(() => document.querySelector('[aria-label="Folder name"]'), "folder name input");
   const folderInput = document.querySelector('[aria-label="Folder name"]');
   await input(folderInput, `Assets ${suffix}`);
   await act(async () => folderInput.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
   await until(() => [...document.querySelectorAll(".data-folder-head")].some(el => el.textContent.includes(`Assets ${suffix}`)), "folder created");
   await click(document.querySelector(`[aria-label="Organize Equipment ${suffix}"]`));
   await click([...document.querySelectorAll(".data-nav-menu .menu-item")].find(el => el.textContent.includes(`Assets ${suffix}`)));
-  await until(() => document.querySelector(".data-folder .is-nested")?.textContent.includes(`Equipment ${suffix}`), "table in folder");
-  let tables = (await settled("/api/state")).tables.definition.items;
-  assert.deepEqual(tables.find(i => i.group === `Assets ${suffix}`).items, [{ query: { from: equipment.key } }]);
+  const folderEl = () => [...document.querySelectorAll(".data-folder")].find(el => el.querySelector(".data-folder-head")?.textContent.includes(`Assets ${suffix}`));
+  await until(() => folderEl()?.querySelector(".is-nested")?.textContent.includes(`Equipment ${suffix}`), "table in folder");
+  let tables;
+  for (let i = 0; i < 40; i++) { tables = (await settled("/api/state")).tables.definition.items; if (tables.find(x => x.group === `Assets ${suffix}`)?.items?.length) break; }
+  assert.deepEqual(tables.find(i => i.group === `Assets ${suffix}`).items, [{ query: { from: equipment.key } }], "folder change persisted on the server");
   await click([...document.querySelectorAll(".data-folder-head")].find(el => el.textContent.includes(`Assets ${suffix}`)));
   assert(![...document.querySelectorAll(".data-table-link")].some(el => el.textContent.includes(`Equipment ${suffix}`)), "collapsed folder hides its tables");
   await click([...document.querySelectorAll(".data-folder-head")].find(el => el.textContent.includes(`Assets ${suffix}`)));

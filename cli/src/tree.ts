@@ -265,7 +265,7 @@ export function asTreeDef(definition: Record<string, unknown>): TreeDef {
         columns: [status, due, job]       # title always comes first; order = column order
         widths: { status: 120, job: 220 } # column widths in pixels (title too)
         frozen: 1                         # columns kept in view when scrolling sideways, after the title
-        group: status                     # group rows by a field
+        group: status                     # group rows by a field (up to 3: "status,-due"; "-" = descending)
         rows: compact                     # row height: compact | normal | tall
       - show: board
         by: status                        # a select or checkbox field
@@ -332,7 +332,16 @@ export function validateDataView(def: unknown, types: TypeRow[]): string[] {
             }
         }
         if (l.frozen !== undefined && (!Number.isInteger(l.frozen) || (l.frozen as number) < 0)) errors.push(`${at}: frozen must be a whole number of columns (0 = only the title)`);
-        if (l.group !== undefined && (typeof l.group !== "string" || (t && !known(l.group)))) errors.push(`${at}: group: no field "${l.group}"`);
+        if (l.group !== undefined) {
+          // one field, or up to three separated by commas (outer first); "-" orders that level descending
+          const levels = typeof l.group === "string" ? l.group.split(",").map((x) => x.trim().replace(/^-/, "")).filter(Boolean) : null;
+          if (!levels || !levels.length) errors.push(`${at}: group must be a field key, or up to three separated by commas`);
+          else {
+            if (levels.length > 3) errors.push(`${at}: group allows at most three levels`);
+            if (new Set(levels).size !== levels.length) errors.push(`${at}: group lists a field twice`);
+            if (t) for (const k of levels) if (!known(k)) errors.push(`${at}: group: no field "${k}"`);
+          }
+        }
         if (l.rows !== undefined && !["compact", "normal", "tall"].includes(l.rows as string)) errors.push(`${at}: rows must be compact, normal or tall`);
         if (l.columns !== undefined) {
           if (!Array.isArray(l.columns)) errors.push(`${at}: columns must be a list`);

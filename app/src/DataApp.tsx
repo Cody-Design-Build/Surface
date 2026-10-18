@@ -6,6 +6,8 @@ import { Properties } from "./Properties.tsx";
 import { TypesPanel } from "./TypesPanel.tsx";
 import { FieldDialog, NewTableDialog } from "./DataSchema.tsx";
 import { TableNav } from "./TableNav.tsx";
+import { GroupPanel, SortPanel } from "./DataToolbar.tsx";
+import { parseGroup, parseSort } from "./Grid.tsx";
 import { ViewEditor } from "./ViewEditor.tsx";
 import { defaultsFrom, deleteRecord } from "./edits.ts";
 import { did, onUndo, redo, typingTarget, undo } from "./undo.ts";
@@ -33,6 +35,14 @@ export function DataApp() {
   const [schema, setSchema] = useState(false);
   const [newTable, setNewTable] = useState(false);
   const [addField, setAddField] = useState(false);
+  const [addMenu, setAddMenu] = useState(false);
+  const [newFolderSignal, setNewFolderSignal] = useState(0);
+  useEffect(() => {
+    if (!addMenu) return;
+    const close = (e: MouseEvent) => { if (!(e.target as Element).closest?.(".data-add-wrap")) setAddMenu(false); };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [addMenu]);
   const [recordId, setRecordId] = useState<string | null>(null);
   const [workspaces, setWorkspaces] = useState<Awaited<ReturnType<typeof api.workspaces>>["workspaces"]>([]);
   const [switching, setSwitching] = useState(false);
@@ -109,11 +119,18 @@ export function DataApp() {
     </header>
     <div className="data-shell" aria-busy={switching}>
       <aside className={`data-nav ${navCollapsed ? "is-collapsed" : ""}`} aria-label="Tables">
-        <div className="data-nav-heading"><button className="icon-btn data-nav-toggle" onClick={toggleNav} aria-label={navCollapsed ? "Expand tables list" : "Collapse tables list"} aria-expanded={!navCollapsed} title={navCollapsed ? "Expand tables list" : "Collapse tables list"}><Icon name="sidebar" size={15} /></button><span>Tables</span>{(app.role === "owner" || app.role === "admin") && <button className="icon-btn" onClick={() => setNewTable(true)} aria-label="New table" title="New table"><Icon name="plus" size={15} /></button>}</div>
-        <label className="data-table-search"><Icon name="search" size={14} /><input aria-label="Find a table" placeholder="Find a table" value={typeSearch} onChange={e => setTypeSearch(e.target.value)} /></label>
-        <TableNav app={app} active={type?.key} search={typeSearch} disabled={switching} onOpen={go} onChanged={changed} toast={setToast} />
-        <button className="data-manage" title="Tables and fields" onClick={() => setSchema(true)}><Icon name="settings" size={15} />Tables and fields</button>
-        <div className="data-nav-note">One workspace.<br />All your connected data.</div>
+        <div className="data-nav-top">
+          <label className="data-table-search"><Icon name="search" size={14} /><input aria-label="Find a table" placeholder="Find a table" value={typeSearch} onChange={e => setTypeSearch(e.target.value)} /></label>
+          <button className="icon-btn data-nav-toggle" onClick={toggleNav} aria-label={navCollapsed ? "Expand tables list" : "Collapse tables list"} aria-expanded={!navCollapsed} title={navCollapsed ? "Expand tables list" : "Collapse tables list"}><Icon name="sidebar" size={15} /></button>
+        </div>
+        <TableNav app={app} active={type?.key} search={typeSearch} disabled={switching} onOpen={go} onChanged={changed} toast={setToast} newFolderSignal={newFolderSignal} />
+        <div className="data-nav-bottom">
+          {(app.role === "owner" || app.role === "admin") && <span className="data-add-wrap">
+            <button className="data-nav-action" onClick={() => setAddMenu(m => !m)} aria-label="Add table or folder" aria-expanded={addMenu} title="Add a table or folder"><Icon name="plus" size={15} /><span>Add</span></button>
+            {addMenu && <div className="menu data-nav-menu data-add-menu" role="menu"><button className="menu-item" onClick={() => { setAddMenu(false); setNewTable(true); }}><Icon name="table" size={13} />New table</button><button className="menu-item" onClick={() => { setAddMenu(false); if (navCollapsed) toggleNav(); setNewFolderSignal(n => n + 1); }}><Icon name="folder" size={13} />New folder</button></div>}
+          </span>}
+          <button className="data-nav-action" title="Tables and fields" onClick={() => setSchema(true)}><Icon name="settings" size={15} /><span>Tables and fields</span></button>
+        </div>
       </aside>
       <main className="data-main">
         {error && <div className="banner" role="alert">{error}<button className="btn-soft" onClick={reload}>Retry</button></div>}
@@ -141,6 +158,8 @@ function DataTable({ app, type, initial, tick, changed, open, toast, onView }: {
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [options, setOptions] = useState(false);
+  const [panel, setPanel] = useState<"group" | "sort" | null>(null);
+  const [groupCommand, setGroupCommand] = useState<{ action: "collapse" | "expand" } | undefined>();
   const [saving, setSaving] = useState(false);
   const [saveDialog, setSaveDialog] = useState(false);
   const [editingView, setEditingView] = useState(false);
@@ -212,13 +231,17 @@ function DataTable({ app, type, initial, tick, changed, open, toast, onView }: {
     } catch (e) { setError(message(e)); }
     finally { setSaving(false); }
   };
+  const groupCount = parseGroup(layout.group).filter(l => type.fields.some(f => f.key === l.columnKey)).length;
+  const sortCount = parseSort(definition.sort).length;
   const editDefinition: ViewInfo = saved ? { ...saved, definition } : { key: "", name: "", personal: true, rev: 0, updated_at: "", definition };
   return <section className="data-table-content" aria-label={`${type.name} records`}>
     <div className="data-toolbar">
       <div className="data-toolbar-start">{saved && <span className="data-scope">{saved.personal ? "Personal" : "Shared"}</span>}{definition.where && <div className="data-filter-summary"><Icon name="sliders" size={12} /><code title={definition.where}>{definition.where}</code><button onClick={() => { setDefinition(d => ({ ...d, where: undefined })); setDirty(true); }} aria-label="Clear filters"><Icon name="close" size={11} /></button></div>}</div>
       <div className="data-toolbar-actions">
-        <button className="btn-soft" onClick={() => setEditingView(true)}><Icon name="sliders" size={14} />Filters</button>
-        <div className="data-options"><button className={`btn-soft ${options ? "is-on" : ""}`} onClick={() => setOptions(!options)}><Icon name="eye" size={14} />Columns & grouping</button>{options && <GridOptions type={type} layout={layout} onLayout={patchLayout} onClose={() => setOptions(false)} />}</div>
+        <button className={`btn-soft ${definition.where ? "is-on" : ""}`} onClick={() => setEditingView(true)}><Icon name="sliders" size={14} />Filter</button>
+        <div className="data-options"><button className={`btn-soft ${options ? "is-on" : ""}`} onClick={() => setOptions(!options)}><Icon name="eye" size={14} />Columns</button>{options && <GridOptions type={type} layout={layout} hideGroup onLayout={patchLayout} onClose={() => setOptions(false)} />}</div>
+        <div className="data-options"><button data-popover-toggle className={`btn-soft ${panel === "group" || groupCount ? "is-on" : ""}`} aria-expanded={panel === "group"} onClick={() => setPanel(p => p === "group" ? null : "group")}><Icon name="list" size={14} />{groupCount ? `Grouped by ${groupCount} field${groupCount > 1 ? "s" : ""}` : "Group"}</button>{panel === "group" && <GroupPanel type={type} group={layout.group} onChange={g => patchLayout({ layout: { group: g } })} onCollapseAll={() => setGroupCommand({ action: "collapse" })} onExpandAll={() => setGroupCommand({ action: "expand" })} onClose={() => setPanel(null)} />}</div>
+        <div className="data-options"><button data-popover-toggle className={`btn-soft ${panel === "sort" || sortCount ? "is-on" : ""}`} aria-expanded={panel === "sort"} onClick={() => setPanel(p => p === "sort" ? null : "sort")}><Icon name="move" size={14} />{sortCount ? `Sorted by ${sortCount} field${sortCount > 1 ? "s" : ""}` : "Sort"}</button>{panel === "sort" && <SortPanel type={type} sort={definition.sort} onChange={s => patchLayout({ sort: s ?? null })} onClose={() => setPanel(null)} />}</div>
         <label className="data-record-search"><Icon name="search" size={14} /><input aria-label="Search records" placeholder="Search this table" value={search} onChange={e => setSearch(e.target.value)} /></label>
         {dirty && canSave && <button className="btn-soft" disabled={saving} onClick={() => void saveView(false)}>{saved?.personal ? "Save changes" : "Save for everyone"}</button>}
         <button className="btn-soft" onClick={() => { setViewName(saved ? `${saved.name} copy` : ""); setSaveDialog(true); }}>Save as view</button>
@@ -226,7 +249,7 @@ function DataTable({ app, type, initial, tick, changed, open, toast, onView }: {
       </div>
     </div>
     {error && <div className="banner" role="alert">{error}<button className="btn-soft" onClick={load}>Reload records</button></div>}
-    {loading ? <div className="data-loading">Loading records…</div> : <div className="data-grid-area"><Grid app={app} type={type} layout={layout} sort={definition.sort} rows={visibleRows} readOnly={!canWrite || saving} open={open} onLayout={patchLayout} onChanges={saveChanges} onDelete={removeRows} addRow={addRow} />{!rows.length && !error && <div className="data-empty">No records yet. {canWrite ? "Add a record to start using this table." : "This table is empty."}</div>}</div>}
+    {loading ? <div className="data-loading">Loading records…</div> : <div className="data-grid-area"><Grid app={app} type={type} layout={layout} sort={definition.sort} rows={visibleRows} readOnly={!canWrite || saving} open={open} onLayout={patchLayout} onChanges={saveChanges} onDelete={removeRows} addRow={addRow} groupCommand={groupCommand} />{!rows.length && !error && <div className="data-empty">No records yet. {canWrite ? "Add a record to start using this table." : "This table is empty."}</div>}</div>}
     <footer className="data-footer"><span>{visibleRows.length.toLocaleString()} {visibleRows.length === 1 ? "record" : "records"}{search ? ` of ${rows.length}` : ""}</span><span>{saving ? "Saving…" : !canWrite ? "Read only" : dirty ? "View settings have unsaved changes" : "Changes save to your workspace"}</span><button onClick={() => void undo()}><Icon name="undo" size={13} />Undo</button><button onClick={() => { changed(); void load(); }}><Icon name="refresh" size={13} />Refresh</button></footer>
     {editingView && <ViewEditor app={app} initial={editDefinition} onClose={() => setEditingView(false)} onSaved={() => {}} onApply={d => { setDefinition(cur => ({ ...cur, where: d.where, sort: d.sort })); setDirty(true); setEditingView(false); }} />}
     {saveDialog && <div className="overlay" onMouseDown={e => e.target === e.currentTarget && setSaveDialog(false)}><form className="panel data-save-panel" role="dialog" aria-modal="true" aria-label="Save table view" onSubmit={e => { e.preventDefault(); void saveView(true); }}><header className="panel-head"><h3>Save this table view</h3><button type="button" aria-label="Close" onClick={() => setSaveDialog(false)}><Icon name="close" /></button></header><div className="data-save-body"><label>View name<input autoFocus required value={viewName} placeholder="For example, Active contacts" onChange={e => setViewName(e.target.value)} /></label><label>Who can see this view?<select value={personal ? "personal" : "shared"} onChange={e => setPersonal(e.target.value === "personal")}><option value="personal">Only me</option>{app.role !== "viewer" && <option value="shared">Everyone in this workspace</option>}</select></label><p>Your columns, widths, sorting, grouping and filters are saved together.</p>{error && <p role="alert">{error}</p>}<button className="btn-primary" disabled={saving}>Save view</button></div></form></div>}
