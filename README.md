@@ -46,7 +46,18 @@ Records can be pulled as readable Markdown, with types and saved views in YAML. 
 - **Built:** the Supabase types engine and TypeScript CLI, including Markdown pull/push, type and field editing, queries, nesting, folder layouts and saved navigation trees.
 - **Built, first version:** the web UI in local mode (`surface serve`): sidebars, live-preview Markdown editor, typed properties, full-page and embedded views, several workspaces, search, autosave with conflict handling and live updates.
 - **Next:** artifacts as records (agents make them, any surface shows them), sharing any part with outside people, and closing the gaps where the web UI can do something the CLI can't.
-- **Planned:** local mode without an account, hosted mode, push on save, the Obsidian plugin.
+- **Built (Oct 18):** local mode: every computer has its own Postgres (PGlite), no account, the default. `install.sh` + `surface setup` install the whole system.
+- **Planned:** the optional sync and team layer for local workspaces, hosted mode, push on save, the Obsidian plugin.
+
+## Try it
+
+```sh
+git clone https://github.com/Cody-Design-Build/Surface.git ~/Developer/Surface
+~/Developer/Surface/install.sh
+cd ~/Surface && surface serve
+```
+
+No account: your data lives in a Postgres database on this computer. Details, and running it on a remote Linux machine: [`cli/README.md`](cli/README.md#install).
 
 ## Docs
 

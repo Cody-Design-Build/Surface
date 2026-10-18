@@ -1,6 +1,7 @@
-// End-to-end test against the real Supabase project.
-// Needs a test account: SURFACE_TEST_EMAIL + SURFACE_TEST_PASSWORD (or ~/.hermes/secrets/surface-test-user.txt).
-// Run: npm test
+// End-to-end test, against either store:
+//   npm test                 the local store (Surface's own Postgres in a temp folder, no account)
+//   npm run test:cloud       the hosted Supabase project; needs a test account:
+//                            SURFACE_TEST_EMAIL + SURFACE_TEST_PASSWORD (or ~/.hermes/secrets/surface-test-user.txt)
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -10,10 +11,12 @@ import assert from "node:assert/strict";
 const BIN = path.resolve(import.meta.dirname, "../bin/surface");
 const tmp = fs.mkdtempSync(path.join(process.env.TMPDIR ?? os.tmpdir(), "surface-e2e-"));
 const vault = path.join(tmp, "vault");
+const store = process.env.SURFACE_STORE === "cloud" ? "cloud" : "local";
 const email = process.env.SURFACE_TEST_EMAIL ?? "agent-test@surface.dev";
 const password =
-  process.env.SURFACE_TEST_PASSWORD ?? fs.readFileSync(path.join(os.homedir(), ".hermes/secrets/surface-test-user.txt"), "utf8").trim();
-const env = { ...process.env, SURFACE_CONFIG_DIR: path.join(tmp, ".cfg"), SURFACE_PASSWORD: password, NO_COLOR: "1" };
+  store === "local" ? "" : process.env.SURFACE_TEST_PASSWORD ?? fs.readFileSync(path.join(os.homedir(), ".hermes/secrets/surface-test-user.txt"), "utf8").trim();
+const env = { ...process.env, SURFACE_STORE: store, SURFACE_CONFIG_DIR: path.join(tmp, ".cfg"), SURFACE_DATA_DIR: path.join(tmp, ".data"), SURFACE_PASSWORD: password, NO_COLOR: "1" };
+console.log(`store: ${store}`);
 
 function run(args: string[], opts: { cwd?: string; fail?: boolean } = {}): string {
   try {
@@ -37,7 +40,7 @@ const ok = (name: string) => console.log(`ok ${++step} ${name}`);
 
 const wsName = `e2e ${Date.now()}`;
 try {
-  run(["login", "--email", email], { cwd: tmp });
+  if (store === "cloud") run(["login", "--email", email], { cwd: tmp });
   run(["init", vault, "--create", wsName], { cwd: tmp });
   assert.match(run(["types"]), /page \*/);
   assert.ok(fs.existsSync(path.join(vault, "AGENTS.md")));

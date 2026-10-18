@@ -36,6 +36,8 @@ What this changes from §1: §1 says a workspace lives in exactly one database (
 
 This revisits part of the Oct 14 decision (a database on every device was dropped along with a merge engine). The difference: no peer-to-peer merge engine; one copy stays in charge whenever people share.
 
+**Built (Oct 18): local store and installer.** `cli/src/local.ts` runs the unchanged migrations in PGlite behind the auth shim and answers the same client calls the CLI makes to Supabase, so every command works on either store. It's the default on a new computer (`surface store` shows or switches it; computers already signed in stay on the cloud). `surface serve` owns the database while it runs; other CLI processes send their queries to it through the lock file's port. The full CLI suite passes on both stores (16/16 each). `install.sh` and `surface setup` install everything; `surface doctor` checks it. Not built yet: the sync and team layer for local workspaces, moving a workspace between stores, backups.
+
 **Spike step 1 passed (Oct 18):** the five existing migrations apply unchanged in PGlite with a small auth shim (`auth.users`, `auth.uid()`, `auth.jwt()`, the `authenticated` role). `push_record` works under the same row-level security, 200 writes in 73 ms, and invalid values are rejected by the same rules. See `spikes/pglite/`.
 
 Open (TODO.md): the sync layer's protocol (change log, ordering, field-level merge), what's hosted (our Supabase, any Postgres, self-hosted), identity when a local-only user later joins a team, and whether local Postgres for a shared workspace is a full copy or only what the person can see.

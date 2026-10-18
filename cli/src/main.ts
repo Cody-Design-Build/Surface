@@ -175,6 +175,25 @@ const commands: Record<string, Cmd> = {
     console.log(u.email);
   },
 
+  async setup(a) {
+    const { setup } = await import("./setup.ts");
+    await setup(a.flags);
+  },
+
+  async doctor(a) {
+    const { doctor } = await import("./setup.ts");
+    await doctor(Number(flag(a, "port") ?? 4317));
+  },
+
+  async store(a) {
+    const { storeKind, setStoreKind } = await import("./client.ts");
+    const k = a._[0];
+    if (!k) return void console.log(storeKind() === "local" ? "local: this computer's own database, no account" : "cloud: the hosted database (signed in)");
+    if (k !== "local" && k !== "cloud") throw new UserError("Usage: surface store [local | cloud]");
+    setStoreKind(k);
+    console.log(green(`This computer now uses the ${k} store.`) + (k === "cloud" ? " Run `surface login` if you haven't." : ""));
+  },
+
   async workspace(a) {
     await requireUser();
     const sub = a._[0];
@@ -957,9 +976,16 @@ function report(results: FileResult[], dry: boolean) {
   console.log(parts.length ? parts.join(", ") : "Nothing to push.");
 }
 
-const HELP = `surface: typed records in Supabase, as Markdown files you can use in Obsidian
+const HELP = `surface: typed records and Markdown files, in your own database or a shared one
 
-Account
+Install
+  setup [--dir ~/Surface] [--name <workspace>] [--service] [--local | --cloud] [--rebuild]
+                                      install and configure everything on this computer:
+                                      packages, web UI, PATH, database, a first workspace
+  doctor                              check the installation
+  store [local | cloud]               where this computer's data lives (default: local, no account)
+
+Account (cloud store only)
   signup | login | logout | whoami
   workspace [list | create <name> | delete <name> --yes]   (sharing: see below)
 
@@ -1040,5 +1066,5 @@ main()
   })
   .finally(() => {
     sb().auth.stopAutoRefresh().catch(() => {});
-    setTimeout(() => process.exit(), 10).unref();
+    import("./local.ts").then((l) => l.closeLocal()).finally(() => setTimeout(() => process.exit(), 10).unref());
   });

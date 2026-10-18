@@ -3,6 +3,7 @@ import path from "node:path";
 import fs from "node:fs";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { CONFIG_DIR, PUBLISHABLE_KEY, SUPABASE_URL, readJson, writeJson } from "./config.ts";
+import { localClient } from "./local.ts";
 
 const SESSION_FILE = path.join(CONFIG_DIR, "session.json");
 
@@ -25,7 +26,25 @@ const fileStorage = {
 
 let client: SupabaseClient | null = null;
 
+const STORE_FILE = path.join(CONFIG_DIR, "store.json");
+
+/** Where this computer's data lives: "local" (Surface's own Postgres, no account) or "cloud"
+ *  (the hosted database, signed in). SURFACE_STORE overrides; computers that signed in to the
+ *  cloud before local mode existed stay on the cloud. */
+export function storeKind(): "local" | "cloud" {
+  const env = process.env.SURFACE_STORE;
+  if (env === "local" || env === "cloud") return env;
+  const saved = readJson<{ store?: string }>(STORE_FILE, {}).store;
+  if (saved === "local" || saved === "cloud") return saved;
+  return fs.existsSync(SESSION_FILE) ? "cloud" : "local";
+}
+export function setStoreKind(kind: "local" | "cloud") {
+  writeJson(STORE_FILE, { store: kind });
+  client = null;
+}
+
 export function sb(): SupabaseClient {
+  if (!client && storeKind() === "local") client = localClient() as unknown as SupabaseClient;
   if (!client) {
     client = createClient(SUPABASE_URL, PUBLISHABLE_KEY, {
       auth: { storage: fileStorage, persistSession: true, autoRefreshToken: true, detectSessionInUrl: false },
@@ -37,7 +56,7 @@ export function sb(): SupabaseClient {
 export async function requireUser() {
   const { data, error } = await sb().auth.getUser();
   if (error || !data.user) {
-    throw new UserError("Not signed in. Run `surface login` (or `surface signup`).");
+    throw new UserError(storeKind() === "local" ? `Local database unavailable: ${error?.message ?? "unknown error"}` : "Not signed in. Run `surface login` (or `surface signup`).");
   }
   return data.user;
 }

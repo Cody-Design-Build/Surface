@@ -11,9 +11,11 @@
     "node": ">=23.6"
   },
   "scripts": {
-    "test": "node --no-warnings test/e2e.ts"
+    "test": "node --no-warnings test/e2e.ts",
+    "test:cloud": "SURFACE_STORE=cloud node --no-warnings test/e2e.ts"
   },
   "dependencies": {
+    "@electric-sql/pglite": "^0.5.10",
     "@supabase/supabase-js": "^2.117.3",
     "yaml": "^2.9.1"
   },

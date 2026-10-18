@@ -7,7 +7,7 @@ import http from "node:http";
 import path from "node:path";
 import os from "node:os";
 import { CONFIG_DIR, findCheckout, knownCheckouts, rememberCheckout, saveCheckout, type Checkout } from "./config.ts";
-import { dbError, requireUser, sb } from "./client.ts";
+import { storeKind, dbError, requireUser, sb } from "./client.ts";
 import { deleteView, fetchInvites, fetchMembers, fetchViews, myInvites, pushRecord, saveView, type RecordRow, type TypeRow, type ViewRow } from "./db.ts";
 import { makeResolver, pull, snapshot, type Snapshot } from "./checkout.ts";
 import { normalize } from "./normalize.ts";
@@ -613,6 +613,16 @@ export async function serve(co: Checkout, opts: { port: number; host?: string })
       const origin = req.headers.origin;
       if (req.method !== "GET" && origin && origin !== `http://${h}`) throw new HttpError(403, "Forbidden origin");
 
+      // CLI processes on this computer send their queries here while serve owns the local database
+      if (url.pathname === "/api/_db" && req.method === "POST") {
+        if (req.headers["x-surface-token"] !== token || origin) throw new HttpError(403, "Forbidden");
+        let body = "";
+        for await (const c of req) body += c;
+        const { exec } = await import("./local.ts");
+        const out = await exec(JSON.parse(body));
+        res.writeHead(200, { "content-type": "application/json" });
+        return res.end(JSON.stringify(out));
+      }
       const cookies = Object.fromEntries((req.headers.cookie ?? "").split(/;\s*/).filter(Boolean).map((c) => c.split("=") as [string, string]));
       const given = url.searchParams.get("token");
       if (given) {
@@ -646,6 +656,7 @@ export async function serve(co: Checkout, opts: { port: number; host?: string })
     server.once("error", reject);
     server.listen(port, host, () => resolve());
   });
+  if (storeKind() === "local") (await import("./local.ts")).announceServer(port);
   const link = `http://127.0.0.1:${port}/?token=${token}`;
   console.log(`Surface is running for "${co.config.workspaceName ?? ws}" (${co.root})`);
   console.log(`Open: ${link}`);

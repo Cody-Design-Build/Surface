@@ -5,22 +5,24 @@ The database (Supabase) is the source of truth; the folder is a checkout. This i
 
 ## Install
 
-Copy the commands without comments: zsh treats a pasted `# …` as arguments.
-
 ```sh
-cd cli && npm install && npm link
+git clone https://github.com/Cody-Design-Build/Surface.git ~/Developer/Surface
+~/Developer/Surface/install.sh
 ```
 
-Needs Node 23.6 or newer (it runs the TypeScript source directly). `npm link` puts `surface` on your PATH; if it fails with `EACCES`, see the fallback below.
+`install.sh` gets Node 24 if yours is older than 23.6 (via fnm, nvm, mise, Homebrew or pacman if you have one; otherwise fnm into your home folder, no sudo), installs the CLI's packages, then runs `surface setup`, which does the rest:
 
-Fallback without `npm link`:
+1. installs and builds the web UI;
+2. puts `surface` on your PATH (a link in `~/.local/bin`);
+3. creates **this computer's own database** (embedded Postgres; no account, nothing leaves the machine) in `~/Library/Application Support/Surface` on a Mac or `~/.local/share/surface` on Linux;
+4. creates a first workspace and checks it out to `~/Surface`;
+5. with `--service`, starts the web UI at login (launchd on a Mac, a systemd user service on Linux).
 
-```sh
-mkdir -p ~/.local/bin
-ln -sf "$PWD/bin/surface" ~/.local/bin/surface
-echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
-source ~/.zshrc
-```
+Flags: `--dir <folder>`, `--name <workspace>`, `--service`, `--port <n>`, `--rebuild`, and `--cloud` to use the hosted database with an account instead. Re-running is safe and also updates (it pulls the code first). `surface doctor` checks everything.
+
+**A remote Linux machine:** run the same two lines over SSH, then `surface setup --service` (and `loginctl enable-linger $USER` if it should keep running after you log out). The web UI listens on that machine's 127.0.0.1 only; reach it from your own computer with `ssh -L 4317:127.0.0.1:4317 you@that-machine` and open the link `surface serve` printed (`journalctl --user -u surface | grep Open` shows it for the service).
+
+**Local and cloud stores:** `surface store` shows which one this computer uses; `surface store local|cloud` switches. Computers that were already signed in to the hosted database stay on it. Moving a workspace between stores (sync) isn't built yet.
 
 ## Start
 
