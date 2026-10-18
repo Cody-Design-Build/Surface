@@ -110,6 +110,8 @@ export interface AppState {
   records: Summary[];
   views: ViewInfo[];
   sidebar: { workspace: SidebarInfo; personal: SidebarInfo; display: "split" | "merged" };
+  /** Surface Data table folders (shared tree view "tables"); absent on older servers */
+  tables?: TablesInfo;
   members: number;
   tree: TreeNode[];
   hasSidebar: boolean;
@@ -133,6 +135,9 @@ export interface Backlink {
   type: string;
   via: string;
 }
+
+export interface TablesItem { group?: string; query?: { from?: string }; items?: TablesItem[] }
+export interface TablesInfo { rev: number | null; definition: { items: TablesItem[] } }
 
 export class ApiError extends Error {
   constructor(public status: number, message: string, public errors?: Record<string, string>) {
@@ -180,6 +185,7 @@ export const api = {
   removeView: (key: string, personal: boolean) => call<{ ok: true }>("DELETE", `/api/view/${encodeURIComponent(key)}${personal ? "?personal=1" : ""}`),
   saveSidebar: (scope: "workspace" | "personal", definition: TreeDef, baseRev?: number | null) =>
     call<{ sidebar: SidebarInfo }>("PUT", "/api/sidebar", { scope, definition, baseRev }),
+  saveTables: (definition: { items: TablesItem[] }, baseRev: number | null) => call<{ tables: TablesInfo }>("PUT", "/api/tables", { definition, baseRev }),
   saveType: (type: string, patch: { name?: string; folder?: string; display?: "document" | "fields"; fields?: FieldDef[] }) => call<{ ok: true }>("PUT", `/api/type/${type}`, patch),
   createType: (body: { key: string; name: string; display?: "document" | "fields" }) => call<{ ok: true; key: string }>("POST", "/api/types", body),
   setTypeDisplay: (type: string, display: "document" | "fields") => call<{ ok: true }>("PUT", `/api/type/${type}`, { display }),

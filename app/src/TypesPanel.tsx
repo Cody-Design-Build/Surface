@@ -1,22 +1,12 @@
 import { useEffect, useState } from "react";
 import { api, ApiError, type AppState, type FieldDef, type Kind, type TypeInfo } from "./api.ts";
 import { Icon, typeIcon } from "./Icon.tsx";
+import { FIELD_TYPES } from "./DataSchema.tsx";
 
 // Types and fields: what records look like. Owners and admins edit; others read.
 // Saves the same structure `surface field add/edit/rm` does; the database validates it.
 
-const KINDS: { kind: Kind; label: string }[] = [
-  { kind: "text", label: "Text" },
-  { kind: "number", label: "Number" },
-  { kind: "date", label: "Date" },
-  { kind: "checkbox", label: "Checkbox" },
-  { kind: "select", label: "Select" },
-  { kind: "multi_select", label: "Multi-select" },
-  { kind: "link", label: "Link to records" },
-  { kind: "url", label: "URL" },
-  { kind: "email", label: "Email" },
-  { kind: "phone", label: "Phone" },
-];
+const KINDS: { kind: Kind; label: string }[] = FIELD_TYPES;
 
 const keyOf = (name: string) =>
   name
@@ -27,7 +17,8 @@ const keyOf = (name: string) =>
 
 type Draft = Omit<FieldDef, "id"> & { id?: string; _new?: boolean };
 
-export function TypesPanel({ app, onClose, onToast, initial }: { app: AppState; onClose: () => void; onToast: (m: string) => void; initial?: string }) {
+export function TypesPanel({ app, onClose, onToast, initial, noun = "type" }: { app: AppState; onClose: () => void; onToast: (m: string) => void; initial?: string; noun?: "type" | "table" }) {
+  const Noun = noun === "table" ? "Table" : "Type";
   const isAdmin = app.role === "owner" || app.role === "admin";
   const [sel, setSel] = useState(initial ?? app.types[0]?.key);
   const [adding, setAdding] = useState(false);
@@ -35,9 +26,9 @@ export function TypesPanel({ app, onClose, onToast, initial }: { app: AppState; 
   const t = app.types.find((x) => x.key === sel);
   return (
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="panel panel-types" role="dialog" aria-label="Types">
+      <div className="panel panel-types" role="dialog" aria-label={`${Noun}s`}>
         <header className="panel-head">
-          <h3>Types and fields</h3>
+          <h3>{Noun}s and fields</h3>
           <button className="icon-btn" onClick={onClose} aria-label="Close">
             <Icon name="close" size={15} />
           </button>
@@ -57,7 +48,7 @@ export function TypesPanel({ app, onClose, onToast, initial }: { app: AppState; 
                   <input
                     className="ve-input"
                     autoFocus
-                    placeholder="Type name"
+                    placeholder={`${Noun} name`}
                     value={newName}
                     onChange={(e) => setNewName(e.target.value)}
                     onKeyDown={async (e) => {
@@ -65,7 +56,7 @@ export function TypesPanel({ app, onClose, onToast, initial }: { app: AppState; 
                       if (e.key !== "Enter" || !newName.trim()) return;
                       try {
                         const { key } = await api.createType({ key: keyOf(newName), name: newName.trim() });
-                        onToast(`Added the type ${newName.trim()}`);
+                        onToast(`Added the ${noun} ${newName.trim()}`);
                         setAdding(false);
                         setNewName("");
                         window.setTimeout(() => setSel(key), 600);
@@ -77,19 +68,19 @@ export function TypesPanel({ app, onClose, onToast, initial }: { app: AppState; 
                 </div>
               ) : (
                 <button className="ve-add" onClick={() => setAdding(true)}>
-                  <Icon name="plus" size={13} /> New type
+                  <Icon name="plus" size={13} /> New {noun}
                 </button>
               )
             ) : null}
           </nav>
-          <div className="types-body">{t ? <TypeEditor key={t.key + t.fields.map((f) => f.id).join()} app={app} t={t} readOnly={!isAdmin} onToast={onToast} /> : null}</div>
+          <div className="types-body">{t ? <TypeEditor key={t.key + t.fields.map((f) => f.id).join()} app={app} t={t} readOnly={!isAdmin} onToast={onToast} noun={noun} /> : null}</div>
         </div>
       </div>
     </div>
   );
 }
 
-function TypeEditor({ app, t, readOnly, onToast }: { app: AppState; t: TypeInfo; readOnly: boolean; onToast: (m: string) => void }) {
+function TypeEditor({ app, t, readOnly, onToast, noun }: { app: AppState; t: TypeInfo; readOnly: boolean; onToast: (m: string) => void; noun: "type" | "table" }) {
   const [name, setName] = useState(t.name);
   const [fields, setFields] = useState<Draft[]>(t.fields.map((f) => ({ ...f })));
   const [open, setOpen] = useState<number | null>(null);
@@ -101,6 +92,8 @@ function TypeEditor({ app, t, readOnly, onToast }: { app: AppState; t: TypeInfo;
 
   const set = (i: number, patch: Partial<Draft>) => setFields((fs) => fs.map((f, j) => (j === i ? { ...f, ...patch } : f)));
   const save = async () => {
+    const untargeted = fields.find((f) => f._new && f.kind === "link" && !f.target);
+    if (untargeted) { setError(`Choose which table “${untargeted.name || "the new field"}” links to.`); return; }
     if (removed.length && !confirm(`Remove ${removed.map((f) => `“${f.name}”`).join(", ")}? Values are dropped from every ${t.name.toLowerCase()} (they stay in history).`)) return;
     setBusy(true);
     try {
@@ -181,7 +174,7 @@ function TypeEditor({ app, t, readOnly, onToast }: { app: AppState; t: TypeInfo;
                   <input className="ve-input mono" disabled={readOnly} value={f.key} onChange={(e) => set(i, { key: e.target.value })} />
                 </div>
                 <div className="ve-row">
-                  <span className="ve-label">Kind</span>
+                  <span className="ve-label">Field type</span>
                   <select className="ve-input" disabled={readOnly} value={f.kind} onChange={(e) => set(i, { kind: e.target.value as Kind, ...(["select", "multi_select"].includes(e.target.value) && !f.options?.length ? { options: ["Option 1"] } : {}) })}>
                     {KINDS.map((k) => (
                       <option key={k.kind} value={k.kind}>{k.label}</option>
@@ -213,9 +206,9 @@ function TypeEditor({ app, t, readOnly, onToast }: { app: AppState; t: TypeInfo;
                 {f.kind === "link" ? (
                   <>
                     <div className="ve-row">
-                      <span className="ve-label">Links to</span>
+                      <span className="ve-label">Link to table</span>
                       <select className="ve-input" disabled={readOnly} value={f.target ?? ""} onChange={(e) => set(i, { target: e.target.value || null })}>
-                        <option value="">Any record</option>
+                        <option value="" disabled={f._new}>{f._new ? "Choose a table…" : "Any record"}</option>
                         {app.types.map((x) => (
                           <option key={x.key} value={x.key}>{x.name}</option>
                         ))}
@@ -223,7 +216,7 @@ function TypeEditor({ app, t, readOnly, onToast }: { app: AppState; t: TypeInfo;
                     </div>
                     <label className="ve-row check-row">
                       <span className="ve-label" />
-                      <input type="checkbox" disabled={readOnly} checked={!!f.multiple} onChange={(e) => set(i, { multiple: e.target.checked })} /> Allow several
+                      <input type="checkbox" disabled={readOnly} checked={!!f.multiple} onChange={(e) => set(i, { multiple: e.target.checked })} /> Allow linking to multiple records
                     </label>
                   </>
                 ) : null}
@@ -252,7 +245,7 @@ function TypeEditor({ app, t, readOnly, onToast }: { app: AppState; t: TypeInfo;
           <Icon name="plus" size={13} /> Add field
         </button>
       ) : (
-        <p className="panel-note">Owners and admins change types.</p>
+        <p className="panel-note">Owners and admins change {noun}s.</p>
       )}
       {error ? <div className="ve-error">{error}</div> : null}
       {!readOnly ? (

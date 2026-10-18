@@ -227,6 +227,13 @@ export async function serve(co: Checkout, opts: { port: number; host?: string; w
       tree: resolveTree(def, state.snap.records, state.snap.types, personal ? [...dataViews().filter((x) => !x.owner), ...dataViews().filter((x) => x.owner)] : dataViews().filter((x) => !x.owner)),
     };
   }
+  // Surface Data's table folders: the shared tree view "tables" (groups of `query: { from }` items).
+  // Organization only; types not placed in it are listed after the folders.
+  const tablesRow = () => state.views.find((x) => x.key === "tables" && !x.owner);
+  function tablesJson() {
+    const v = tablesRow();
+    return { rev: v?.rev ?? null, definition: v ? asTreeDef(v.definition) : { items: [] } };
+  }
   function viewJson(v: ViewRow) {
     return { key: v.key, name: v.name, personal: !!v.owner, rev: v.rev, definition: v.definition, updated_at: v.updated_at };
   }
@@ -335,6 +342,7 @@ export async function serve(co: Checkout, opts: { port: number; host?: string; w
         // one tree or two sections is a personal setting; alone in a workspace, one tree by default
         sidebar: { workspace: shared, personal, display: (personal.definition.display as string | undefined) ?? (memberCount > 1 ? "split" : "merged") },
         members: memberCount,
+        tables: tablesJson(),
         // older clients
         tree: shared.tree,
         hasSidebar: shared.exists,
@@ -407,6 +415,17 @@ export async function serve(co: Checkout, opts: { port: number; host?: string; w
       if (!res.ok) throw new HttpError(res.kind === "conflict" ? 409 : 422, res.message);
       await refresh("sidebar", []);
       return send(200, { sidebar: sidebarJson(personal) });
+    }
+    if (parts[0] === "tables" && m === "PUT") {
+      const b = await readBody();
+      const def = (b.definition ?? {}) as Record<string, unknown>;
+      const errors = validateTree(def, state.snap.types, []);
+      if (errors.length) throw new HttpError(422, errors.join("; "), { problems: errors });
+      if (!["owner", "admin"].includes(await myRole())) throw new HttpError(403, "Only owners and admins arrange table folders.");
+      const res = await saveView(ws, "tables", "Table folders", def, b.baseRev === undefined ? tablesRow()?.rev ?? null : b.baseRev, false);
+      if (!res.ok) throw new HttpError(res.kind === "conflict" ? 409 : 422, res.message);
+      await refresh("view", []);
+      return send(200, { tables: tablesJson() });
     }
     // ---- types
     if (parts[0] === "type" && parts[1] && m === "PUT") {

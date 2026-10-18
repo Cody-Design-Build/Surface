@@ -4,6 +4,8 @@ import { Grid, GridOptions, textOf, type Change, type LayoutPatch } from "./Grid
 import { Icon, typeIcon } from "./Icon.tsx";
 import { Properties } from "./Properties.tsx";
 import { TypesPanel } from "./TypesPanel.tsx";
+import { FieldDialog, NewTableDialog } from "./DataSchema.tsx";
+import { TableNav } from "./TableNav.tsx";
 import { ViewEditor } from "./ViewEditor.tsx";
 import { defaultsFrom, deleteRecord } from "./edits.ts";
 import { did, onUndo, redo, typingTarget, undo } from "./undo.ts";
@@ -29,6 +31,8 @@ export function DataApp() {
   const [toast, setToast] = useState("");
   const [typeSearch, setTypeSearch] = useState("");
   const [schema, setSchema] = useState(false);
+  const [newTable, setNewTable] = useState(false);
+  const [addField, setAddField] = useState(false);
   const [recordId, setRecordId] = useState<string | null>(null);
   const [workspaces, setWorkspaces] = useState<Awaited<ReturnType<typeof api.workspaces>>["workspaces"]>([]);
   const [switching, setSwitching] = useState(false);
@@ -105,25 +109,25 @@ export function DataApp() {
     </header>
     <div className="data-shell" aria-busy={switching}>
       <aside className={`data-nav ${navCollapsed ? "is-collapsed" : ""}`} aria-label="Tables">
-        <div className="data-nav-heading"><button className="icon-btn data-nav-toggle" onClick={toggleNav} aria-label={navCollapsed ? "Expand tables list" : "Collapse tables list"} aria-expanded={!navCollapsed} title={navCollapsed ? "Expand tables list" : "Collapse tables list"}><Icon name="sidebar" size={15} /></button><span>Tables</span><button className="icon-btn" onClick={() => setSchema(true)} aria-label="Create or edit types" title="New table"><Icon name="plus" size={15} /></button></div>
+        <div className="data-nav-heading"><button className="icon-btn data-nav-toggle" onClick={toggleNav} aria-label={navCollapsed ? "Expand tables list" : "Collapse tables list"} aria-expanded={!navCollapsed} title={navCollapsed ? "Expand tables list" : "Collapse tables list"}><Icon name="sidebar" size={15} /></button><span>Tables</span>{(app.role === "owner" || app.role === "admin") && <button className="icon-btn" onClick={() => setNewTable(true)} aria-label="New table" title="New table"><Icon name="plus" size={15} /></button>}</div>
         <label className="data-table-search"><Icon name="search" size={14} /><input aria-label="Find a table" placeholder="Find a table" value={typeSearch} onChange={e => setTypeSearch(e.target.value)} /></label>
-        <nav>{app.types.filter(t => t.name.toLowerCase().includes(typeSearch.toLowerCase())).map(t => <button className={`data-table-link ${type?.key === t.key ? "is-active" : ""}`} key={t.key} disabled={switching} title={t.name} onClick={() => go(t.key)}>
-          <Icon name={typeIcon(t.key)} size={16} /><span>{t.name}</span><small>{app.records.filter(r => r.type === t.key).length}</small>
-        </button>)}</nav>
-        <button className="data-manage" title="Types and fields" onClick={() => setSchema(true)}><Icon name="settings" size={15} />Types and fields</button>
+        <TableNav app={app} active={type?.key} search={typeSearch} disabled={switching} onOpen={go} onChanged={changed} toast={setToast} />
+        <button className="data-manage" title="Tables and fields" onClick={() => setSchema(true)}><Icon name="settings" size={15} />Tables and fields</button>
         <div className="data-nav-note">One workspace.<br />All your connected data.</div>
       </aside>
       <main className="data-main">
         {error && <div className="banner" role="alert">{error}<button className="btn-soft" onClick={reload}>Retry</button></div>}
         {type && !switching ? <>
-          <div className="data-table-heading"><h1>{type.name}</h1><nav className="data-view-tabs" aria-label="Saved table views"><button className={!view ? "is-active" : ""} onClick={() => go(type.key)}><Icon name="table" size={14} />All records</button>{views.map(v => <button key={`${v.personal}:${v.key}`} className={view?.key === v.key && view.personal === v.personal ? "is-active" : ""} onClick={() => go(type.key, v)}><Icon name={v.personal ? "lock" : "table"} size={13} />{v.name}</button>)}</nav><button className="data-edit-fields" onClick={() => setSchema(true)}><Icon name="sliders" size={13} />Edit fields</button></div>
+          <div className="data-table-heading"><h1>{type.name}</h1><nav className="data-view-tabs" aria-label="Saved table views"><button className={!view ? "is-active" : ""} onClick={() => go(type.key)}><Icon name="table" size={14} />All records</button>{views.map(v => <button key={`${v.personal}:${v.key}`} className={view?.key === v.key && view.personal === v.personal ? "is-active" : ""} onClick={() => go(type.key, v)}><Icon name={v.personal ? "lock" : "table"} size={13} />{v.name}</button>)}</nav>{(app.role === "owner" || app.role === "admin") && <button className="data-edit-fields" onClick={() => setAddField(true)}><Icon name="plus" size={13} />Add field</button>}<button className="data-edit-fields data-edit-fields-secondary" onClick={() => setSchema(true)}><Icon name="sliders" size={13} />Edit fields</button></div>
           {route.view && !view && <div className="banner">That view is unavailable. Showing all records in this table.</div>}
           <DataTable key={`${app.workspace.id}:${type.key}:${view?.personal}:${view?.key ?? "all"}`} app={app} type={type} initial={view} tick={tick} changed={changed} open={openRecord} toast={setToast} onView={v => { changed(); navigate(type.key, v); }} />
-        </> : <div className="data-loading">{switching ? "Opening workspace and downloading its records…" : "Create your first type to start a table."}</div>}
+        </> : <div className="data-loading">{switching ? "Opening workspace and downloading its records…" : "Create your first table to get started."}</div>}
       </main>
     </div>
     {toast && <div className="data-toast" role="status"><span>{toast}</span><button aria-label="Dismiss notification" onClick={() => setToast("")}><Icon name="close" size={14} /></button></div>}
-    {schema && <TypesPanel app={app} initial={type?.key} onClose={() => { setSchema(false); changed(); }} onToast={m => { setToast(m); changed(); }} />}
+    {schema && <TypesPanel app={app} noun="table" initial={type?.key} onClose={() => { setSchema(false); changed(); }} onToast={m => { setToast(m); changed(); }} />}
+    {newTable && <NewTableDialog app={app} onClose={() => setNewTable(false)} onCreated={key => { setNewTable(false); setToast("Table created"); changed(); window.setTimeout(() => go(key), 300); }} />}
+    {addField && type && <FieldDialog app={app} type={type} onClose={() => setAddField(false)} onSaved={f => { setAddField(false); setToast(`Added the field ${f.name}`); changed(); }} />}
     {recordId && <RecordSheet key={`${app.workspace.id}:${recordId}`} id={recordId} app={app} onDirty={dirty => { sheetDirty.current = dirty; }} close={closeSheet} open={openRecord} changed={changed} toast={setToast} />}
   </div>;
 }
