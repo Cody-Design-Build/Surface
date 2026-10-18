@@ -259,10 +259,14 @@ export function asTreeDef(definition: Record<string, unknown>): TreeDef {
     name: Open tasks
     from: task
     where: "status!=Done && job=this"
-    sort: due
+    sort: due                           # or several: "status,-due" (- = descending)
     layouts:
       - show: table
-        columns: [status, due, job]       # title always comes first
+        columns: [status, due, job]       # title always comes first; order = column order
+        widths: { status: 120, job: 220 } # column widths in pixels (title too)
+        frozen: 1                         # columns kept in view when scrolling sideways, after the title
+        group: status                     # group rows by a field
+        rows: compact                     # row height: compact | normal | tall
       - show: board
         by: status                        # a select or checkbox field
       - show: list
@@ -273,6 +277,10 @@ export const LAYOUTS = ["table", "board", "list", "calendar"] as const;
 export interface LayoutDef {
   show: (typeof LAYOUTS)[number];
   columns?: string[];
+  widths?: Record<string, number>;
+  frozen?: number;
+  group?: string;
+  rows?: "compact" | "normal" | "tall";
   by?: string;
   date?: string;
   name?: string;
@@ -301,7 +309,10 @@ export function validateDataView(def: unknown, types: TypeRow[]): string[] {
     errors.push((e as Error).message);
   }
   const known = (k: string) => ["title", "type", "folder", "parent", "id"].includes(k) || !!t?.fields.some((f) => f.key === k);
-  if (d.sort !== undefined && (typeof d.sort !== "string" || (t && !known(d.sort.replace(/^-/, ""))))) errors.push(`sort: no field "${d.sort}"`);
+  if (d.sort !== undefined) {
+    if (typeof d.sort !== "string") errors.push("sort must be a field key, or several separated by commas");
+    else if (t) for (const k of d.sort.split(",").map((x) => x.trim().replace(/^-/, ""))) if (!known(k)) errors.push(`sort: no field "${k}"`);
+  }
   if (d.layouts !== undefined) {
     if (!Array.isArray(d.layouts) || !d.layouts.length) errors.push("layouts must be a list");
     else
@@ -310,7 +321,19 @@ export function validateDataView(def: unknown, types: TypeRow[]): string[] {
         const l = raw as Record<string, unknown>;
         if (!l || typeof l !== "object") return void errors.push(`${at}: must be a set of keys`);
         if (!LAYOUTS.includes(l.show as never)) errors.push(`${at}: show must be one of ${LAYOUTS.join(", ")}`);
-        for (const k of Object.keys(l)) if (!["show", "columns", "by", "date", "name"].includes(k)) errors.push(`${at}: unknown key "${k}"`);
+        const allowed = l.show === "table" ? ["show", "columns", "widths", "frozen", "group", "rows", "name"] : ["show", "columns", "by", "date", "name"];
+        for (const k of Object.keys(l)) if (!allowed.includes(k)) errors.push(`${at}: unknown key "${k}"${["widths", "frozen", "group", "rows"].includes(k) ? " (table layouts only)" : ""}`);
+        if (l.widths !== undefined) {
+          if (!l.widths || typeof l.widths !== "object" || Array.isArray(l.widths)) errors.push(`${at}: widths must be field: pixels`);
+          else
+            for (const [k, w] of Object.entries(l.widths as Record<string, unknown>)) {
+              if (t && !known(k)) errors.push(`${at}: widths: no field "${k}"`);
+              if (typeof w !== "number" || w < 40 || w > 2000) errors.push(`${at}: widths.${k} must be a number of pixels (40–2000)`);
+            }
+        }
+        if (l.frozen !== undefined && (!Number.isInteger(l.frozen) || (l.frozen as number) < 0)) errors.push(`${at}: frozen must be a whole number of columns (0 = only the title)`);
+        if (l.group !== undefined && (typeof l.group !== "string" || (t && !known(l.group)))) errors.push(`${at}: group: no field "${l.group}"`);
+        if (l.rows !== undefined && !["compact", "normal", "tall"].includes(l.rows as string)) errors.push(`${at}: rows must be compact, normal or tall`);
         if (l.columns !== undefined) {
           if (!Array.isArray(l.columns)) errors.push(`${at}: columns must be a list`);
           else if (t) for (const c of l.columns) if (!known(String(c))) errors.push(`${at}: no field "${c}"`);

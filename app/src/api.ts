@@ -74,6 +74,11 @@ export type LayoutKind = "table" | "board" | "list" | "calendar";
 export interface LayoutDef {
   show: LayoutKind;
   columns?: string[];
+  /** table: column widths in px, columns kept in view after the title, grouping, row height */
+  widths?: Record<string, number>;
+  frozen?: number;
+  group?: string;
+  rows?: "compact" | "normal" | "tall";
   by?: string;
   date?: string;
   name?: string;

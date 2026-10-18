@@ -149,23 +149,24 @@ check("⌘Z undoes the board move", t.fields.status === "To do", t.fields.status
 await page.evaluate(() => [...document.querySelectorAll(".view-tab")].find((e) => e.textContent.includes("Table")).click());
 await sleep(400);
 const ownerCell = await page.evaluate(() => {
-  const ths = [...document.querySelectorAll(".grid th")].map((e) => e.textContent);
-  const ci = ths.findIndex((x) => x.startsWith("Owner"));
-  const row = [...document.querySelectorAll(".grid tbody tr")].find((r) => r.textContent.includes("Schedule electrician"));
-  const td = row.children[ci];
-  const r = td.getBoundingClientRect();
-  return { x: r.left + 20, y: r.top + r.height / 2, ci };
+  const h = [...document.querySelectorAll('.surface-grid [role="columnheader"]')].find((e) => e.textContent.trim().startsWith("Owner"));
+  const col = h.getAttribute("aria-colindex");
+  const row = [...document.querySelectorAll('.surface-grid [role="row"]')].find((r) => r.textContent.includes("Schedule electrician"));
+  const r = row.querySelector(`[aria-colindex="${col}"]`).getBoundingClientRect();
+  return { x: r.left + 20, y: r.top + r.height / 2 };
 });
 await page.mouse.click(ownerCell.x, ownerCell.y);
+await page.keyboard.press("Enter");
 await sleep(300);
-const editing = await page.$(".cell.is-editing input, .cell.is-editing textarea");
-check("clicking a cell edits it in place", !!editing);
+const editing = await page.$(".surface-grid .sg-input");
+check("Enter on a cell edits it in place", !!editing);
 if (editing) {
+  await page.keyboard.down("Meta");
+  await page.keyboard.press("a");
+  await page.keyboard.up("Meta");
   await page.keyboard.type("Sam");
   await page.keyboard.press("Enter");
-  await sleep(300);
-  await page.mouse.click(1300, 860);
-  await sleep(1200);
+  await sleep(1500);
   t = await getTask("Schedule electrician");
   check("cell edit saves", t.fields.owner === "Sam", String(t.fields.owner));
 }
@@ -306,8 +307,8 @@ check("view editor creates a personal view and adds it to the sidebar", !!nv && 
 if (nv) {
   console.log("   rows:", await page.evaluate(() => [...document.querySelectorAll('.node[data-scope="personal"] .node-label')].map((e) => e.textContent).join(",")), "overlay:", !!(await page.$(".overlay")), JSON.stringify(await rowBox("Unpaid budget", "personal")));
   await clickRow("Unpaid budget", "personal");
-  await page.waitForFunction(() => document.querySelector(".group-title")?.textContent === "Unpaid budget" && document.querySelectorAll(".grid tbody tr").length > 0, { timeout: 5000 }).catch(() => {});
-  const rows = await page.$$eval(".grid tbody tr", (e) => e.length);
+  await page.waitForFunction(() => document.querySelector(".group-title")?.textContent === "Unpaid budget" && document.querySelectorAll('.surface-grid [role="row"]').length > 1, { timeout: 5000 }).catch(() => {});
+  const rows = await page.$eval(".surface-grid", (e) => Number(e.getAttribute("aria-rowcount")) - 1);
   console.log("   route:", await page.evaluate(() => location.hash + " | " + document.querySelector(".group-title")?.textContent));
   check("new view opens as a table with matching rows", rows === 4, `${rows} rows`);
   await shot("v7-newview");

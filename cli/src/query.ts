@@ -77,14 +77,23 @@ export function matches(r: RecordRow, conds: Cond[], ctx: QueryCtx): boolean {
 /** Sort by a key; "-key" sorts descending. */
 export function sortRows(rows: RecordRow[], sortKey: string | undefined | null, ctx: QueryCtx): RecordRow[] {
   if (!sortKey) return rows;
-  const desc = sortKey.startsWith("-");
-  const k = sortKey.replace(/^-/, "");
-  const val = (r: RecordRow) => {
+  // "status,-due": by status (in option order), then due descending; empty values last
+  const keys = sortKey.split(",").map((k) => k.trim()).filter(Boolean).map((k) => ({ desc: k.startsWith("-"), key: k.replace(/^-/, "") }));
+  const val = (r: RecordRow, k: string) => {
     const v = valueOf(r, k, ctx);
-    return v == null ? "" : Array.isArray(v) ? v.join(", ") : typeof v === "number" ? v : String(v).toLowerCase();
+    if (v == null || v === "" || (Array.isArray(v) && !v.length)) return null;
+    const f = ctx.typeOf.get(r.type_id)?.fields.find((x) => x.key === k);
+    if (f?.kind === "select" && f.options?.includes(String(v))) return f.options.indexOf(String(v));
+    return Array.isArray(v) ? v.join(", ").toLowerCase() : typeof v === "number" ? v : String(v).toLowerCase();
   };
   return [...rows].sort((x, y) => {
-    const a = val(x), b = val(y);
-    return (a < b ? -1 : a > b ? 1 : 0) * (desc ? -1 : 1);
+    for (const { key, desc } of keys) {
+      const a = val(x, key), b = val(y, key);
+      if (a === b) continue;
+      if (a === null) return 1;
+      if (b === null) return -1;
+      return (a < b ? -1 : 1) * (desc ? -1 : 1);
+    }
+    return 0;
   });
 }
