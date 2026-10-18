@@ -19,7 +19,7 @@ import { writeAgentFiles } from "./skills.ts";
 // ---------------------------------------------------------------------------
 // Arguments
 // ---------------------------------------------------------------------------
-const BOOL = new Set(["force", "dry-run", "new", "json", "multiple", "single", "required", "optional", "deleted", "yes", "help", "all", "paths", "open", "personal"]);
+const BOOL = new Set(["force", "dry-run", "new", "json", "multiple", "single", "required", "optional", "deleted", "yes", "help", "all", "paths", "open", "personal", "no-watch", "service", "cloud", "local", "rebuild", "skip-app"]);
 
 interface Args {
   _: string[];
@@ -173,6 +173,16 @@ const commands: Record<string, Cmd> = {
   async whoami() {
     const u = await requireUser();
     console.log(u.email);
+  },
+
+  async watch() {
+    await requireUser();
+    const co = requireCheckout();
+    const { watchCheckout } = await import("./watch.ts");
+    watchCheckout(() => co);
+    console.log(`Watching ${co.root}: saves in any editor go to the database. Ctrl-C to stop.`);
+    console.log(dim("(surface serve watches too; run one or the other.)"));
+    await new Promise(() => {});
   },
 
   async setup(a) {
@@ -886,7 +896,7 @@ const commands: Record<string, Cmd> = {
     const co = requireCheckout();
     const { serve } = await import("./serve.ts");
     const port = Number(flag(a, "port") ?? 4317);
-    const { link } = await serve(co, { port });
+    const { link } = await serve(co, { port, watch: !a.flags["no-watch"] });
     if (a.flags.open) {
       const { spawn } = await import("node:child_process");
       spawn(process.platform === "darwin" ? "open" : "xdg-open", [link], { stdio: "ignore", detached: true }).unref();
@@ -997,6 +1007,8 @@ Checkout
   pull [--force]                      database → files (keeps files with unpushed edits)
   push [files] [--new] [--dry-run]    files → database: normalize, validate, check rev
                                       (also sends edited .surface/views/*.yaml)
+  watch                               push on save: send edits from any editor automatically
+                                      (surface serve does this too; --no-watch turns it off)
   status | diff [files] | check       what's changed, and whether it's valid
   skills                              regenerate AGENTS.md and agent skills
 

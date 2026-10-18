@@ -94,7 +94,7 @@ PGlite allows one process at a time.
 
 The checkout is the same in both modes, so **any Markdown editor is a surface**: Obsidian, Morrow, Bear-style editors, a terminal editor, an agent.
 
-- **Push on save (planned, both modes):** `surface serve` watches the checkout. A file saved in another editor is validated and pushed within a moment. Safe fixes are written back; invalid values are reported in the app and by `surface status`, and the file is left as written. This is the live two-way experience that SPEC §6 set aside, made simple by a single owner process. In local mode the round trip never leaves the machine.
+- **Push on save (built Oct 18, both stores):** `surface serve` watches the checkout. A file saved in another editor is validated and pushed within a moment. Safe fixes are written back; invalid values are reported in the app and by `surface status`, and the file is left as written. This is the live two-way experience that SPEC §6 set aside, made simple by a single owner process. In local mode the round trip never leaves the machine.
 - **Editors that reformat Markdown:** some apps rewrite a whole file when they save it. Morrow, for example, converts pages to its own editor format and writes them back in its own style. Surface accepts that: the push validates values and keeps the record's ID, type and revision. Whether such an app keeps Surface's front matter keys (`id`, `type`, `rev`) has to be tested per editor (§8).
 - **Other apps' "databases" are views, not truth.** Morrow defines a database as a folder of pages; Obsidian Bases query properties. Both can show Surface records because the values are plain front matter. Surface's types remain the definition, and the database refuses values that don't fit.
 

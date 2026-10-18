@@ -56,7 +56,7 @@ interface State {
   revKey: string;
 }
 
-export async function serve(co: Checkout, opts: { port: number; host?: string }) {
+export async function serve(co: Checkout, opts: { port: number; host?: string; watch?: boolean }) {
   const user = await requireUser();
   let ws = co.config.workspace;
   rememberCheckout(co);
@@ -78,7 +78,17 @@ export async function serve(co: Checkout, opts: { port: number; host?: string })
   function viewRevKey(v: ViewRow) {
     return `${v.owner ? "p:" : ""}${v.key}:${v.rev}`;
   }
+  // one checkout writer at a time: the pull loop, the file watcher and app saves share it
+  let chain: Promise<unknown> = Promise.resolve();
+  function exclusive<T>(fn: () => Promise<T>): Promise<T> {
+    const p = chain.then(fn, fn);
+    chain = p.catch(() => {});
+    return p;
+  }
   async function refresh(reason: string, ids: string[] = []) {
+    await exclusive(() => refreshNow(reason, ids));
+  }
+  async function refreshNow(reason: string, ids: string[] = []) {
     state = await load();
     try {
       // The CLI and agents write .surface/ too: re-read it so a stale in-memory copy never overwrites theirs.
@@ -130,6 +140,24 @@ export async function serve(co: Checkout, opts: { port: number; host?: string })
     }
   }, 2500).unref();
   setInterval(() => broadcast({ type: "ping" }), 25000).unref();
+
+  // Push on save: edits from any editor (Obsidian, VS Code, agents) reach the database.
+  let watcher: { close: () => void } | null = null;
+  async function startWatching() {
+    watcher?.close();
+    watcher = null;
+    if (opts.watch === false) return;
+    const { watchCheckout } = await import("./watch.ts");
+    watcher = watchCheckout(() => co, {
+      exclusive,
+      log: (l) => console.log(l),
+      onPushed: (results) => {
+        const ids = results.map((r) => r.id).filter((x): x is string => !!x);
+        setImmediate(() => refresh("files", ids).catch(() => {}));
+      },
+    });
+  }
+  await startWatching();
 
   // ------------------------------------------------------------------ helpers
   const typeOf = (id: string) => state.snap.typeMap.get(id)!;
@@ -497,6 +525,7 @@ export async function serve(co: Checkout, opts: { port: number; host?: string })
       typesKey = "";
       if (created) await pull(co);
       state = await load();
+      await startWatching();
       broadcast({ type: "changed", reason: "workspace", ids: [] });
       console.log(`Switched to "${w.name}" (${co.root})`);
       return send(200, { ok: true, root: co.root, created });
@@ -660,6 +689,7 @@ export async function serve(co: Checkout, opts: { port: number; host?: string })
   const link = `http://127.0.0.1:${port}/?token=${token}`;
   console.log(`Surface is running for "${co.config.workspaceName ?? ws}" (${co.root})`);
   console.log(`Open: ${link}`);
+  if (opts.watch !== false) console.log(`Watching ${co.root}: saves in any editor go to the database.`);
   console.log("Then install it as an app (Omarchy: Install Web App; Chrome: Install; Safari: Add to Dock).");
   return { server, link };
 }

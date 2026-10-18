@@ -46,7 +46,7 @@ Each surface has its own capabilities. The CLI knows what each can do and keeps 
 
 | Surface | Created by | Read | Edit | Changes reach the database | Live | Status |
 |---|---|---|---|---|---|---|
-| **Markdown vault**: open in Obsidian, VS Code, Zed, any text editor | `surface init` / `pull` | ✓ | ✓ text, front matter | `surface push` (push on save planned) | after pull | built |
+| **Markdown vault**: open in Obsidian, VS Code, Zed, any text editor | `surface init` / `pull` | ✓ | ✓ text, front matter | automatically on save (`surface serve` or `surface watch`), or `surface push` | after pull | built |
 | Same vault in an editor with its own format (Logseq, Morrow) | `surface init` | ✓ | ✓ | `push`, if the editor keeps `id`/`type`/`rev` | after pull | to test per editor |
 | **Web UI** | `surface serve` | ✓ | ✓ fields, text, boards | directly | ✓ | built, optional |
 | **Static artifact**: dashboard, portal, report, as plain HTML files | `surface artifact build` (planned) | ✓ | – | – (snapshot) | rebuild to refresh | planned |
