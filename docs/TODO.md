@@ -27,7 +27,7 @@ Everything still to decide, in one place. Tick an item when it's decided, and re
 ## Artifacts and sharing (Oct 17 direction)
 
 - [ ] **Write `docs/ARTIFACTS.md`** from the Oct 18 artifact draft: builder contract, profiles (document, dashboard, portal), manifest, publish adapters, the review-before-publish step, self-contained output (no outside fonts or scripts).
-- [ ] **First artifact:** project dashboard, pilot 1079 87th Street, static, published with `rsync` first (no account), Cloudflare Pages second.
+- [ ] **First artifact:** project dashboard, pilot on a real job, static, published with `rsync` first (no account), Cloudflare Pages second.
 - [ ] **Editor test matrix:** Obsidian, VS Code, Logseq, Morrow: does each keep front matter (`id`, `type`, `rev`) and typed values through a save and `surface push`?
 - [x] **Push on save** for vaults (Oct 18): `surface serve` watches by default; `surface watch` without the web UI.
 
