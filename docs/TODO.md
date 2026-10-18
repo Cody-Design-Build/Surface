@@ -14,6 +14,13 @@ Everything still to decide, in one place. Tick an item when it's decided, and re
 - [ ] **Attachments:** sync pasted images and PDFs to Supabase Storage so teammates see them; size limits, previews. (SPEC §13.3)
 - [ ] **cdb-os:** is the Notion import good enough to use, and what's missing (Tags, Documents, Special Inspections, files, assignees)? (`tools/notion-import/README.md`)
 
+## Grid and windows (Oct 18)
+
+- [x] **React Data Grid** for table views: typed editing, keyboard, copy/paste/fill, multi-sort, resize, reorder, freeze, group, row height, selection + delete. Settings saved in the view definition (`widths`, `frozen`, `group`, `rows`, multi-key `sort`); shared views need "Save for everyone". `app/qa/qa-grid.mjs` 21/21.
+- [x] **`surface open [view|record]`**: app window, starts or switches `surface serve`.
+- [ ] Grid polish: the cell menu doesn't follow the cell when the grid scrolls; per-column options in the header (hide, freeze, group by this); summary row (sum, count); column width for embeds separate from full page?
+- [ ] `surface open` on Linux under Wayland/Omarchy: confirm the app window and its icon.
+
 ## Artifacts and sharing (Oct 17 direction)
 
 - [ ] **Write `docs/ARTIFACTS.md`** from the Oct 18 artifact draft: builder contract, profiles (document, dashboard, portal), manifest, publish adapters, the review-before-publish step, self-contained output (no outside fonts or scripts).

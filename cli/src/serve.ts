@@ -526,6 +526,7 @@ export async function serve(co: Checkout, opts: { port: number; host?: string; w
       if (created) await pull(co);
       state = await load();
       await startWatching();
+      (await import("./open.ts")).announceRunning(port, co.root);
       broadcast({ type: "changed", reason: "workspace", ids: [] });
       console.log(`Switched to "${w.name}" (${co.root})`);
       return send(200, { ok: true, root: co.root, created });
@@ -686,6 +687,8 @@ export async function serve(co: Checkout, opts: { port: number; host?: string; w
     server.listen(port, host, () => resolve());
   });
   if (storeKind() === "local") (await import("./local.ts")).announceServer(port);
+  const { announceRunning } = await import("./open.ts");
+  announceRunning(port, co.root);
   const link = `http://127.0.0.1:${port}/?token=${token}`;
   console.log(`Surface is running for "${co.config.workspaceName ?? ws}" (${co.root})`);
   console.log(`Open: ${link}`);

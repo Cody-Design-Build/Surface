@@ -19,7 +19,7 @@ import { writeAgentFiles } from "./skills.ts";
 // ---------------------------------------------------------------------------
 // Arguments
 // ---------------------------------------------------------------------------
-const BOOL = new Set(["force", "dry-run", "new", "json", "multiple", "single", "required", "optional", "deleted", "yes", "help", "all", "paths", "open", "personal", "no-watch", "service", "cloud", "local", "rebuild", "skip-app"]);
+const BOOL = new Set(["force", "dry-run", "new", "json", "multiple", "single", "required", "optional", "deleted", "yes", "help", "all", "paths", "open", "personal", "no-watch", "service", "cloud", "local", "rebuild", "skip-app", "tab", "print"]);
 
 interface Args {
   _: string[];
@@ -897,11 +897,25 @@ const commands: Record<string, Cmd> = {
     const { serve } = await import("./serve.ts");
     const port = Number(flag(a, "port") ?? 4317);
     const { link } = await serve(co, { port, watch: !a.flags["no-watch"] });
-    if (a.flags.open) {
-      const { spawn } = await import("node:child_process");
-      spawn(process.platform === "darwin" ? "open" : "xdg-open", [link], { stdio: "ignore", detached: true }).unref();
-    }
+    if (a.flags.open) (await import("./open.ts")).openWindow(link, { tab: !!a.flags.tab });
     await new Promise(() => {}); // run until stopped
+  },
+
+  async open(a) {
+    await requireUser();
+    const co = requireCheckout();
+    const ref = a._.join(" ").trim();
+    let target: { view?: string; record?: string } | null = null;
+    if (ref) {
+      const views = await fetchViews(co.config.workspace);
+      const v = views.find((x) => x.key === ref) ?? views.find((x) => x.name.toLowerCase() === ref.toLowerCase());
+      if (v && !isTreeDef(v.key, v.definition)) target = { view: v.key };
+      else target = { record: (await findRecord(co.config.workspace, ref, co)).id };
+    }
+    const { openSurface } = await import("./open.ts");
+    const r = await openSurface(co, target, { port: Number(flag(a, "port") ?? 4317), tab: !!a.flags.tab, print: !!a.flags.print });
+    if (r.started) console.log(dim(`Started surface serve in the background (log: ~/.config/surface-cli/serve.log).`));
+    console.log(r.how === "printed" ? r.url : `Opened in ${r.how}.`);
   },
 
   async skills() {
@@ -1007,6 +1021,7 @@ Checkout
   pull [--force]                      database → files (keeps files with unpushed edits)
   push [files] [--new] [--dry-run]    files → database: normalize, validate, check rev
                                       (also sends edited .surface/views/*.yaml)
+  open [view|record] [--tab] [--print] show it in its own browser window (starts serve if needed)
   watch                               push on save: send edits from any editor automatically
                                       (surface serve does this too; --no-watch turns it off)
   status | diff [files] | check       what's changed, and whether it's valid
