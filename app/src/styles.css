@@ -892,6 +892,9 @@ select.ve-input { padding-right: 4px; }
 .sg-group-count { color: var(--text-muted); font-weight: 400; font-size: 12px; }
 .surface-grid [aria-level] { background: var(--bg-side); }
 .surface-grid input[type="checkbox"] { accent-color: var(--accent); }
+/* row-select column: the header (select all) and row boxes at one size, centered */
+.surface-grid .rdg-checkbox-input { inline-size: 14px; block-size: 14px; margin: auto; flex: none; }
+.surface-grid [role="columnheader"]:has(.rdg-checkbox-input), .surface-grid [role="gridcell"]:has(> .rdg-checkbox-input) { display: flex; align-items: center; justify-content: center; padding-inline: 0; }
 .sg-selection { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; font-size: 13px; color: var(--text-soft); }
 .sg-wrap .row-add { margin-top: 6px; }
 .sg-options { right: 0; left: auto; width: 240px; padding: 6px; }
