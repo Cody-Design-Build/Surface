@@ -247,6 +247,23 @@ try {
   assert([...document.querySelectorAll(".data-table-link")].some(el => el.textContent.includes(`Equipment ${suffix}`)), "table remains after folder removal");
   assert(!(await settled("/api/state")).views.some(v => v.key === "tables"), "folder layout is not listed as a data view");
   pass("tables can be organized into collapsible shared folders without changing data");
+  // Relationship map: built from typed link fields; focus mode follows links N hops across tables.
+  const { buildGraph } = await import("../src/RelationshipGraph.tsx");
+  const st = await settled("/api/state");
+  const recs = [];
+  for (const k of [orgKey, contactKey]) recs.push(...(await settled("/api/query", "POST", { from: k })).records);
+  const all = new Set([orgKey, contactKey]);
+  const g = buildGraph(st, recs, { tables: all, orphans: false, focus: null, depth: 1 });
+  assert(g.links.some(l => l.field === "Organization" && [l.source, l.target].includes(company.id)), "contact→company link is an edge");
+  assert(g.nodes.every(n => n.degree > 0), "orphans hidden by default");
+  const focused = buildGraph(st, recs, { tables: all, orphans: false, focus: company.id, depth: 1 });
+  assert(focused.nodes.some(n => n.id === company.id) && focused.nodes.every(n => n.id === company.id || focused.links.some(l => [l.source, l.target].includes(n.id))), "focus keeps only neighbours");
+  const noContacts = buildGraph(st, recs, { tables: new Set([orgKey]), orphans: true, focus: null, depth: 1 });
+  assert(noContacts.nodes.every(n => n.table === orgKey) && !noContacts.links.length, "table filter hides a table and its edges");
+  await click(document.querySelector(".data-map-link"));
+  await until(() => document.querySelector('[aria-label="Relationship map"] canvas') && location.hash === "#/map", "map opens");
+  await until(() => /\d+ records · \d+ links/.test(document.querySelector(".data-graph-sub")?.textContent ?? ""), "map counts");
+  pass("relationship map draws records and typed links, with table filter and focus depth");
   const bad = await settled(`/api/record/${contact.id}`, "PUT", { baseRev: contact.rev, fields: { status: "not-a-valid-choice" } });
   assert.equal(bad.status, 422);
   const good = await settled(`/api/record/${contact.id}`, "PUT", { baseRev: contact.rev, title: "Changed elsewhere" });
