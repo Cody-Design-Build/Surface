@@ -1,6 +1,13 @@
 # Surface
 
-Surface is a headless, mutable database foundation for humans and agents, with many ways to view and work with the same data. Think of Notion's pages, types and relationships made independent of any one interface.
+Surface is an agent- and platform-agnostic place where people keep the artifacts and Markdown files their work needs, and share any part of them with their team or with people outside it.
+
+- **Any agent:** Claude Code, Codex, Hermes, a local model or a script all work through the same CLI, files and API.
+- **Any surface:** the CLI is the core. The web UI, Obsidian, a generated HTML page or a PDF are views of the same data.
+- **Markdown and artifacts:** Markdown for text people and agents write; HTML artifacts (reports, dashboards, one-off editors) for what people need to see or act on. Both are typed records, linked to the data.
+- **Share any part:** a workspace, a view, a record or one artifact, with teammates or outside people, by link or invite, with the access set per share.
+
+Underneath is a headless, mutable database foundation: Notion's pages, types and relationships made independent of any one interface.
 
 ## Thesis
 
@@ -28,9 +35,7 @@ The database is the source of truth: Supabase today, and a local mode on one com
 
 ## The dedicated app
 
-The dedicated Surface app offers an Obsidian-like writing and browsing experience with the visual polish of Bear and Margin. It will also provide the tools to manage workspaces, teams, permissions, types, fields and relationships. A first version of the writing side is built and runs locally.
-
-The app is a first-class client of the same foundation that powers Markdown checkouts and other surfaces. It is a web app with two modes from one build: local, served by `surface serve` and installed as an app on Mac and Linux, with access to the Markdown checkout (built) and your agents (planned); and hosted, for teammates in a browser (planned). An Electron shell is planned for later.
+The CLI is the core: every capability exists there first, for people and agents. The web UI, served by `surface serve`, is a visualizer: it renders the records, views and sidebars the CLI defines, and doesn't get features of its own (SPEC §9). A hosted mode for teammates in a browser is planned.
 
 ## No lock-in
 
@@ -39,8 +44,9 @@ Records can be pulled as readable Markdown, with types and saved views in YAML. 
 ## Status
 
 - **Built:** the Supabase types engine and TypeScript CLI, including Markdown pull/push, type and field editing, queries, nesting, folder layouts and saved navigation trees.
-- **Built, first version:** the app in local mode (`surface serve`): Views sidebar, live-preview Markdown editor, typed properties, group tables, search, autosave with conflict handling and live updates.
-- **Planned:** local mode without an account, the app's hosted mode and management screens, push on save, the Obsidian plugin, and other connected surfaces.
+- **Built, first version:** the web UI in local mode (`surface serve`): sidebars, live-preview Markdown editor, typed properties, full-page and embedded views, several workspaces, search, autosave with conflict handling and live updates.
+- **Next:** artifacts as records (agents make them, any surface shows them), sharing any part with outside people, and closing the gaps where the web UI can do something the CLI can't.
+- **Planned:** local mode without an account, hosted mode, push on save, the Obsidian plugin.
 
 ## Docs
 
@@ -50,7 +56,7 @@ Records can be pulled as readable Markdown, with types and saved views in YAML. 
 - [`cli/README.md`](cli/README.md): installation, CLI usage and running the app.
 - [`app/README.md`](app/README.md): the app's code.
 - [`docs/LOCAL.md`](docs/LOCAL.md): local mode (one computer, no account) and sync mode (teams).
-- [`docs/DESIGN.md`](docs/DESIGN.md): the dedicated app's role and visual direction.
+- [`docs/DESIGN.md`](docs/DESIGN.md): the web UI's visual direction.
 - [`docs/AGENT-INTEGRATION.md`](docs/AGENT-INTEGRATION.md): how agents use the foundation and help create surfaces.
 - [`docs/OBSIDIAN.md`](docs/OBSIDIAN.md): using the foundational Markdown surface in Obsidian.
 - [`docs/research/`](docs/research/): dated technology research, not implementation decisions.

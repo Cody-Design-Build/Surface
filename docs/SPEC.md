@@ -6,9 +6,9 @@ The current design in one place. Last consolidated: Oct 16, 2026.
 > - **The database is the truth:** a mutable types engine for records, relationships, validation, permissions and history. It runs in Supabase (sync mode); a local mode on one computer with no account is leaning (`LOCAL.md`).
 > - **Agents help humans do the work.** The foundation operates independently of any one interface.
 > - **Markdown is the first and foundational surface:** `surface pull`, edit, `surface push`, with normalization and revision checks. There is no merge engine.
-> - **Surfaces range from snapshots to interactive tools:** documents, PDFs, widgets, web interfaces, artifacts and canvases, inside or outside the dedicated app.
-> - **A dedicated app:** Obsidian-like writing and browsing, Bear/Margin visual polish, and management of workspaces, teams, permissions and types. A web app in two modes (local via `surface serve`, hosted for teams); a first local version is built (§9).
-> - **Built today:** the Supabase types engine and CLI, including nesting, folder tools and saved navigation trees, and a first version of the app in local mode. Other clients and integrations are planned.
+> - **Surfaces range from snapshots to interactive tools:** documents, PDFs, widgets, web interfaces, artifacts and canvases, inside or outside the web UI.
+> - **The CLI is the core; the web UI is a visualizer** (decided Oct 17, §9). Every capability is a CLI operation first; the web UI, served by `surface serve`, renders records, views and sidebars. A first local version is built.
+> - **Built today:** the Supabase types engine and CLI, including nesting, folder tools and saved navigation trees, and a first version of the web UI (a visualizer) in local mode. Other clients and integrations are planned.
 >
 > Earlier designs with a database on every device and CRDT merging are superseded.
 
@@ -23,7 +23,14 @@ Status markers: **Decided**, **Leaning** (direction agreed, details open), **Ope
 
 ## 1. Thesis
 
-**Surface is a headless, mutable database foundation for human and agent work.** Think of Notion's pages, structured data and relationships made independent of its interface. People need three things:
+**Surface is an agent- and platform-agnostic place where people keep the artifacts and Markdown files their work needs, and share any part of them with their team or with people outside it.** (Decided Oct 17.)
+
+- **Agent-agnostic:** any agent (Claude Code, Codex, Hermes, a local model, a script) works through the same CLI, files and API. No agent is built in or preferred.
+- **Platform-agnostic:** no interface owns the work. The CLI is the core; the web UI, Obsidian, a generated HTML page or a PDF are all surfaces over it (§9).
+- **Artifacts and Markdown, as needed:** Markdown for text that people and agents write and edit; HTML artifacts for what people need to see or act on (dashboards, reports, reviews, one-off editors), following Thariq Shihipar's "unreasonable effectiveness of HTML" (claude.com/blog, May 2026). Both are kept, typed and linked to the data, not left as loose files.
+- **Share any part:** a workspace, a folder, a view, one record or one artifact, with teammates (members, roles) or with outside people (clients, subs) by a link or a guest invite. What they can do (see, comment, edit) is set per share, and the database enforces it.
+
+Underneath, Surface is a headless, mutable database foundation: Notion's pages, structured data and relationships made independent of its interface. People need three things:
 
 1. **Data:** shared, persistent records and relationships, with types and fields that users and agents can create and change as their work evolves.
 2. **Agents:** assistants that organize, query and act on the data with people, reducing the need for dedicated software for every workflow.
@@ -42,9 +49,23 @@ A surface can exist inside the Surface app or elsewhere. It can be temporary or 
 | Widget or small web interface | A focused view, potentially with live data and record editing (direction) |
 | Agent-generated artifact | An interface created for a particular question or workflow, inspired by Claude artifacts and similar experiences in Codex (direction) |
 | Canvas in Slack or another host | Put the relevant data where people already work; refresh and editing depend on the integration (direction) |
-| Dedicated Surface app | A coherent home for writing, browsing, working with records and managing the workspace (planned) |
+| Web UI | The default visualizer, served by the CLI: records, views and sidebars as the CLI defines them (built, local mode) |
 
 A generated snapshot is still a surface. Live updates and write-back are capabilities a surface may offer, not requirements for being one. External integrations and their authentication, refresh and editing mechanisms remain to be designed.
+
+### Artifacts
+
+**Decided (Oct 17), design open.** An artifact is a file an agent (or a person) makes for people to look at or use: usually one self-contained HTML page, sometimes a PDF or an image. In Surface an artifact is a record like any other, so it has a type, links (the job it's about, the view it was built from), permissions and history, and it can be shared.
+
+- **Snapshot or live.** A snapshot holds the data from when it was made (a weekly report). A live artifact reads current records through the API, and its controls save edits through the same validated write path as `surface push` (a procurement board). This replaces Thariq's "copy as JSON" button: the edit goes straight into the data, checked.
+- **Made by any agent.** The CLI gives an agent the data (`surface query --json`, a view's records with their fields and links) and stores the result (`surface artifact add`, planned). A skill teaches agents the pattern.
+- **Shown anywhere.** In the web UI, in a browser by link, or embedded in a Markdown page like a view block.
+
+Open (TODO.md): how a live artifact authenticates when opened outside the local server, sandboxing of artifact scripts, storage of large files.
+
+### Sharing
+
+**Decided (Oct 17), design open.** Anything can be shared, at any size: a workspace, a folder or sidebar section, a view, a record (with or without what's inside it), an artifact. Inside the team that's members and roles (§7a). Outside it, a share is a link or a guest invite to just that part, with see, comment or edit set per share. Shares are rows in the database; row-level security enforces them for every client, so an agent, the CLI and a link all see exactly the same thing.
 
 ### Why Markdown comes first
 
@@ -102,7 +123,7 @@ Views over properties are the same idea as Obsidian Bases. The trust in the data
 
 **Consequences (decided Oct 14):**
 
-- **The team needs a browser experience with simple onboarding.** A dedicated Surface app is also planned for writing, browsing and workspace management (§9). Obsidian and the Markdown checkout remain first-class ways to work.
+- **The team needs a browser experience with simple onboarding.** The web UI, a visualizer served by the CLI, covers browsing (§9). Obsidian and the Markdown checkout remain first-class ways to work.
 - **A central database is the truth** (Supabase; see §3 and `docs/notes/CENTRAL-DATABASE.md`). A browser has no local copy to merge.
 - **Solo, account-free, local-only use is dropped.** Everyone signs in.
 
@@ -111,7 +132,7 @@ Views over properties are the same idea as Obsidian Bases. The trust in the data
 1. **Data is the foundation.** The surface is just where a human touches it.
 2. **The database is the truth; files are a checkout.** The workspace lives in Supabase. Any machine can pull it as Markdown, read and edit it offline, and push changes back. *(Was "local-first, no account"; superseded Oct 14.)*
 3. **Files are first-class.** Every record is also a plain Markdown file. People and agents can edit those files in any editor, then push. They're also the exit: your data is always readable without Surface. **Files are real Markdown that looks good in any text editor:** no hidden IDs in the body, no HTML, no custom layout syntax. Block-style editing is a UI feature (§5b).
-4. **Many surfaces share one foundation.** The dedicated app, Markdown editors and generated interfaces are clients of the same data. Markdown stays plain and useful outside Surface; each surface chooses the interaction it needs.
+4. **Many surfaces share one foundation.** The web UI, Markdown editors and generated interfaces are clients of the same data. Markdown stays plain and useful outside Surface; each surface chooses the interaction it needs.
 5. **Fix only what's safe, report every fix, reject the rest.** On push, unambiguous fixes are applied and each one is reported, e.g. `Oct 20` → `2026-10-20`, or `done` → `Done`. Anything ambiguous, like a typo'd option, an unknown field or a stale revision, rejects that file with a clear message. Surface never quietly rewrites or discards someone's edit.
 6. **Agents are users.** Their edits travel the same paths as a person's, and get the same validation, history and permissions.
 7. **The structure can evolve.** People and agents can create and edit types, fields and relationships. The foundation supplies those capabilities independently of any particular screen or workflow.
@@ -224,31 +245,31 @@ The ledger is a product asset as well as a document. It belongs on the website: 
 
 ## 3a. Clients: one foundation, several ways in
 
-**Decided (product direction).** Headless means the data and its operations are usable independently of the dedicated app. It does not require a background daemon: the CLI talks to the database directly, and its validation and access rules protect the data. `surface serve` is optional and runs only while the app is in use.
+**Decided (product direction).** Headless means the data and its operations are usable independently of any interface. The CLI is the core; every interface is a surface over it (§9). It does not require a background daemon: the CLI talks to the database directly, and its validation and access rules protect the data. `surface serve` is optional and runs only while the app is in use.
 
 ```text
         Supabase foundation: types · records · relationships · views · history · RLS
                            authorized reads and writes
+                       surface CLI (the core)
                   ┌──────────────────┼──────────────────┐
-            surface CLI       Dedicated app       Other clients
-                  │          (first version)        (planned)
-          Markdown checkout    writing, browsing,   widgets, artifacts,
-                  │            data and team       browser interfaces,
-          editors and agents   management          external integrations
+          Markdown checkout      Web UI            Other surfaces
+                  │            (visualizer)          (planned)
+          editors and agents   renders views,      widgets, artifacts,
+                               records, sidebars   reports, canvases
 
           Read-only queries can also produce snapshot surfaces such as PDFs.
 ```
 
 - **`surface`, the command-line tool (built):** auth, workspaces, types and fields, pull/push, record operations, queries, nesting, folders, saved trees and generated agent guidance. TypeScript on Node. See `cli/README.md`.
 - **Markdown checkout (built):** the foundational surface for editors and agents. A signed-in CLI connects file edits to the database; reading and editing an existing local copy can happen offline.
-- **Dedicated Surface app (in progress, local mode):** Obsidian-like writing and browsing with Bear/Margin visual polish, plus management of workspaces, teams, permissions, types, fields and relationships (§9).
+- **Web UI (built, local mode):** a visualizer served by the CLI. It renders records, views and sidebars that the CLI defines (§9).
 - **Obsidian plugin (planned):** a Views panel (§5a), live embeds, push on save, validation messages and type-aware properties. It extends the Markdown surface.
-- **Browser experience (planned):** the dedicated app's hosted mode: team access without an install, meeting the onboarding bar in §1 (§9).
-- **Local server (built, first version):** `surface serve`, the CLI's long-running mode. It serves the dedicated app on localhost and keeps the checkout current. Commands and agent runs are planned (§9).
+- **Browser experience (planned):** the web UI's hosted mode: team access without an install, meeting the onboarding bar in §1 (§9).
+- **Local server (built, first version):** `surface serve`, the CLI's long-running mode. It serves the web UI on localhost and keeps the checkout current. Commands and agent runs are planned (§9).
 - **Generated and external surfaces (direction):** reports, widgets, artifacts, web interfaces and canvases. Formats, supported hosts, scoped access and data connections remain open.
 - **MCP (later):** an additional access path for agents that cannot run the CLI or see files.
 
-Every connected surface must use the foundation's permissions and validation. A surface with editing controls writes back to the underlying records; a snapshot only presents data as it existed when generated. Individual surfaces do not need to reproduce the full app.
+Every connected surface must use the foundation's permissions and validation. A surface with editing controls writes back to the underlying records; a snapshot only presents data as it existed when generated. Individual surfaces do not need to reproduce the web UI.
 
 ## 4. The record
 
@@ -595,7 +616,7 @@ In Surface this isn't a separate feature. It's case 1 or case 2:
 
 ## 5d. Views render the data
 
-**Decided.** Views are renderings of records: queries shown as tables, boards, calendars, galleries or other layouts. The dedicated app, a plugin or a generated surface can render them. Markdown is the foundational editable surface; the database is the truth. Rich interactive views do not need to be encoded as Markdown layouts.
+**Decided.** Views are renderings of records: queries shown as tables, boards, calendars, galleries or other layouts. The web UI, a plugin or a generated surface can render them. Markdown is the foundational editable surface; the database is the truth. Rich interactive views do not need to be encoded as Markdown layouts.
 
 - **A view = a query plus a layout:** which records, filtered, sorted and grouped, shown as a table, board, list, calendar, Gantt chart or gallery. One view can offer several layouts of the same query, as Obsidian Bases does.
 - **In planned interactive views, controls edit the underlying records:**
@@ -722,7 +743,7 @@ layouts:
 - **Edits come back through:**
   - the CLI (`surface new`, `surface set`);
   - **editing a file, then `surface push`** (from a terminal, an agent, or later the Obsidian plugin on save);
-  - later, the dedicated app, browser experience and other authorized interactive surfaces.
+  - later, the web UI, browser experience and other authorized interactive surfaces.
 - **`surface push` works like `git push`, per record:**
   - Each file carries its `rev` in front matter.
   - Push normalizes safe fixes and reports each one (§2, principle 5), validates the fields, checks the revision, and applies the change through one database function (`push_record`).
@@ -772,7 +793,7 @@ A file watcher with continuous three-way merging. It's only worth building if pu
 
 - **Everyone works against the same Supabase database.** The CLI and files sync by pull and push, with per-record revision checks.
 - **Two people editing the same record:** the second push is rejected with a clear conflict, never silently merged or lost. For a small team editing mostly different records, this is enough to start.
-- **Live updates (planned):** the dedicated app, browser experience, plugin and other connected surfaces can subscribe to database changes. The refresh behavior and latency target remain to be validated. The plugin can then pull changed records on its own.
+- **Live updates (planned):** the web UI, browser experience, plugin and other connected surfaces can subscribe to database changes. The refresh behavior and latency target remain to be validated. The plugin can then pull changed records on its own.
 - **Live co-editing in one note** (cursors, simultaneous typing) isn't planned. If it's ever needed, it's a text-collaboration layer for the body only, added on top of this model.
 - **Backup and history:** the `history` table keeps every revision. Optionally, a scheduled `surface pull` committed to a Git repository gives Git history and an always-current plain-file copy outside Supabase.
 
@@ -866,18 +887,24 @@ A file watcher with continuous three-way merging. It's only worth building if pu
 
 The login session is stored per user in `~/.config/surface-cli/`, not in the checkout.
 
-## 9. The dedicated app
+## 9. The CLI is the app; the web UI is a visualizer
 
-**Decided (product direction, Oct 14); first version built.** The dedicated Surface app is a first-class client of the headless foundation and has two connected roles:
+**Decided (Oct 17).** Surface is, at its foundation, a viewing surface over the data. Its core is the `surface` CLI: every capability (records, types, fields, views, sidebars, sharing, import) exists there first and is usable by people and agents without any interface. The web UI is a **visualizer** of that core: it renders the data and the views the CLI defines, so a person can see and navigate the work.
 
-1. **Everyday work:** an Obsidian-like experience for writing, browsing, searching, linking pages and working with typed records and views, with the visual care of Bear and Margin.
-2. **Workspace management:** tools to create and edit types, fields and relationships, and manage workspaces, teams, membership and permissions. People can understand and configure the foundation without using the terminal.
+Rules that follow:
 
-The app gives people a coherent home for their work. Other surfaces can expose a single report or workflow wherever it is useful, without needing to recreate the app. Agents can use the CLI and Markdown independently of the app.
+1. **CLI first.** A feature exists when the CLI (and the database behind it) can do it. The web UI may only render it or call the same operation. No capability lives only in the web UI.
+2. **Defined in data, not in the UI.** Views, sidebars, layouts and type display are definitions (`.surface/views/*.yaml`, type rows) that agents write. The web UI draws them; it doesn't own them.
+3. **Agents configure, the UI shows.** Creating types and fields, arranging the sidebar and building views is done by asking an agent or running a command. UI editors for these are conveniences at most, and aren't extended.
+4. **No new web UI features while this holds.** Bug fixes, and rendering of what the CLI already defines, only.
 
-### How the app runs
+What the web UI may still edit, and how far (text, field values, board drags), is an open question in `TODO.md`.
 
-**Decided (Oct 14): a web app, in two modes from one build. An Electron shell is planned for later.**
+> **Superseded (Oct 17):** the Oct 14 framing of a "dedicated Surface app" as a first-class client with two roles, everyday work (Obsidian-like) and workspace management (types, fields, teams, permissions without the terminal). It pulled the product toward an opinionated UI app; management belongs to the CLI and agents.
+
+### How the web UI runs
+
+**Decided (Oct 14): a web page, in two modes from one build. An Electron shell is planned for later.** It's served by the CLI (`surface serve`), and adds no logic of its own.
 
 | Mode | How it runs | What it can do |
 |---|---|---|
@@ -892,6 +919,8 @@ The app gives people a coherent home for their work. Other surfaces can expose a
 - **Electron (planned):** wraps the same page and starts the same server inside itself, with no interface rewrite. It comes in when one of these is needed: a one-download install for non-technical Mac users who need local files or agents; a global capture hotkey or menu-bar presence; or Mac polish beyond what installed web apps allow.
 
 ### Built so far (local mode)
+
+Built before the Oct 17 decision; kept, but not extended. The CLI equivalents are listed in `app/README.md`.
 
 `app/` (React, CodeMirror 6, Vite), served by `surface serve`:
 
@@ -921,9 +950,9 @@ view: job-tasks
 
 Not built yet: shell commands and agent runs, syncing attachments to storage.
 
-**Open:** first screens beyond the editor, the management flows (types, fields, team), and whether `surface serve` starts at login (launchd on the Mac, a systemd user service on Linux) or on demand. The earlier research in `research/APP-TECH.md` is input, not a decision to restore a Rust core, local database or CRDT engine. Supabase remains the truth.
+**Open:** whether `surface serve` starts at login (launchd on the Mac, a systemd user service on Linux) or on demand. The earlier research in `research/APP-TECH.md` is input, not a decision to restore a Rust core, local database or CRDT engine. Supabase remains the truth.
 
-**Obsidian remains a supported surface.** The planned plugin improves its checkout experience with the Views panel, composite-page embeds, push on save and validation. It is not a condition for whether Surface gets its own app.
+**Obsidian remains a supported surface.** The planned plugin improves its checkout experience with the Views panel, composite-page embeds, push on save and validation. It's another visualizer over the same core.
 
 > **Superseded:** the earlier direction that the desktop would be Obsidian-only and a dedicated app would be considered only if the plugin fell short.
 
@@ -955,7 +984,7 @@ The working checklist of everything still to decide is `TODO.md`; tick items the
 
 1. Hosting long-term for sync mode: Surface-hosted Supabase for everyone, a project per team, or self-hosted?
 1a. Local mode's open questions: `LOCAL.md` §10.
-2. When to add live updates to the dedicated app, plugin, browser experience and other connected surfaces.
+2. When to add live updates to the plugin, browser experience and other connected surfaces.
 
 **Sharing and permissions**
 
@@ -983,7 +1012,7 @@ The working checklist of everything still to decide is `TODO.md`; tick items the
 **Clients**
 
 14. Obsidian plugin scope for a first version: Views panel only, or embeds and push on save too?
-15. The dedicated app's first screens beyond the editor, its management flows, and whether `surface serve` starts at login or on demand (§9).
+15. Whether `surface serve` starts at login or on demand (§9); how much the web UI may edit (`TODO.md`).
 16. Where user workflow skills live: `.agents/skills/` or a visible `Skills/` folder (`docs/AGENT-INTEGRATION.md`).
 
 **Parked**
@@ -1001,7 +1030,7 @@ Gaps identified Oct 13 (updated Oct 14), in suggested order:
 2. ~~Permissions and sharing~~ designed (§7a) and enforced by row-level security in the MVP.
 3. **Attachments and large files** (photos, PDFs, plans): likely Supabase Storage, pulled into the checkout next to the records; size limits, previews.
 4. **Search:** full-text; possibly semantic search for agents; search across views.
-5. **History, undo and trash:** the database keeps every revision, and `surface history` / `rm` / `restore` exist. Still open: what the dedicated app, plugin and browser experience show, and undo.
+5. **History, undo and trash:** the database keeps every revision, and `surface history` / `rm` / `restore` exist. Still open: what the web UI, plugin and browser experience show, and undo.
 6. **The view system in detail:** the query language, formulas, rollups and each layout (format decided, §5d).
 7. **Templates, recurring items, reminders and notifications;** whether agents replace automations.
 8. **Security:** encryption at rest (Supabase), secrets in notes, API tokens for agents.
@@ -1030,8 +1059,8 @@ Gaps identified Oct 13 (updated Oct 14), in suggested order:
 
 **Product work also planned:**
 
-- The dedicated app: **built Oct 17**: full-page views (table, board, list, calendar, layout tabs, view editor), the §5a sidebar (workspace and personal, placed and generated, pinning, undo, display setting), Move to…, record display by type, and the Share and Settings panels. **Next:** Markdown tables, image paste, live view embeds in pages, type and field editing screens, and switching workspaces in the app.
-- The app's hosted mode for team access without an install, and live updates for other connected clients.
+- **Agents and the CLI (next):** the pillar that fell behind. Everything the web UI does must also be a CLI operation (the gaps are listed in `app/README.md`), plus a second surface that isn't the web UI (an agent producing a report or dashboard from a view) to prove the core stands alone.
+- The web UI: built Oct 17 (views, sidebars, live view blocks, workspaces). Frozen apart from fixes and rendering what the CLI defines (§9). Its hosted mode for team access comes later.
 - Additional surfaces, from generated reports to interactive widgets, artifacts and integrations in other hosts.
 
-The app's first release scope and its order relative to the Obsidian plugin and other surfaces remain open.
+

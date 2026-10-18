@@ -10,6 +10,17 @@ Everything still to decide, in one place. Tick an item when it's decided, and re
 - [ ] **Attachments:** sync pasted images and PDFs to Supabase Storage so teammates see them; size limits, previews. (SPEC §13.3)
 - [ ] **cdb-os:** is the Notion import good enough to use, and what's missing (Tags, Documents, Special Inspections, files, assignees)? (`tools/notion-import/README.md`)
 
+## Artifacts and sharing (Oct 17 direction)
+
+- [ ] **Artifact record shape:** a type with the HTML (or file) as body or attachment, links to its source view and records, snapshot vs live flag. (SPEC §1 Artifacts)
+- [ ] **Live artifacts outside the local server:** how a page opened by link reads and writes records (scoped token per share?), and script sandboxing.
+- [ ] **CLI for agents:** `surface artifact add/list/open`, and a one-call data bundle for a view (records, fields, links) to build from.
+- [ ] **A skill that teaches any agent** to make Surface artifacts, kept agent-neutral (plain CLI, no Claude-only features).
+- [ ] **Share model:** what can be shared (workspace, folder, view, record ± children, artifact), to whom (member, guest, anyone with link), with what (see, comment, edit), expiry; enforced by row-level security. (SPEC §1 Sharing, §7a)
+- [ ] **Where outside people open a share:** hosted web UI, or a plain hosted page per artifact?
+- [ ] **CLI parity:** list what the web UI can do that the CLI can't, and close each gap.
+- [ ] **Proof:** one real live artifact from cdb-os (Steiner procurement), made by an agent, shared with an outside person.
+
 ## Database and hosting
 
 - [ ] Where sync mode is hosted long term: Surface-hosted Supabase, one project per team, or self-hosted. (SPEC §12.1)
@@ -21,7 +32,7 @@ Everything still to decide, in one place. Tick an item when it's decided, and re
 ## Sharing and permissions
 
 - [ ] Member roles in detail. (SPEC §7a)
-- [ ] Guests and clients: publish a page or view to the web, or a small shared workspace? (SPEC §7a)
+- [ ] Member roles beyond owner/admin/editor/viewer, if any.
 
 ## Files
 
