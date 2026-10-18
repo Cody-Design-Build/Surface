@@ -22,7 +22,7 @@ export const MIGRATIONS_DIR = path.resolve(import.meta.dirname, "../../supabase/
 export function dataDir(): string {
   if (process.env.SURFACE_DATA_DIR) return process.env.SURFACE_DATA_DIR;
   if (process.platform === "darwin") return path.join(os.homedir(), "Library", "Application Support", "Surface");
-  return path.join(process.env.XDG_DATA_HOME ?? path.join(os.homedir(), ".local", "share"), "surface");
+  return path.join(process.env.XDG_DATA_HOME || path.join(os.homedir(), ".local", "share"), "surface");
 }
 const dbDir = () => path.join(dataDir(), "db");
 const lockFile = () => path.join(dataDir(), "db.lock");

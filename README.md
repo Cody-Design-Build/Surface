@@ -9,6 +9,31 @@ Surface is an agent- and platform-agnostic place where people keep the artifacts
 
 Underneath is a headless, mutable database foundation: Notion's pages, types and relationships made independent of any one interface.
 
+## Get started (Mac or Linux)
+
+```sh
+git clone https://github.com/Cody-Design-Build/Surface.git ~/Developer/Surface
+~/Developer/Surface/install.sh
+```
+
+That gets Node if needed, installs everything, puts `surface` on your PATH (`~/.local/bin`), creates this computer's own database and an empty workspace in `~/Surface`. No account needed. Then:
+
+```sh
+cd ~/Surface && surface serve        # the app: open the link it prints
+surface data                         # the table app (Airtable-style), on port 4318
+```
+
+**Use a team workspace from the cloud** (works offline; syncs when online):
+
+```sh
+surface login                        # your Surface account
+surface sync list                    # your cloud workspaces, with the join command for each
+surface sync join <workspace id> ~/Surface-cdb-os
+cd ~/Surface-cdb-os && surface data  # sync runs while the app is open; or `surface sync`
+```
+
+`surface doctor` checks the install; `surface help` lists every command. Re-run `install.sh` to update. Sync design: [`docs/LOCAL.md`](docs/LOCAL.md) §1b.
+
 ## Thesis
 
 People need three things:
@@ -31,7 +56,7 @@ These are product directions, not a list of integrations already built. The foun
 
 The Markdown checkout is the first and foundational surface. Markdown is the native working language of LLMs: readable text they can reason about and edit directly, and a practical bridge to human work. People can read and edit the same documents in Obsidian or any text editor. YAML front matter carries typed values and links; the body carries prose.
 
-The database is the source of truth: Supabase today, and a local mode on one computer with no account is planned ([`docs/LOCAL.md`](docs/LOCAL.md)). `surface pull` checks a workspace out as Markdown, and `surface push` sends edits back with validation and revision checks. Make a page or task in Obsidian, then use the CLI to normalize safe fixes and add it to the database. Files are an editable surface and a portable copy of the work.
+The database is the source of truth: each computer has its own (embedded Postgres), optionally synced with the cloud ([`docs/LOCAL.md`](docs/LOCAL.md)). `surface pull` checks a workspace out as Markdown, and `surface push` sends edits back with validation and revision checks. Make a page or task in Obsidian, then use the CLI to normalize safe fixes and add it to the database. Files are an editable surface and a portable copy of the work.
 
 ## The dedicated app
 

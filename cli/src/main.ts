@@ -150,7 +150,8 @@ const commands: Record<string, Cmd> = {
   async signup(a) {
     const email = flag(a, "email") ?? (await prompt("Email: "));
     const password = process.env.SURFACE_PASSWORD ?? (await prompt("Choose a password: ", true));
-    const { data, error } = await sb().auth.signUp({ email, password });
+    const { cloudClient } = await import("./client.ts");
+    const { data, error } = await cloudClient().auth.signUp({ email, password });
     if (error) throw new UserError(error.message);
     if (!data.session) console.log("Check your email to confirm the account, then run `surface login`.");
     else console.log(green(`Signed up and signed in as ${email}.`));
@@ -159,13 +160,18 @@ const commands: Record<string, Cmd> = {
   async login(a) {
     const email = flag(a, "email") ?? (await prompt("Email: "));
     const password = process.env.SURFACE_PASSWORD ?? (await prompt("Password: ", true));
-    const { error } = await sb().auth.signInWithPassword({ email, password });
+    // the account is always the cloud's, whatever this computer's store: a local-store computer
+    // signs in to sync with the cloud (`surface sync join` / `enable`)
+    const { cloudClient, storeKind } = await import("./client.ts");
+    const { error } = await cloudClient().auth.signInWithPassword({ email, password });
     if (error) throw new UserError(error.message);
     console.log(green(`Signed in as ${email}.`));
+    if (storeKind() === "local") console.log(dim("This computer keeps its own database. To get a cloud workspace here: surface sync join <workspace id> <folder>  (ids: surface sync list)"));
   },
 
   async logout() {
-    await sb().auth.signOut().catch(() => {});
+    const { cloudClient } = await import("./client.ts");
+    await cloudClient().auth.signOut().catch(() => {});
     clearSession();
     console.log("Signed out.");
   },
@@ -980,13 +986,27 @@ const commands: Record<string, Cmd> = {
       console.log("Sync is off. This workspace stays here as it is; the hub copy is untouched.");
       return;
     }
+    if (sub === "list") {
+      // cloud workspaces you belong to, and whether this computer already has each one
+      const { cloudClient } = await import("./client.ts");
+      const { data: u } = await cloudClient().auth.getUser();
+      if (!u.user) throw new UserError("Sign in first: surface login");
+      const { data, error } = await cloudClient().from("workspaces").select("id,name").order("created_at");
+      if (error) throw dbError(error);
+      const here = ((await syncCall("list")) as { workspace_id: string; hub: { workspace: string } }[]);
+      for (const w of data as { id: string; name: string }[]) {
+        const local = here.find((h) => h.hub.workspace === w.id);
+        console.log(`${w.id}  ${w.name}${local ? dim(`  (on this computer: ${local.workspace_id})`) : dim(`  → surface sync join ${w.id} ~/Surface-${w.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`)}`);
+      }
+      return;
+    }
     if (sub === "resolve") {
       if (!a._[1]) throw new UserError("Usage: surface sync resolve <record id>");
       await syncCall("resolve", await workspaceId(a), a._[1]);
       console.log("Marked resolved.");
       return;
     }
-    throw new UserError("Usage: surface sync [now | status | enable | join | disable | resolve]");
+    throw new UserError("Usage: surface sync [now | status | list | enable | join | disable | resolve]");
   },
 
   async open(a) {
@@ -1160,6 +1180,7 @@ Sync (workspaces in this computer's own database; each computer keeps a full loc
   sync join <hub workspace> <folder> [--hub URL --token T]   copy a synced workspace to this computer
   sync [now] [--all]                  sync now (\`surface serve\` also syncs every few seconds)
   sync status                         hub, last sync, changes waiting to go up, conflicts
+  sync list                           your cloud workspaces, and the join command for each
   sync resolve <record>               mark a conflict handled (after keeping one version)
   sync disable                        stop syncing; both copies stay as they are
 

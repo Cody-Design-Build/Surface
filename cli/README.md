@@ -26,7 +26,7 @@ Flags: `--dir <folder>`, `--name <workspace>`, `--service`, `--port <n>`, `--reb
 
 **Push on save:** while `surface serve` runs it watches the checkout, so a save in Obsidian, VS Code or any editor goes to the database within about half a second: normalized, validated, revision-checked. New Markdown files become records (moved into their type's folder in the type layout). Invalid values are refused and the file is left as written; a file changed in both places is reported as a conflict. Deleting a file never deletes its record. Without the web UI, `surface watch` does the same in the foreground; `surface serve --no-watch` turns it off.
 
-**Local and cloud stores:** `surface store` shows which one this computer uses; `surface store local|cloud` switches. Computers that were already signed in to the hosted database stay on it. Moving a workspace between stores (sync) isn't built yet.
+**Local and cloud stores:** `surface store` shows which one this computer uses; `surface store local|cloud` switches. With the local store, a cloud workspace syncs to this computer with `surface sync join` (see Sync below).
 
 ## Start
 
