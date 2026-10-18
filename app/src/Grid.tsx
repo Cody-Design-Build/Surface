@@ -498,7 +498,10 @@ export function GridOptions({ type, layout, onLayout, onClose, hideGroup }: { ty
   const groupable = type.fields.filter((f) => ["select", "checkbox", "link", "text", "multi_select", "date"].includes(f.kind));
   return (
     <div className="menu sg-options" ref={ref}>
-      <div className="sg-opt-head">Fields</div>
+      <div className="sg-opt-head sg-opt-head-row">
+        <span>Fields shown</span>
+        {type.fields.some((f) => !shown.includes(f.key)) ? <button className="sg-opt-link" onClick={() => onLayout({ layout: { columns: type.fields.map((f) => f.key) } })}>Show all</button> : null}
+      </div>
       {type.fields.map((f) => (
         <button key={f.key} className={`menu-item ${shown.includes(f.key) ? "is-on" : ""}`} onClick={() => toggle(f.key)}>
           {f.name}

@@ -894,9 +894,16 @@ select.ve-input { padding-right: 4px; }
 /* group rows: the row carries the background; empty cells are see-through so the header text
    (overflowing the frozen Title cell) stays readable across the row */
 .surface-grid [aria-level] > [role="gridcell"] { background: transparent; }
-.surface-grid [aria-level] { background: var(--bg-side); }
-.surface-grid [aria-level] > [role="gridcell"].rdg-cell-frozen-start { background: var(--bg-side); }
-.surface-grid [aria-level] .sg-group { position: relative; z-index: 3; background: var(--bg-side); padding-inline-end: 10px; }
+/* group rows highlight as one strip: frozen cells take the row's color (hover, selected) instead of
+   keeping their own, and selection outlines the whole row rather than one cell */
+.surface-grid .rdg-group-row:not([aria-selected="true"]) { background-color: var(--bg-side); }
+.surface-grid .rdg-group-row:not([aria-selected="true"]):hover { background-color: var(--bg-active); }
+.surface-grid .rdg-group-row[aria-selected="true"] { background-color: var(--bg-active); box-shadow: inset 0 0 0 1.5px var(--accent); }
+.surface-grid .rdg-group-row > [role="gridcell"].rdg-cell-frozen-start { background-color: inherit; }
+.surface-grid .rdg-group-row > [role="gridcell"][aria-selected="true"] { outline: none; }
+.surface-grid .rdg-group-row .sg-group { position: relative; z-index: 3; }
+.sg-opt-head-row { display: flex; align-items: center; justify-content: space-between; }
+.sg-opt-link { font-size: 11px; font-weight: 500; text-transform: none; letter-spacing: 0; color: var(--accent); }
 .sg-group-key { overflow: visible; }
 .sg-chev { display: inline-flex; color: var(--text-muted); transition: transform 0.12s; }
 .sg-chev.is-open { transform: rotate(90deg); }
