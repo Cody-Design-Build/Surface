@@ -640,13 +640,24 @@ In Surface this isn't a separate feature. It's case 1 or case 2:
   - **Bases:** a view is a YAML definition generated over notes' properties. Obsidian 1.14 (Sep 2026) added a native Kanban layout for Catalyst supporters.
   - **Surface goes further** with richer layouts (Gantt, dependencies, rollups), team sync, and agent-built views.
 
+### Core editable grid and saved views
+
+**Decided (Oct 18): Airtable-style editable grids with named, saved views are a core part of Surface.** They support everyday work with contacts, organizations, jobs, tasks and procurement alongside the Markdown editor. The existing table layout is the starting point; the richer grid below is planned.
+
+- **Preferred component: [React Data Grid](https://github.com/Comcast/react-data-grid).** Evaluate it in the existing table layout, reusing Surface's typed property editors and styling it to match the app. It is an embedded UI library running in the local web app, with no SaaS dependency; it does not replace Surface's types, storage or view model.
+- **Grid interactions:** typed cell editing, keyboard navigation, copy/paste, row selection, column resizing and reordering, frozen columns, filtering, multi-column sorting and grouping. Bulk edits use Surface's validation and revision checks and report rejected or conflicting changes.
+- **Saved configurations:** a named view remembers its query, sort, grouping, visible columns, column order and widths, frozen columns, and row height/display preferences. Several views can show the same records without making copies. Opening a record from a grid uses the same record editor.
+- **Personal and shared:** use the existing personal/workspace view ownership and permissions. Saved personal configurations follow the account between computers in sync mode; shared configurations belong to the workspace. Temporary adjustments do not silently overwrite a shared definition.
+- **One rendering path:** use the grid for full-page table views and embedded live table views, with appropriate sizing. Board, list and calendar remain other layouts of Surface views; React Data Grid supplies the grid, not those other layouts.
+- **Same data path in both database modes:** edits go through Surface's API/store and existing validation, permissions, history and conflict handling, whether the database is Supabase or the planned local store. View definitions remain exportable and editable by agents.
+
 ### Where view definitions are kept
 
 **Built for saved definitions; richer layouts planned.** A view's definition is authored content, so it must remain exportable under the no-lock-in rule (§2a):
 
 - **Each saved view lives in the database and is pulled as a readable file**, for example `.surface/views/due-this-week.yaml`, with a format marker. File edits return through push with revision checks. The sidebar tree is implemented; the richer layout sketch below is a proposal.
 - **Agents can read and write view files** (taught by the generated Surface skill), and leaving keeps them. The planned "Leave Surface" action will convert compatible views to `.base` files.
-- **Personal display state** (column widths, collapsed groups, a quick search) stays on this device and is never written.
+- **Saved display configuration** (including column widths) belongs to the named view as above. **Transient display state**, such as scroll position, temporary search and collapsed groups, can remain on the device; opening or browsing a view does not rewrite its saved definition.
 
 ### View file sketch (illustrative, not final)
 
@@ -1072,6 +1083,7 @@ Gaps identified Oct 13 (updated Oct 14), in suggested order:
 
 - **Agents and the CLI (next):** the pillar that fell behind. Everything the web UI does must also be a CLI operation (the gaps are listed in `app/README.md`), plus a second surface that isn't the web UI (an agent producing a report or dashboard from a view) to prove the core stands alone.
 - The web UI: built Oct 17 (views, sidebars, live view blocks, workspaces). Frozen apart from fixes and rendering what the CLI defines (§9). Its hosted mode for team access comes later.
+- **Core grid and saved views (decided Oct 18, §5d):** a product requirement within the existing CLI-first direction. Evaluate React Data Grid as the renderer for table views, connect typed cell edits to the existing write path, persist configuration in the same agent-editable view definitions, and verify personal/shared behavior, reload persistence and conflict handling. Extend the renderer to live table embeds. This does not change the next-work priorities above.
 - Additional surfaces, from generated reports to interactive widgets, artifacts and integrations in other hosts.
 
 
