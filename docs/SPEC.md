@@ -38,20 +38,31 @@ Underneath, Surface is a headless, mutable database foundation: Notion's pages, 
 
 The foundation holds the data and its meaning. A surface is where a human touches it. Storage, relationships, validation, permissions and history remain useful across interfaces.
 
-### What counts as a surface
+### Surfaces: what the CLI creates
 
-A surface can exist inside the Surface app or elsewhere. It can be temporary or permanent, personal or shared, and have any useful level of interactivity:
+**Decided (Oct 18).** Surface is a local-first, headless foundation: a database on each computer and a CLI. Its job is to **create viewing surfaces wherever they make sense**, and keep them connected to the data. The web UI is one optional, useful surface; nothing depends on it.
 
-| Surface | Interaction and freshness |
-|---|---|
-| Markdown checkout, opened in Obsidian or another editor | Read and edit files; pull and push connect them to the database (built) |
-| PDF report | Read-only snapshot of the data at generation time (direction) |
-| Widget or small web interface | A focused view, potentially with live data and record editing (direction) |
-| Agent-generated artifact | An interface created for a particular question or workflow, inspired by Claude artifacts and similar experiences in Codex (direction) |
-| Canvas in Slack or another host | Put the relevant data where people already work; refresh and editing depend on the integration (direction) |
-| Web UI | The default visualizer, served by the CLI: records, views and sidebars as the CLI defines them (built, local mode) |
+Each surface has its own capabilities. The CLI knows what each can do and keeps the promise it makes: what a surface can't edit, it doesn't pretend to.
 
-A generated snapshot is still a surface. Live updates and write-back are capabilities a surface may offer, not requirements for being one. External integrations and their authentication, refresh and editing mechanisms remain to be designed.
+| Surface | Created by | Read | Edit | Changes reach the database | Live | Status |
+|---|---|---|---|---|---|---|
+| **Markdown vault**: open in Obsidian, VS Code, Zed, any text editor | `surface init` / `pull` | ✓ | ✓ text, front matter | `surface push` (push on save planned) | after pull | built |
+| Same vault in an editor with its own format (Logseq, Morrow) | `surface init` | ✓ | ✓ | `push`, if the editor keeps `id`/`type`/`rev` | after pull | to test per editor |
+| **Web UI** | `surface serve` | ✓ | ✓ fields, text, boards | directly | ✓ | built, optional |
+| **Static artifact**: dashboard, portal, report, as plain HTML files | `surface artifact build` (planned) | ✓ | – | – (snapshot) | rebuild to refresh | planned |
+| **Live artifact**: the same, talking to the API | `surface artifact build --live` (later) | ✓ | what it exposes | directly, validated | ✓ | later |
+| PDF | from an artifact | ✓ | – | – | – | planned |
+| Agent | reads the vault or `surface query --json` | ✓ | ✓ | `push` / `surface set` | ✓ | built |
+| Hosted page, Slack canvas, other hosts | adapters (later) | ✓ | depends | depends | depends | direction |
+
+Rules:
+
+1. **Every surface is made by a command and can be made again.** Its definition (which records, which view, which template) is data, so an agent can rebuild it anywhere.
+2. **Write-back always goes through the same check** (`push_record`): from a file, the web UI or a live artifact, bad values are refused the same way.
+3. **A surface states its freshness.** Snapshots say when they were built; live ones say they're live.
+4. **Lock-in test:** a surface must keep working without Surface where it can. A vault is plain Markdown; a static artifact is files that run on any host. Only live surfaces need Surface running.
+
+**Publishing (planned).** `surface publish <artifact>` puts a static artifact somewhere people can open it, through swappable adapters: a folder, `rsync` to any SSH host (a Mac mini, a VPS), Cloudflare Pages, Vercel, Netlify, S3/R2. Provider settings and credentials live in config and the environment, never in the agent's head or the artifact. Every artifact carries a manifest (`artifact.yaml`: profile, data sources, built at, a fingerprint of the data, where it's published), so `list`, rebuilds and unpublishing work from files rather than a host's state. Publishing shows what data went in and flags secrets and personal details (access codes, emails, prices) before anything leaves the computer. Unguessable, unindexed links are v1 access control; per-person logins come later through the host (e.g. Cloudflare Access) or the sync layer. Detail: the artifact system draft (Oct 18), to be folded into `docs/ARTIFACTS.md`.
 
 ### Artifacts
 
