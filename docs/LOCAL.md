@@ -68,11 +68,10 @@ Open (TODO.md): the sync layer's protocol (change log, ordering, field-level mer
 
 **Commands.** `surface sync enable [--hub URL --token T]`, `sync join <hub workspace> <folder>`, `sync [now]`, `sync status`, `sync resolve <record>`, `sync disable`. Without `--hub` the hub is the cloud (after `surface login`). A computer can be a hub for others by running `surface serve --host 0.0.0.0` (or behind Tailscale); peers use its serve token.
 
-**Tested:** `cli/test/sync.ts` runs three computers' databases on one machine (a hub and two copies): enable, join, edits both ways, schema changes, links and parents, conflict copies, deletes, delete vs edit, offline edits, and serve syncing app edits on its own (10/10). The CLI suite still passes (16/16, watch 5/5).
+**Tested:** `cli/test/sync.ts` runs three computers' databases on one machine (a hub and two copies): enable, join, edits both ways, schema changes, links and parents, conflict copies, deletes, delete vs edit, offline edits, and serve syncing app edits on its own. It passes 10/10 with a Surface hub (`npm run test:sync`) and 10/10 with the cloud as hub (`npm run test:sync:cloud`: uses this computer's sign-in, creates a temporary cloud workspace and deletes it). The CLI suite still passes (16/16, watch 5/5).
 
 **Not done yet:**
 
-- **The cloud as hub is wired but untested.** It uses the same calls as a Surface hub, through the signed-in Supabase client; it needs a run against the real project with a test account.
 - **Permissions on a Surface hub:** a peer with the token acts as the hub's owner. Fine for your own computers; teams should use the cloud, where row-level security applies per member.
 - **Pull is a full `id:rev` scan** each round: fine for thousands of records, not for hundreds of thousands. A change sequence on the hub would make it incremental.
 - **Conflicts on types and views** keep the hub's version silently (no copy).

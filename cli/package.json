@@ -14,7 +14,8 @@
     "test": "node --no-warnings test/e2e.ts",
     "test:cloud": "SURFACE_STORE=cloud node --no-warnings test/e2e.ts",
     "test:watch": "node --no-warnings test/watch.ts",
-    "test:sync": "node --no-warnings test/sync.ts"
+    "test:sync": "node --no-warnings test/sync.ts",
+    "test:sync:cloud": "SYNC_HUB=cloud node --no-warnings test/sync.ts"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.10",

@@ -200,6 +200,7 @@ Every pull writes `AGENTS.md`, `.agents/skills/surface/SKILL.md` (also copied to
 npm test            # the CLI against the local store (npm run test:cloud for the hosted one)
 npm run test:watch  # push on save
 npm run test:sync   # three computers' databases syncing through a hub
+npm run test:sync:cloud  # the same, with the cloud as hub (uses your sign-in; temporary workspace)
 ```
 
 ## Database

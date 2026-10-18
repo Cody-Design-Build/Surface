@@ -3,7 +3,9 @@
 //   a, b each have a local copy of the same workspace, syncing with the hub
 // Covers: enable, join, edits both ways, a link and parent, conflict copies, deletes, delete vs edit,
 // offline edits that go up when the hub is back, and the serve loop syncing an app edit on its own.
-//   npm run test:sync
+//   npm run test:sync                the hub is another `surface serve`
+//   npm run test:sync:cloud          the hub is the hosted database, using this computer's sign-in
+//                                    (~/.config/surface-cli/session.json); creates and deletes a test workspace
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -15,6 +17,9 @@ const tmp = fs.mkdtempSync(path.join(process.env.TMPDIR ?? os.tmpdir(), "surface
 const HUB_PORT = 4390 + Math.floor(Math.random() * 50);
 const A_PORT = HUB_PORT + 60;
 const hubUrl = `http://127.0.0.1:${HUB_PORT}`;
+const CLOUD = process.env.SYNC_HUB === "cloud";
+const REAL_CFG = process.env.SURFACE_REAL_CONFIG_DIR ?? path.join(os.homedir(), ".config", "surface-cli");
+console.log(`hub: ${CLOUD ? "the cloud" : "a Surface serve"}`);
 
 type Who = "hub" | "a" | "b";
 const envOf = (who: Who) => ({
@@ -25,6 +30,19 @@ const envOf = (who: Who) => ({
   NO_COLOR: "1",
 });
 const dir = (who: Who) => path.join(tmp, who, "vault");
+/** A test computer that can reach the cloud: link (not copy) the real session, so refreshed tokens stay in one place. */
+function signIn(who: Who) {
+  const cfg = path.join(tmp, who, ".cfg");
+  fs.mkdirSync(cfg, { recursive: true });
+  fs.symlinkSync(path.join(REAL_CFG, "session.json"), path.join(cfg, "session.json"));
+  fs.writeFileSync(path.join(cfg, "store.json"), JSON.stringify({ store: "local" }));
+}
+/** Ask the cloud directly, as the real signed-in user. */
+function cloud(args: string[]): string {
+  return execFileSync(BIN, args, { cwd: tmp, env: { ...process.env, SURFACE_STORE: "cloud", SURFACE_CONFIG_DIR: REAL_CFG, NO_COLOR: "1" }, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+}
+const OFFLINE: Record<string, string> = CLOUD ? { SURFACE_SUPABASE_URL: "http://127.0.0.1:9" } : {};
+let hubWs = "";
 function run(who: Who, args: string[], opts: { cwd?: string; fail?: boolean; env?: Record<string, string> } = {}): string {
   try {
     const out = execFileSync(BIN, args, { cwd: opts.cwd ?? dir(who), env: { ...envOf(who), ...opts.env }, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
@@ -71,11 +89,19 @@ async function stop(p: ChildProcess) {
 
 try {
   // the hub: a Surface with a checkout, served so others can reach its database
-  fs.mkdirSync(path.join(tmp, "hub"), { recursive: true });
-  run("hub", ["init", dir("hub"), "--create", "Hub home"], { cwd: tmp });
-  let hub = await serveOn("hub", HUB_PORT);
-  const token = fs.readFileSync(path.join(tmp, "hub", ".cfg", "serve-token"), "utf8").trim();
-  const H = ["--hub", hubUrl, "--token", token];
+  let hub: { proc: ChildProcess } | null = null;
+  let token = "";
+  let H: string[] = [];
+  if (CLOUD) {
+    signIn("a");
+    signIn("b");
+  } else {
+    fs.mkdirSync(path.join(tmp, "hub"), { recursive: true });
+    run("hub", ["init", dir("hub"), "--create", "Hub home"], { cwd: tmp });
+    hub = await serveOn("hub", HUB_PORT);
+    token = fs.readFileSync(path.join(tmp, "hub", ".cfg", "serve-token"), "utf8").trim();
+    H = ["--hub", hubUrl, "--token", token];
+  }
 
   // computer A: a local workspace with types, a link, a parent, then sync on
   fs.mkdirSync(path.join(tmp, "a"), { recursive: true });
@@ -92,16 +118,22 @@ try {
   const en = run("a", ["sync", "enable", ...H]);
   assert.match(en, /Sync is on/);
   assert.match(en, /up, 0 down/);
-  const hubWs = /workspace ([0-9a-z]{12})/.exec(en)![1];
+  hubWs = /workspace ([0-9a-z]{12})/.exec(en)![1];
   ok("enable: a local workspace goes up to the hub");
 
   // the hub really has it (ask its database directly)
-  const hubQ = await fetch(`${hubUrl}/api/_db`, {
-    method: "POST",
-    headers: { "content-type": "application/json", "x-surface-token": token },
-    body: JSON.stringify({ kind: "select", table: "records", columns: "id,title,rev", filters: [{ col: "workspace_id", op: "eq", value: hubWs }], order: [], returning: false }),
-  }).then((r) => r.json());
-  assert.deepEqual(hubQ.data.map((r: any) => r.title).sort(), ["Kitchen", "Notes", "Order tile"]);
+  let hubTitles: string[];
+  if (CLOUD) {
+    hubTitles = ["project", "task", "page"].flatMap((t) => (JSON.parse(cloud(["query", t, "--json", "--workspace", hubWs])) as { title: string }[]).map((r) => r.title));
+  } else {
+    const hubQ = await fetch(`${hubUrl}/api/_db`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-surface-token": token },
+      body: JSON.stringify({ kind: "select", table: "records", columns: "id,title,rev", filters: [{ col: "workspace_id", op: "eq", value: hubWs }], order: [], returning: false }),
+    }).then((r) => r.json());
+    hubTitles = hubQ.data.map((r: any) => r.title);
+  }
+  assert.deepEqual(hubTitles.sort(), ["Kitchen", "Notes", "Order tile"]);
   ok("the hub holds the same records with the same ids");
 
   // computer B joins: a new local copy, with types, fields, links, parent and views
@@ -177,13 +209,13 @@ try {
   ok("delete on one computer, edit on another: the edit wins and the record comes back");
 
   // offline: the hub goes away; A keeps working; changes go up when it's back
-  await stop(hub.proc);
+  if (hub) await stop(hub.proc);
   run("a", ["set", t1, "status=done"]);
-  const off = run("a", ["sync"]);
+  const off = run("a", ["sync"], { env: OFFLINE });
   assert.match(off, /offline/);
   assert.equal(find("a", "task", "Order tile")!.fields.status, "done");
   assert.match(run("a", ["sync", "status"]), /Waiting to go up: 1 record/);
-  hub = await serveOn("hub", HUB_PORT);
+  if (!CLOUD) hub = await serveOn("hub", HUB_PORT);
   run("a", ["sync"]);
   run("b", ["sync"]);
   assert.equal(find("b", "task", "Order tile")!.fields.status, "done");
@@ -228,6 +260,14 @@ try {
   process.exitCode = 1;
 } finally {
   for (const p of procs) await stop(p).catch(() => {});
+  if (CLOUD && hubWs) {
+    try {
+      cloud(["workspace", "delete", hubWs, "--yes"]);
+      console.log(`deleted cloud test workspace ${hubWs}`);
+    } catch (e) {
+      console.error(`couldn't delete cloud test workspace ${hubWs}: ${(e as Error).message}`);
+    }
+  }
   if (!process.exitCode) fs.rmSync(tmp, { recursive: true, force: true });
   else console.error(`left ${tmp} for inspection`);
 }
