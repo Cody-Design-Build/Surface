@@ -115,8 +115,7 @@ export function DataApp() {
         {!workspaces.length && <option value={app.workspace.id}>{app.workspace.name}</option>}
         {workspaces.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
       </select></label>
-      <SyncBadge className="data-sync" tick={tick} onOpenRecord={openRecord} />
-      <span className="data-connection"><i className={online ? "is-online" : ""} />{switching ? "Opening workspace…" : online ? "Connected" : "Reconnecting…"}</span>
+      {switching ? <span className="data-connection">Opening workspace…</span> : <SyncBadge className="data-sync" tick={tick} onOpenRecord={openRecord} serverOnline={online} />}
       <span className="data-account">{app.user.email}</span>
     </header>
     <div className="data-shell" aria-busy={switching}>

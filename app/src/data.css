@@ -10,7 +10,6 @@
 .data-workspace option { color: #222; background: #fff; }
 .data-connection { display: flex; align-items: center; gap: 7px; font-size: 12px; color: #d2e6e8; margin-left: auto; }
 .data-sync { margin-left: auto; }
-.data-sync + .data-connection { margin-left: 0; }
 .data-topbar .sync-chip { background: transparent; border-color: rgba(255,255,255,.25); color: #d2e6e8; }
 .data-topbar .sync-chip.is-bad { color: #ffd2c9; border-color: rgba(255,170,150,.5); }
 .data-connection i { width: 6px; height: 6px; border-radius: 50%; background: #eccb83; }

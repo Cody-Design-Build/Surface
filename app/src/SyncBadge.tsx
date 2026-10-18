@@ -13,16 +13,21 @@ function ago(iso: string | null | undefined): string {
   return new Date(iso).toLocaleString();
 }
 
+const hubName = (s: SyncState) => (s.hub === "the cloud" ? "cloud" : "hub");
+
 export function syncLabel(s: SyncState): { text: string; tone: "ok" | "warn" | "bad" | "busy" } {
   const n = s.conflicts?.length ?? 0;
-  if (n) return { text: `${n} conflict${n > 1 ? "s" : ""}`, tone: "bad" };
-  if (s.offline) return { text: s.pending ? `Offline · ${s.pending} waiting` : "Offline", tone: "warn" };
-  if (s.error) return { text: "Sync error", tone: "bad" };
-  if (s.pending) return { text: `Syncing ${s.pending}…`, tone: "busy" };
-  return { text: "Synced", tone: "ok" };
+  const hub = hubName(s);
+  if (n) return { text: `${n} sync conflict${n > 1 ? "s" : ""}`, tone: "bad" };
+  if (s.offline) return { text: s.pending ? `No ${hub} · ${s.pending} saved here` : `No ${hub} · saved here`, tone: "warn" };
+  if (s.error) return { text: `${hub[0].toUpperCase()}${hub.slice(1)} sync error`, tone: "bad" };
+  if (s.pending) return { text: `Sending ${s.pending} to ${hub}…`, tone: "busy" };
+  return { text: `Synced to ${hub}`, tone: "ok" };
 }
 
-export function SyncBadge({ tick, onOpenRecord, className = "" }: { tick?: number; onOpenRecord?: (id: string) => void; className?: string }) {
+/** The one status indicator: the local Surface server first (if the page lost it, nothing else is
+ *  known), then cloud sync. Workspaces that don't sync show "Saved on this computer". */
+export function SyncBadge({ tick, onOpenRecord, className = "", serverOnline = true }: { tick?: number; onOpenRecord?: (id: string) => void; className?: string; serverOnline?: boolean }) {
   const [s, setS] = useState<SyncState | null>(null);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -39,7 +44,9 @@ export function SyncBadge({ tick, onOpenRecord, className = "" }: { tick?: numbe
     document.addEventListener("mousedown", close);
     return () => document.removeEventListener("mousedown", close);
   }, [open]);
-  if (!s?.enabled) return null;
+  if (!serverOnline) return <div className={`sync-badge ${className}`}><span className="sync-chip is-bad" title="This page lost its connection to surface serve on this computer. Is it still running?"><i />Surface not running · reconnecting…</span></div>;
+  if (!s) return null;
+  if (!s.enabled) return <div className={`sync-badge ${className}`}><span className="sync-chip is-ok" title="This workspace lives only on this computer. Turn on sync with `surface sync enable`."><i />Saved on this computer</span></div>;
   const { text, tone } = syncLabel(s);
   const now = async () => {
     setBusy(true);

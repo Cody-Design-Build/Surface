@@ -530,7 +530,7 @@ export function Sidebar(props: Props) {
             <Icon name="settings" size={15} />
           </button>
         </div>
-        <SyncBadge className="side-sync" onOpenRecord={openRecord} />
+        <SyncBadge className="side-sync" onOpenRecord={openRecord} serverOnline={online} />
         <button className="search-btn" onClick={openSwitcher}>
           <Icon name="search" size={15} />
           <span>Search</span>
@@ -556,10 +556,12 @@ export function Sidebar(props: Props) {
         <button className="new-btn" onClick={newPage}>
           <Icon name="plus" size={15} /> New page
         </button>
-        <span className={`sync ${online ? "" : "is-off"}`} title={online ? `Connected · ${app.root}` : "Not connected to surface serve"}>
-          <span className="dot" />
-          {online ? status : "Offline"}
-        </span>
+        {online ? (
+          <span className="sync" title={`Your edits are saved to this computer's database (${app.root})`}>
+            <span className="dot" />
+            {status}
+          </span>
+        ) : null}
       </div>
       {drag ? (
         <div className={`drag-tag ${target && !target.ok ? "is-no" : ""}`} style={{ left: drag.x + 14, top: drag.y + 10 }}>
