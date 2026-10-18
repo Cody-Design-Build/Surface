@@ -16,6 +16,7 @@ Everything still to decide, in one place. Tick an item when it's decided, and re
 
 ## Grid and windows (Oct 18)
 
+- [ ] **Standalone Airtable-style data surface (clarified Oct 18):** independent local URL/window, workspace selector, every type as a table without requiring a pre-created view, named personal/shared views and record detail editing. It uses the same Surface data/API, with optional navigation from the writing app later. The grid integrated into app views below is reusable groundwork, not completion. See SPEC §5d for the table-parity target and explicit gaps, including formulas/rollups.
 - [x] **React Data Grid** for table views: typed editing, keyboard, copy/paste/fill, multi-sort, resize, reorder, freeze, group, row height, selection + delete. Settings saved in the view definition (`widths`, `frozen`, `group`, `rows`, multi-key `sort`); shared views need "Save for everyone". `app/qa/qa-grid.mjs` 21/21.
 - [x] **`surface open [view|record]`**: app window, starts or switches `surface serve`.
 - [ ] Grid polish: the cell menu doesn't follow the cell when the grid scrolls; per-column options in the header (hide, freeze, group by this); summary row (sum, count); column width for embeds separate from full page?

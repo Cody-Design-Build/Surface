@@ -36,7 +36,7 @@ export function Value({ f, value, records, onChange, onOpen }: { f: FieldDef; va
   switch (f.kind) {
     case "checkbox":
       return (
-        <button className={`check ${value ? "on" : ""}`} onClick={() => onChange(!value)} aria-pressed={!!value}>
+        <button type="button" className={`check ${value ? "on" : ""}`} onClick={() => onChange(!value)} aria-pressed={!!value}>
           {value ? <svg viewBox="0 0 16 16" width="12" height="12"><path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg> : null}
         </button>
       );
@@ -78,7 +78,11 @@ function TextValue({ f, value, onChange }: { f: FieldDef; value: unknown; onChan
         }}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+          if (e.key === "Enter") {
+            // Commit on blur only; never let Enter implicitly submit an enclosing form with a stale value.
+            e.preventDefault();
+            (e.target as HTMLInputElement).blur();
+          }
           if (e.key === "Escape") {
             setText(value == null ? "" : String(value));
             (e.target as HTMLInputElement).blur();
@@ -116,7 +120,7 @@ export function Pill({ label, onRemove }: { label: string; onRemove?: () => void
     <span className="pill" style={{ "--h": hue(label) } as React.CSSProperties}>
       {label}
       {onRemove ? (
-        <button className="pill-x" onClick={(e) => (e.stopPropagation(), onRemove())} aria-label={`Remove ${label}`}>
+        <button type="button" className="pill-x" onClick={(e) => (e.stopPropagation(), onRemove())} aria-label={`Remove ${label}`}>
           <Icon name="close" size={10} />
         </button>
       ) : null}
@@ -136,13 +140,13 @@ function SelectValue({ options, value, multiple, onChange }: { options: string[]
   };
   return (
     <div className="select" ref={ref}>
-      <button className="select-btn" onClick={() => setOpen(!open)}>
+      <button type="button" className="select-btn" onClick={() => setOpen(!open)}>
         {value.length ? value.map((v) => <Pill key={v} label={v} />) : <span className="empty">Empty</span>}
       </button>
       {open ? (
         <div className="menu">
           {options.map((o) => (
-            <button key={o} className={`menu-item ${value.includes(o) ? "is-on" : ""}`} onClick={() => toggle(o)}>
+            <button type="button" key={o} className={`menu-item ${value.includes(o) ? "is-on" : ""}`} onClick={() => toggle(o)}>
               <Pill label={o} />
               {value.includes(o) ? <span className="tick">✓</span> : null}
             </button>
@@ -168,16 +172,16 @@ function LinkValue({ f, value, records, onChange, onOpen }: { f: FieldDef; value
     <div className="links" ref={ref}>
       {ids.map((id) => (
         <span className="link-chip" key={id}>
-          <button className="link-chip-label" onClick={() => onOpen(id)}>
+          <button type="button" className="link-chip-label" onClick={() => onOpen(id)}>
             {byId.get(id)?.title ?? id}
           </button>
-          <button className="pill-x" onClick={() => set(ids.filter((x) => x !== id))} aria-label="Remove link">
+          <button type="button" className="pill-x" onClick={() => set(ids.filter((x) => x !== id))} aria-label="Remove link">
             <Icon name="close" size={10} />
           </button>
         </span>
       ))}
       {f.multiple || !ids.length ? (
-        <button className="link-add" onClick={() => setOpen(true)}>
+        <button type="button" className="link-add" onClick={() => setOpen(true)}>
           {ids.length ? <Icon name="plus" size={12} /> : <span className="empty">Empty</span>}
         </button>
       ) : null}
@@ -185,6 +189,7 @@ function LinkValue({ f, value, records, onChange, onOpen }: { f: FieldDef; value
         <div className="menu menu-search">
           <input autoFocus className="menu-input" placeholder={`Link a ${f.target ?? "record"}…`} value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => {
             if (e.key === "Escape") setOpen(false);
+            if (e.key === "Enter") e.preventDefault();
             if (e.key === "Enter" && candidates[0]) {
               set(f.multiple ? [...ids, candidates[0].id] : [candidates[0].id]);
               setOpen(false);
@@ -192,7 +197,7 @@ function LinkValue({ f, value, records, onChange, onOpen }: { f: FieldDef; value
             }
           }} />
           {candidates.map((r) => (
-            <button key={r.id} className="menu-item" onClick={() => {
+            <button type="button" key={r.id} className="menu-item" onClick={() => {
               set(f.multiple ? [...ids, r.id] : [r.id]);
               setOpen(false);
               setQ("");

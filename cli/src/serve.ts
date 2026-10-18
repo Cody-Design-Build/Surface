@@ -56,7 +56,7 @@ interface State {
   revKey: string;
 }
 
-export async function serve(co: Checkout, opts: { port: number; host?: string; watch?: boolean }) {
+export async function serve(co: Checkout, opts: { port: number; host?: string; watch?: boolean; surface?: "data" }) {
   const user = await requireUser();
   let ws = co.config.workspace;
   rememberCheckout(co);
@@ -623,6 +623,7 @@ export async function serve(co: Checkout, opts: { port: number; host?: string; w
       return res.end("The app isn't built yet. Run `npm install && npm run build` in the app/ folder.");
     }
     let rel = decodeURIComponent(url.pathname).replace(/^\/+/, "");
+    if (rel === "data" || rel === "data/" || (!rel && opts.surface === "data")) rel = "data.html";
     let file = path.join(APP_DIR, rel);
     if (!file.startsWith(APP_DIR) || !rel || !fs.existsSync(file) || fs.statSync(file).isDirectory()) file = path.join(APP_DIR, "index.html");
     const ext = path.extname(file);
@@ -659,7 +660,7 @@ export async function serve(co: Checkout, opts: { port: number; host?: string; w
         if (given !== token) throw new HttpError(403, "Wrong token");
         res.writeHead(302, {
           "set-cookie": `surface_token=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=31536000`,
-          location: "/",
+          location: opts.surface === "data" || url.pathname === "/data/" || url.pathname === "/data.html" ? "/data/" : "/",
         });
         return res.end();
       }
@@ -688,8 +689,8 @@ export async function serve(co: Checkout, opts: { port: number; host?: string; w
   });
   if (storeKind() === "local") (await import("./local.ts")).announceServer(port);
   const { announceRunning } = await import("./open.ts");
-  announceRunning(port, co.root);
-  const link = `http://127.0.0.1:${port}/?token=${token}`;
+  if (opts.surface !== "data") announceRunning(port, co.root);
+  const link = `http://127.0.0.1:${port}/${opts.surface === "data" ? "data/" : ""}?token=${token}`;
   console.log(`Surface is running for "${co.config.workspaceName ?? ws}" (${co.root})`);
   console.log(`Open: ${link}`);
   if (opts.watch !== false) console.log(`Watching ${co.root}: saves in any editor go to the database.`);

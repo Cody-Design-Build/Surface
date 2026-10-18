@@ -901,6 +901,16 @@ const commands: Record<string, Cmd> = {
     await new Promise(() => {}); // run until stopped
   },
 
+  async data(a) {
+    await requireUser();
+    const co = requireCheckout();
+    const { serve } = await import("./serve.ts");
+    const port = Number(flag(a, "port") ?? 4318);
+    const { link } = await serve(co, { port, watch: !a.flags["no-watch"], surface: "data" });
+    if (a.flags.open) (await import("./open.ts")).openWindow(link, { tab: !!a.flags.tab });
+    await new Promise(() => {});
+  },
+
   async open(a) {
     await requireUser();
     const co = requireCheckout();
@@ -1052,6 +1062,7 @@ Folders (where files live, in the folder layout)
 
 App
   serve [--port 4317] [--open]        run the Surface app for this checkout on http://127.0.0.1
+  data [--port 4318] [--open]         run the standalone editable data surface
 
 Sidebars (organization only: arranging never changes records)
   tree [--personal] [--paths] [--json] show the workspace sidebar, or your own

@@ -39,9 +39,11 @@ interface Props {
   onClose: () => void;
   onSaved: (v: ViewInfo) => void;
   onDeleted?: () => void;
+  /** Adjust a table's draft filters without writing a saved view. */
+  onApply?: (definition: ViewDef) => void;
 }
 
-export function ViewEditor({ app, initial, start, onClose, onSaved, onDeleted }: Props) {
+export function ViewEditor({ app, initial, start, onClose, onSaved, onDeleted, onApply }: Props) {
   const [name, setName] = useState(initial?.name ?? "");
   const [from, setFrom] = useState(initial?.definition.from ?? start?.from ?? app.types.find((t) => t.key !== "page")?.key ?? "page");
   const [conds, setConds] = useState<Cond[]>(parse(initial?.definition.where ?? start?.where));
@@ -75,7 +77,7 @@ export function ViewEditor({ app, initial, start, onClose, onSaved, onDeleted }:
       ...(join(conds) ? { where: join(conds) } : {}),
       ...(sort ? { sort } : {}),
       layouts: layouts.map((l) => {
-        const out: LayoutDef = { show: l.show };
+        const out: LayoutDef = { ...l };
         if (l.name) out.name = l.name;
         if (l.show === "table" && l.columns?.length) out.columns = l.columns;
         if (l.show === "board") out.by = l.by;
@@ -84,6 +86,7 @@ export function ViewEditor({ app, initial, start, onClose, onSaved, onDeleted }:
       }),
     };
     try {
+      if (onApply) { onApply(definition); return; }
       const n = name.trim() || `${type?.name ?? from}s`;
       const res = initial ? await api.saveView(initial.key, initial.personal, { name: n, definition, baseRev: initial.rev }) : await api.createView({ name: n, definition, personal });
       onSaved(res.view);
@@ -130,21 +133,21 @@ export function ViewEditor({ app, initial, start, onClose, onSaved, onDeleted }:
 
   return (
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="panel" role="dialog" aria-label={initial ? "Edit view" : "New view"}>
+      <div className="panel" role="dialog" aria-label={onApply ? "Filter table" : initial ? "Edit view" : "New view"}>
         <header className="panel-head">
-          <h3>{initial ? "Edit view" : "New view"}</h3>
+          <h3>{onApply ? "Filter table" : initial ? "Edit view" : "New view"}</h3>
           <button className="icon-btn" onClick={onClose} aria-label="Close">
             <Icon name="close" size={15} />
           </button>
         </header>
         <div className="panel-body">
-          <label className="ve-row">
+          {!onApply && <label className="ve-row">
             <span className="ve-label">Name</span>
             <input className="ve-input" autoFocus value={name} placeholder={`${type?.name ?? "Record"}s`} onChange={(e) => setName(e.target.value)} />
-          </label>
+          </label>}
           <label className="ve-row">
             <span className="ve-label">Shows</span>
-            <select className="ve-input" value={from} disabled={!!initial && false} onChange={(e) => (setFrom(e.target.value), setConds([]), setSort(""), setLayouts([{ show: "table" }]))}>
+            <select className="ve-input" value={from} disabled={!!onApply} onChange={(e) => (setFrom(e.target.value), setConds([]), setSort(""), setLayouts([{ show: "table" }]))}>
               {app.types.map((t) => (
                 <option key={t.key} value={t.key}>{t.name} records</option>
               ))}
@@ -191,7 +194,7 @@ export function ViewEditor({ app, initial, start, onClose, onSaved, onDeleted }:
               </select>
             </span>
           </label>
-          <div className="ve-row ve-top">
+          <div className="ve-row ve-top" hidden={!!onApply} style={onApply ? { display: "none" } : undefined}>
             <span className="ve-label">Layouts</span>
             <div className="ve-stack">
               {layouts.map((l, i) => (
@@ -276,7 +279,7 @@ export function ViewEditor({ app, initial, start, onClose, onSaved, onDeleted }:
           <span className="panel-actions">
             <button className="btn-soft" onClick={onClose}>Cancel</button>
             <button className="btn-primary" disabled={busy} onClick={save}>
-              {initial ? "Save" : "Create view"}
+              {onApply ? "Apply filters" : initial ? "Save" : "Create view"}
             </button>
           </span>
         </footer>
