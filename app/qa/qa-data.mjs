@@ -152,7 +152,7 @@ try {
   await click([...document.querySelectorAll(".data-footer button")].find(el => el.textContent.includes("Refresh")));
   await until(() => [...document.querySelectorAll(".data-view-tabs button")].some(el => el.textContent.includes(`Top one ${suffix}`)), "limited view listed");
   await act(async () => { location.hash = `/table/${contactKey}?view=${limited.key}&personal=1`; await pause(60); });
-  await until(() => document.querySelector(".data-view-label")?.textContent.includes(`Top one ${suffix}`), "limited view open");
+  await until(() => document.querySelector(".data-view-tabs .is-active")?.textContent.includes(`Top one ${suffix}`), "limited view open");
   await until(() => document.querySelector(".data-footer")?.textContent.startsWith("1 record"), "limit applied");
   pass("saved view row limit is honored");
   await click(document.querySelector('[aria-label="Create or edit types"]'));

@@ -32,6 +32,8 @@ export function DataApp() {
   const [recordId, setRecordId] = useState<string | null>(null);
   const [workspaces, setWorkspaces] = useState<Awaited<ReturnType<typeof api.workspaces>>["workspaces"]>([]);
   const [switching, setSwitching] = useState(false);
+  const [navCollapsed, setNavCollapsed] = useState(() => localStorage.getItem("surface-data-nav") === "collapsed");
+  const toggleNav = () => setNavCollapsed(c => { localStorage.setItem("surface-data-nav", c ? "open" : "collapsed"); return !c; });
   const sheetDirty = useRef(false);
   const reload = useCallback(async () => {
     try { setApp(await api.state()); setError(""); }
@@ -102,20 +104,19 @@ export function DataApp() {
       <span className="data-account">{app.user.email}</span>
     </header>
     <div className="data-shell" aria-busy={switching}>
-      <aside className="data-nav" aria-label="Tables">
-        <div className="data-nav-heading"><span>Tables</span><button className="icon-btn" onClick={() => setSchema(true)} aria-label="Create or edit types"><Icon name="plus" size={15} /></button></div>
+      <aside className={`data-nav ${navCollapsed ? "is-collapsed" : ""}`} aria-label="Tables">
+        <div className="data-nav-heading"><button className="icon-btn data-nav-toggle" onClick={toggleNav} aria-label={navCollapsed ? "Expand tables list" : "Collapse tables list"} aria-expanded={!navCollapsed} title={navCollapsed ? "Expand tables list" : "Collapse tables list"}><Icon name="sidebar" size={15} /></button><span>Tables</span><button className="icon-btn" onClick={() => setSchema(true)} aria-label="Create or edit types" title="New table"><Icon name="plus" size={15} /></button></div>
         <label className="data-table-search"><Icon name="search" size={14} /><input aria-label="Find a table" placeholder="Find a table" value={typeSearch} onChange={e => setTypeSearch(e.target.value)} /></label>
-        <nav>{app.types.filter(t => t.name.toLowerCase().includes(typeSearch.toLowerCase())).map(t => <button className={`data-table-link ${type?.key === t.key ? "is-active" : ""}`} key={t.key} disabled={switching} onClick={() => go(t.key)}>
+        <nav>{app.types.filter(t => t.name.toLowerCase().includes(typeSearch.toLowerCase())).map(t => <button className={`data-table-link ${type?.key === t.key ? "is-active" : ""}`} key={t.key} disabled={switching} title={t.name} onClick={() => go(t.key)}>
           <Icon name={typeIcon(t.key)} size={16} /><span>{t.name}</span><small>{app.records.filter(r => r.type === t.key).length}</small>
         </button>)}</nav>
-        <button className="data-manage" onClick={() => setSchema(true)}><Icon name="settings" size={15} />Types and fields</button>
+        <button className="data-manage" title="Types and fields" onClick={() => setSchema(true)}><Icon name="settings" size={15} />Types and fields</button>
         <div className="data-nav-note">One workspace.<br />All your connected data.</div>
       </aside>
       <main className="data-main">
         {error && <div className="banner" role="alert">{error}<button className="btn-soft" onClick={reload}>Retry</button></div>}
         {type && !switching ? <>
-          <div className="data-table-heading"><div><span className="data-eyebrow">{app.workspace.name} / Table</span><h1>{type.name}</h1></div><button className="btn-soft" onClick={() => setSchema(true)}><Icon name="sliders" size={14} />Edit fields</button></div>
-          <nav className="data-view-tabs" aria-label="Saved table views"><button className={!view ? "is-active" : ""} onClick={() => go(type.key)}><Icon name="table" size={14} />All records</button>{views.map(v => <button key={`${v.personal}:${v.key}`} className={view?.key === v.key && view.personal === v.personal ? "is-active" : ""} onClick={() => go(type.key, v)}><Icon name={v.personal ? "lock" : "table"} size={13} />{v.name}</button>)}</nav>
+          <div className="data-table-heading"><h1>{type.name}</h1><nav className="data-view-tabs" aria-label="Saved table views"><button className={!view ? "is-active" : ""} onClick={() => go(type.key)}><Icon name="table" size={14} />All records</button>{views.map(v => <button key={`${v.personal}:${v.key}`} className={view?.key === v.key && view.personal === v.personal ? "is-active" : ""} onClick={() => go(type.key, v)}><Icon name={v.personal ? "lock" : "table"} size={13} />{v.name}</button>)}</nav><button className="data-edit-fields" onClick={() => setSchema(true)}><Icon name="sliders" size={13} />Edit fields</button></div>
           {route.view && !view && <div className="banner">That view is unavailable. Showing all records in this table.</div>}
           <DataTable key={`${app.workspace.id}:${type.key}:${view?.personal}:${view?.key ?? "all"}`} app={app} type={type} initial={view} tick={tick} changed={changed} open={openRecord} toast={setToast} onView={v => { changed(); navigate(type.key, v); }} />
         </> : <div className="data-loading">{switching ? "Opening workspace and downloading its records…" : "Create your first type to start a table."}</div>}
@@ -210,7 +211,7 @@ function DataTable({ app, type, initial, tick, changed, open, toast, onView }: {
   const editDefinition: ViewInfo = saved ? { ...saved, definition } : { key: "", name: "", personal: true, rev: 0, updated_at: "", definition };
   return <section className="data-table-content" aria-label={`${type.name} records`}>
     <div className="data-toolbar">
-      <div className="data-toolbar-start"><span className="data-view-label"><Icon name="table" size={14} />{saved?.name ?? "All records"}</span><span className="data-scope">{saved ? saved.personal ? "Personal" : "Shared" : "Default view"}</span></div>
+      <div className="data-toolbar-start">{saved && <span className="data-scope">{saved.personal ? "Personal" : "Shared"}</span>}{definition.where && <div className="data-filter-summary"><Icon name="sliders" size={12} /><code title={definition.where}>{definition.where}</code><button onClick={() => { setDefinition(d => ({ ...d, where: undefined })); setDirty(true); }} aria-label="Clear filters"><Icon name="close" size={11} /></button></div>}</div>
       <div className="data-toolbar-actions">
         <button className="btn-soft" onClick={() => setEditingView(true)}><Icon name="sliders" size={14} />Filters</button>
         <div className="data-options"><button className={`btn-soft ${options ? "is-on" : ""}`} onClick={() => setOptions(!options)}><Icon name="eye" size={14} />Columns & grouping</button>{options && <GridOptions type={type} layout={layout} onLayout={patchLayout} onClose={() => setOptions(false)} />}</div>
@@ -220,7 +221,6 @@ function DataTable({ app, type, initial, tick, changed, open, toast, onView }: {
         {canWrite && <button className="btn-primary" disabled={saving} onClick={addRow}><Icon name="plus" size={14} />Add record</button>}
       </div>
     </div>
-    {definition.where && <div className="data-filter-summary"><Icon name="sliders" size={12} /><span>Filtered view</span><code>{definition.where}</code><button onClick={() => { setDefinition(d => ({ ...d, where: undefined })); setDirty(true); }}>Clear filters</button></div>}
     {error && <div className="banner" role="alert">{error}<button className="btn-soft" onClick={load}>Reload records</button></div>}
     {loading ? <div className="data-loading">Loading records…</div> : <div className="data-grid-area"><Grid app={app} type={type} layout={layout} sort={definition.sort} rows={visibleRows} readOnly={!canWrite || saving} open={open} onLayout={patchLayout} onChanges={saveChanges} onDelete={removeRows} addRow={addRow} />{!rows.length && !error && <div className="data-empty">No records yet. {canWrite ? "Add a record to start using this table." : "This table is empty."}</div>}</div>}
     <footer className="data-footer"><span>{visibleRows.length.toLocaleString()} {visibleRows.length === 1 ? "record" : "records"}{search ? ` of ${rows.length}` : ""}</span><span>{saving ? "Saving…" : !canWrite ? "Read only" : dirty ? "View settings have unsaved changes" : "Changes save to your workspace"}</span><button onClick={() => void undo()}><Icon name="undo" size={13} />Undo</button><button onClick={() => { changed(); void load(); }}><Icon name="refresh" size={13} />Refresh</button></footer>
