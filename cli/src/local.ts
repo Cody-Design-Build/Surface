@@ -43,6 +43,69 @@ grant execute on function auth.jwt() to authenticated;
 create schema if not exists surface_local;
 create table if not exists surface_local.migrations (name text primary key, applied_at timestamptz not null default now());
 `;
+
+// Sync bookkeeping (local only, never in the shared migrations). A workspace with a row in
+// sync_workspaces syncs with a hub (the cloud, or another Surface server). Every local change to
+// its records, types and views marks a sync_rows entry dirty; the sync loop (sync.ts) pushes dirty
+// rows and pulls the hub's changes. Writes made by the sync loop itself set surface.applying so
+// they don't bounce back.
+const SYNC = `
+create table if not exists surface_local.sync_workspaces (
+  workspace_id text primary key,
+  hub          jsonb not null,
+  enabled_at   timestamptz not null default now(),
+  last_sync    timestamptz,
+  last_error   text
+);
+create table if not exists surface_local.sync_rows (
+  workspace_id text not null,
+  kind         text not null check (kind in ('record','type','view')),
+  key          text not null,             -- record id, type id, or view key ('p:' prefix = personal)
+  synced       text,                      -- hub version last matched: record rev, type updated_at, view rev
+  dirty        boolean not null default true,
+  hub_id       text,                      -- types: the hub's id for this type
+  primary key (workspace_id, kind, key)
+);
+alter table surface_local.sync_rows add column if not exists hub_id text;
+create table if not exists surface_local.sync_conflicts (
+  id           bigint generated always as identity primary key,
+  workspace_id text not null,
+  record_id    text not null,
+  copy_id      text,
+  title        text,
+  at           timestamptz not null default now(),
+  resolved     boolean not null default false
+);
+create or replace function surface_local.track() returns trigger language plpgsql security definer as $f$
+declare
+  ws text; k text; oldk text;
+begin
+  if current_setting('surface.applying', true) = 'on' then return null; end if;
+  if tg_op = 'DELETE' then ws := old.workspace_id; else ws := new.workspace_id; end if;
+  if not exists (select 1 from surface_local.sync_workspaces where workspace_id = ws) then return null; end if;
+  if tg_argv[0] = 'view' then
+    if tg_op <> 'INSERT' then oldk := case when old.owner is null then '' else 'p:' end || old.key; end if;
+    if tg_op <> 'DELETE' then k := case when new.owner is null then '' else 'p:' end || new.key; end if;
+  else
+    if tg_op = 'DELETE' then k := old.id; else k := new.id; end if;
+  end if;
+  if oldk is not null and oldk is distinct from k then
+    insert into surface_local.sync_rows (workspace_id, kind, key, dirty) values (ws, tg_argv[0], oldk, true)
+      on conflict (workspace_id, kind, key) do update set dirty = true;
+  end if;
+  if k is not null then
+    insert into surface_local.sync_rows (workspace_id, kind, key, dirty) values (ws, tg_argv[0], k, true)
+      on conflict (workspace_id, kind, key) do update set dirty = true;
+  end if;
+  return null;
+end $f$;
+create or replace trigger surface_sync_track after insert or update or delete on public.records
+  for each row execute function surface_local.track('record');
+create or replace trigger surface_sync_track after insert or update or delete on public.types
+  for each row execute function surface_local.track('type');
+create or replace trigger surface_sync_track after insert or update or delete on public.views
+  for each row execute function surface_local.track('view');
+`;
 // Supabase grants the API roles access to public tables by default.
 const GRANTS = `
 grant usage on schema public to authenticated;
@@ -126,6 +189,7 @@ async function ensure(): Promise<void> {
   db = new PGlite(dbDir());
   await db.exec(SHIM);
   await migrate(db);
+  await db.exec(SYNC);
   let u = (await db.query<{ id: string; email: string }>("select id::text, email from auth.users order by created_at limit 1")).rows[0];
   if (!u) {
     u = { id: crypto.randomUUID(), email: `${os.userInfo().username}@${os.hostname().split(".")[0] || "this-computer"}` };
@@ -367,6 +431,39 @@ async function run(d: Desc): Promise<Result> {
 // One query at a time on the single connection.
 let queue: Promise<unknown> = Promise.resolve();
 
+type Tx = Parameters<Parameters<PG["transaction"]>[0]>[0];
+
+/** True when this process has the local database open (not handing queries to `surface serve`). */
+export async function ownsLocal(): Promise<boolean> {
+  await ensure();
+  return !!db;
+}
+/** The port of the `surface serve` that owns the database, if another process does. */
+export async function localOwnerPort(): Promise<number | null> {
+  await ensure();
+  return remote?.port ?? null;
+}
+export function localUser() {
+  return me;
+}
+
+/** Run fn in one transaction as the database owner (row-level security off), for the sync loop.
+ *  `applying` marks the writes as coming from the hub so they aren't tracked as local changes. */
+export async function localAdmin<T>(fn: (tx: Tx) => Promise<T>, opts: { applying?: boolean } = {}): Promise<T> {
+  await ensure();
+  if (!db) throw new Error("surface serve owns the local database; ask it instead");
+  const pg = db;
+  const p = queue.then(() =>
+    pg.transaction(async (tx) => {
+      await tx.exec("set local role none");
+      if (opts.applying) await tx.exec("select set_config('surface.applying', 'on', true)");
+      return fn(tx);
+    }),
+  );
+  queue = p.catch(() => {});
+  return clean(await p) as T;
+}
+
 /** Run a descriptor here (if this process owns the database) or in `surface serve`. */
 export async function exec(d: Desc): Promise<Result> {
   try {
@@ -399,8 +496,10 @@ export async function exec(d: Desc): Promise<Result> {
 // ---------------------------------------------------------------------------
 class Query implements PromiseLike<Result> {
   d: Extract<Desc, { table: string }>;
-  constructor(table: string) {
+  run: (d: Desc) => Promise<Result>;
+  constructor(table: string, run: (d: Desc) => Promise<Result> = exec) {
     this.d = { kind: "select", table, filters: [], order: [], returning: false };
+    this.run = run;
   }
   select(columns = "*") {
     if (this.d.kind === "select") this.d.columns = columns;
@@ -461,11 +560,40 @@ class Query implements PromiseLike<Result> {
     return this;
   }
   then<A = Result, B = never>(ok?: ((v: Result) => A | PromiseLike<A>) | null, bad?: ((e: unknown) => B | PromiseLike<B>) | null) {
-    return exec(this.d).then(ok, bad);
+    return this.run(this.d).then(ok, bad);
   }
 }
 
 const noAccount = { data: null, error: { message: "This computer uses the local store: no account needed. To use a hosted workspace, run `surface setup --cloud`." } };
+
+/** A client for another Surface's database, reached through its `surface serve` (a sync hub). */
+export function remoteClient(url: string, token: string) {
+  const base = url.replace(/\/+$/, "");
+  const run = async (d: Desc): Promise<Result> => {
+    try {
+      const res = await fetch(`${base}/api/_db`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-surface-token": token },
+        body: JSON.stringify(d),
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (!res.ok) return { data: null, error: { message: `hub answered ${res.status}: ${(await res.text()).slice(0, 200)}`, code: "hub" } };
+      return (await res.json()) as Result;
+    } catch (e) {
+      return { data: null, error: { message: `offline: can't reach ${base} (${(e as Error).message})`, code: "offline" } };
+    }
+  };
+  return {
+    from: (table: string) => new Query(table, run),
+    rpc: (fn: string, args: Row = {}) => run({ kind: "rpc", fn, args }),
+    auth: {
+      async getUser() {
+        const r = await run({ kind: "user" });
+        return r.error ? { data: { user: null }, error: r.error } : { data: { user: r.data as { id: string; email: string } }, error: null };
+      },
+    },
+  };
+}
 
 export function localClient() {
   return {

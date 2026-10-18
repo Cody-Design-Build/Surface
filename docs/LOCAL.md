@@ -42,6 +42,43 @@ This revisits part of the Oct 14 decision (a database on every device was droppe
 
 Open (TODO.md): the sync layer's protocol (change log, ordering, field-level merge), what's hosted (our Supabase, any Postgres, self-hosted), identity when a local-only user later joins a team, and whether local Postgres for a shared workspace is a full copy or only what the person can see.
 
+## 1b. Decided (Oct 18): a local database per computer, optional sync record by record
+
+**Decided and built.** This replaces the open questions in §1a with the simplest version that works offline.
+
+- **The database is always the truth, and it's the one on this computer.** Every surface reads and writes the local database: the Markdown checkout, the app, the data view, agents. Files are generated from it and pushed back into it, as before.
+- **Sync is optional, per workspace.** Off: the workspace lives only here. On: the local database trades changes with a **hub**, the cloud or another computer running `surface serve`. Each computer that syncs holds a full copy.
+- **Same rules everywhere.** Local and hub run the same migrations, so a record is the same row (same id, same validation) in both. Sync copies rows; it doesn't translate them. Types and fields are matched by key, since field ids can differ between copies.
+
+**How a change is detected.** A trigger on `records`, `types` and `views` marks a row dirty in `surface_local.sync_rows` whenever it changes, whoever changed it: the app, a file save, the CLI, an agent. Nothing diffs files or compares databases. The bookkeeping is local only (`surface_local` schema), never in the shared migrations.
+
+**How a push works,** for each dirty record (parents and link targets first):
+
+1. Call `push_record` on the hub with the record's values and `base_rev` = the hub revision this copy last matched.
+2. Same revision on the hub: applied. Remember the new hub revision; the row is clean.
+3. Newer revision on the hub (someone else changed it): **no merge.** Your version is kept as a new record, "Title (conflict 2026-10-18 14:05)", the original takes the hub's version, and the conflict is listed in `surface sync status` until you `surface sync resolve` it.
+4. New records are created on the hub with the same id. Deletes are soft (`deleted_at`) and push the same way.
+5. **Delete vs edit:** an edit always beats a delete, on either side; the record comes back.
+
+**How a pull works.** Compare the hub's `id:rev` list with the revisions last synced; fetch what changed and write it locally. Records with unpushed local changes are skipped (their push decides). Writes from the hub set `surface.applying`, so the trigger doesn't mark them dirty and they don't bounce back.
+
+**Types and views.** Type and field changes sync both ways; if a type changed on both sides, the hub's version wins. Views sync by key (personal views as yours); a clash keeps the hub's version.
+
+**When it runs.** `surface serve` (which owns the local database) syncs every 5 seconds, right after a local change, and when the hub comes back. `surface sync` runs a round by hand. Offline, every surface keeps working on the local database; dirty rows wait.
+
+**Commands.** `surface sync enable [--hub URL --token T]`, `sync join <hub workspace> <folder>`, `sync [now]`, `sync status`, `sync resolve <record>`, `sync disable`. Without `--hub` the hub is the cloud (after `surface login`). A computer can be a hub for others by running `surface serve --host 0.0.0.0` (or behind Tailscale); peers use its serve token.
+
+**Tested:** `cli/test/sync.ts` runs three computers' databases on one machine (a hub and two copies): enable, join, edits both ways, schema changes, links and parents, conflict copies, deletes, delete vs edit, offline edits, and serve syncing app edits on its own (10/10). The CLI suite still passes (16/16, watch 5/5).
+
+**Not done yet:**
+
+- **The cloud as hub is wired but untested.** It uses the same calls as a Surface hub, through the signed-in Supabase client; it needs a run against the real project with a test account.
+- **Permissions on a Surface hub:** a peer with the token acts as the hub's owner. Fine for your own computers; teams should use the cloud, where row-level security applies per member.
+- **Pull is a full `id:rev` scan** each round: fine for thousands of records, not for hundreds of thousands. A change sequence on the hub would make it incremental.
+- **Conflicts on types and views** keep the hub's version silently (no copy).
+- The app doesn't show sync state yet (last sync, offline, conflicts); it's in `surface sync status`.
+- Attachments don't sync.
+
 ## 2. The database engine
 
 **Leaning: PGlite** (Postgres compiled to WebAssembly, run inside Node), pending the spike in §8.

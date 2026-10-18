@@ -66,6 +66,7 @@ export async function serve(co: Checkout, opts: { port: number; host?: string; w
 
   let state: State = await load();
   const clients = new Set<http.ServerResponse>();
+  let syncLoop: { kick: () => void } | null = null;
 
   async function load(): Promise<State> {
     const snap = await snapshot(co);
@@ -102,6 +103,7 @@ export async function serve(co: Checkout, opts: { port: number; host?: string; w
       console.error("pull failed:", (e as Error).message);
     }
     broadcast({ type: "changed", reason, ids });
+    if (reason !== "sync") syncLoop?.kick(); // a local change: send it up soon
   }
   function broadcast(msg: unknown) {
     const line = `data: ${JSON.stringify(msg)}\n\n`;
@@ -658,7 +660,10 @@ export async function serve(co: Checkout, opts: { port: number; host?: string; w
     try {
       // Only answer requests addressed to this machine (blocks DNS rebinding).
       const h = (req.headers.host ?? "").toLowerCase();
-      if (h !== `127.0.0.1:${port}` && h !== `localhost:${port}`) throw new HttpError(403, "Forbidden host");
+      // Other computers syncing with this one (a hub) call /api/_db with the token header; browsers
+      // can't send that header cross-site without a preflight we never answer.
+      const hubCall = (url.pathname === "/api/_db" || url.pathname === "/api/_sync") && typeof req.headers["x-surface-token"] === "string" && !req.headers.origin;
+      if (!hubCall && h !== `127.0.0.1:${port}` && h !== `localhost:${port}`) throw new HttpError(403, "Forbidden host");
       // Writes must come from the app itself.
       const origin = req.headers.origin;
       if (req.method !== "GET" && origin && origin !== `http://${h}`) throw new HttpError(403, "Forbidden origin");
@@ -672,6 +677,22 @@ export async function serve(co: Checkout, opts: { port: number; host?: string; w
         const out = await exec(JSON.parse(body));
         res.writeHead(200, { "content-type": "application/json" });
         return res.end(JSON.stringify(out));
+      }
+      // Sync commands from CLI processes on this computer (serve owns the database)
+      if (url.pathname === "/api/_sync" && req.method === "POST") {
+        if (req.headers["x-surface-token"] !== token || origin || storeKind() !== "local") throw new HttpError(403, "Forbidden");
+        let body = "";
+        for await (const c of req) body += c;
+        const { op, args } = JSON.parse(body) as { op: string; args: unknown[] };
+        const { runSyncOp } = await import("./sync.ts");
+        res.writeHead(200, { "content-type": "application/json" });
+        try {
+          const ok = await runSyncOp(op, args ?? []);
+          if (op !== "status" && op !== "list") void refresh("sync");
+          return res.end(JSON.stringify({ ok: ok ?? null }));
+        } catch (e) {
+          return res.end(JSON.stringify({ error: (e as Error).message }));
+        }
       }
       const cookies = Object.fromEntries((req.headers.cookie ?? "").split(/;\s*/).filter(Boolean).map((c) => c.split("=") as [string, string]));
       const given = url.searchParams.get("token");
@@ -706,7 +727,14 @@ export async function serve(co: Checkout, opts: { port: number; host?: string; w
     server.once("error", reject);
     server.listen(port, host, () => resolve());
   });
-  if (storeKind() === "local") (await import("./local.ts")).announceServer(port);
+  if (storeKind() === "local") {
+    (await import("./local.ts")).announceServer(port);
+    // Workspaces with sync on trade changes with their hub in the background.
+    if (process.env.SURFACE_SYNC !== "off") {
+      const { startSyncLoop } = await import("./sync.ts");
+      syncLoop = startSyncLoop(() => void refresh("sync"), Number(process.env.SURFACE_SYNC_MS ?? 5000));
+    }
+  }
   const { announceRunning } = await import("./open.ts");
   if (opts.surface !== "data") announceRunning(port, co.root);
   const link = `http://127.0.0.1:${port}/${opts.surface === "data" ? "data/" : ""}?token=${token}`;

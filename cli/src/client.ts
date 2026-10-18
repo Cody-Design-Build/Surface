@@ -53,6 +53,16 @@ export function sb(): SupabaseClient {
   return client;
 }
 
+/** The hosted database, whatever this computer's store is (a sync hub for local workspaces). */
+let cloud: SupabaseClient | null = null;
+export function cloudClient(): SupabaseClient {
+  if (storeKind() === "cloud") return sb();
+  cloud ??= createClient(SUPABASE_URL, PUBLISHABLE_KEY, {
+    auth: { storage: fileStorage, persistSession: true, autoRefreshToken: true, detectSessionInUrl: false },
+  });
+  return cloud;
+}
+
 export async function requireUser() {
   const { data, error } = await sb().auth.getUser();
   if (error || !data.user) {

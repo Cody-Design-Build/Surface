@@ -177,6 +177,19 @@ items:
 
 Every record in the tree also shows the records nested under it (`nested: false` turns that off).
 
+## Sync
+
+Each computer keeps its own database (the local store), and every surface (files, the app, the data view, agents) reads and writes it. Sync is optional, per workspace: the local database trades changes with a hub, record by record. Offline you keep working; changes go up when the hub is back.
+
+```sh
+surface sync enable                           # hub: the cloud (after `surface login`)
+surface sync enable --hub http://mini:4317 --token …   # hub: another computer running `surface serve --host 0.0.0.0`
+surface sync join <hub workspace id> ~/Team   # on another computer: a local copy of it
+surface sync status                           # last sync, changes waiting, conflicts
+```
+
+`surface serve` syncs every few seconds and right after a local change. If the same record changed on two computers, the hub's version wins and yours is kept as a new record, "Title (conflict …)". Keep one, delete the other, then `surface sync resolve <record>`. Design: `docs/LOCAL.md` §1b.
+
 ## For agents
 
 Every pull writes `AGENTS.md`, `.agents/skills/surface/SKILL.md` (also copied to `.claude/skills/`), and a read-only copy of each type in `.surface/types/`.
@@ -184,7 +197,9 @@ Every pull writes `AGENTS.md`, `.agents/skills/surface/SKILL.md` (also copied to
 ## Test
 
 ```sh
-npm test
+npm test            # the CLI against the local store (npm run test:cloud for the hosted one)
+npm run test:watch  # push on save
+npm run test:sync   # three computers' databases syncing through a hub
 ```
 
 ## Database

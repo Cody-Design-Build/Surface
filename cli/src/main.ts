@@ -896,7 +896,8 @@ const commands: Record<string, Cmd> = {
     const co = requireCheckout();
     const { serve } = await import("./serve.ts");
     const port = Number(flag(a, "port") ?? 4317);
-    const { link } = await serve(co, { port, watch: !a.flags["no-watch"] });
+    const host = flag(a, "host");
+    const { link } = await serve(co, { port, host, watch: !a.flags["no-watch"] });
     if (a.flags.open) (await import("./open.ts")).openWindow(link, { tab: !!a.flags.tab });
     await new Promise(() => {}); // run until stopped
   },
@@ -909,6 +910,83 @@ const commands: Record<string, Cmd> = {
     const { link } = await serve(co, { port, watch: !a.flags["no-watch"], surface: "data" });
     if (a.flags.open) (await import("./open.ts")).openWindow(link, { tab: !!a.flags.tab });
     await new Promise(() => {});
+  },
+
+  async sync(a) {
+    const { storeKind } = await import("./client.ts");
+    if (storeKind() !== "local") throw new UserError("Sync is for workspaces in this computer's own database. This computer uses the cloud store directly (`surface store local` to switch).");
+    await requireUser();
+    const { syncCall } = await import("./sync.ts");
+    const sub = a._[0] ?? "now";
+    const hubFrom = async () => {
+      const url = flag(a, "hub");
+      if (url) {
+        const token = flag(a, "token") ?? process.env.SURFACE_HUB_TOKEN;
+        if (!token) throw new UserError("--hub needs --token (the hub's ~/.config/surface-cli/serve-token) or SURFACE_HUB_TOKEN.");
+        return { kind: "surface", url, token };
+      }
+      const { cloudClient } = await import("./client.ts");
+      const { data } = await cloudClient().auth.getUser();
+      if (!data.user) throw new UserError("Sign in to the cloud first (`surface login`), or sync with another Surface: --hub http://host:4317 --token …");
+      return { kind: "cloud" };
+    };
+    const print = (reps: { workspace: string; pushed: number; pulled: number; conflicts: string[]; errors: string[]; offline?: boolean }[]) => {
+      if (!reps.length) console.log("No workspaces sync on this computer. Turn it on with `surface sync enable`.");
+      for (const r of reps) {
+        if (r.offline) console.log(yellow(`${r.workspace}: offline; changes stay here and go up when the hub is back.`));
+        else console.log(`${r.workspace}: ${green(`${r.pushed} up, ${r.pulled} down`)}${r.conflicts.length ? yellow(`, ${r.conflicts.length} conflict(s)`) : ""}`);
+        for (const c of r.conflicts) console.log(yellow(`  conflict: ${c}`));
+        for (const e of r.errors) console.log(red(`  ${e}`));
+      }
+    };
+    if (sub === "now") {
+      const co = findCheckout();
+      const reps = await syncCall("now", flag(a, "all") ? undefined : co?.config.workspace);
+      print(reps);
+      await refreshCheckout(co);
+      return;
+    }
+    if (sub === "status") {
+      const ws = await workspaceId(a);
+      const s = await syncCall("status", ws);
+      if (!s) return void console.log("Sync is off for this workspace. Turn it on with `surface sync enable`.");
+      const pending = Object.entries(s.pending as Record<string, number>).map(([k, n]) => `${n} ${k}(s)`).join(", ");
+      console.log(`Hub: ${s.hub.kind === "cloud" ? "the cloud" : s.hub.url} (workspace ${s.hub.workspace})`);
+      console.log(`Last sync: ${s.last_sync ?? "never"}${s.last_error ? red(`  (${s.last_error})`) : ""}`);
+      console.log(`Waiting to go up: ${pending || "nothing"}`);
+      for (const c of s.conflicts) console.log(yellow(`Conflict: "${c.title}" — your version is record ${c.copy_id}. Keep one, delete the other, then \`surface sync resolve ${c.record_id}\`.`));
+      return;
+    }
+    if (sub === "enable") {
+      const ws = await workspaceId(a);
+      const hub = { ...(await hubFrom()), workspace: flag(a, "hub-workspace") };
+      const saved = await syncCall("enable", ws, hub);
+      console.log(green(`Sync is on: this workspace now syncs with ${saved.kind === "cloud" ? "the cloud" : saved.url} (workspace ${saved.workspace}).`));
+      print(await syncCall("now", ws));
+      return;
+    }
+    if (sub === "join") {
+      const hubWs = a._[1];
+      const dir = a._[2];
+      if (!hubWs || !dir) throw new UserError("Usage: surface sync join <hub workspace id> <folder> [--hub URL --token T]");
+      const hub = { ...(await hubFrom()), workspace: hubWs };
+      const ws = await syncCall("join", hub, flag(a, "name"));
+      print(await syncCall("now", ws));
+      await commands.init({ _: [dir], flags: { workspace: ws, ...(flag(a, "layout") ? { layout: flag(a, "layout")! } : {}) } });
+      return;
+    }
+    if (sub === "disable") {
+      await syncCall("disable", await workspaceId(a));
+      console.log("Sync is off. This workspace stays here as it is; the hub copy is untouched.");
+      return;
+    }
+    if (sub === "resolve") {
+      if (!a._[1]) throw new UserError("Usage: surface sync resolve <record id>");
+      await syncCall("resolve", await workspaceId(a), a._[1]);
+      console.log("Marked resolved.");
+      return;
+    }
+    throw new UserError("Usage: surface sync [now | status | enable | join | disable | resolve]");
   },
 
   async open(a) {
@@ -1076,6 +1154,14 @@ Views (tables, boards, lists, calendars over records)
            [--by <select field>] [--date <date field>] [--columns a,b] [--key k] [--personal]
   view show <key> [--this <record>]   list what a view matches
   view rm <key> [--personal]
+
+Sync (workspaces in this computer's own database; each computer keeps a full local copy)
+  sync enable [--hub URL --token T]   start syncing this workspace (default hub: the cloud, after \`surface login\`)
+  sync join <hub workspace> <folder> [--hub URL --token T]   copy a synced workspace to this computer
+  sync [now] [--all]                  sync now (\`surface serve\` also syncs every few seconds)
+  sync status                         hub, last sync, changes waiting to go up, conflicts
+  sync resolve <record>               mark a conflict handled (after keeping one version)
+  sync disable                        stop syncing; both copies stay as they are
 
 Sharing
   workspace members                   who's in this workspace, and pending invites
