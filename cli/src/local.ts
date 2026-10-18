@@ -178,6 +178,12 @@ export function announceServer(port: number) {
   if (holdsLock) fs.writeFileSync(lockFile(), JSON.stringify({ pid: process.pid, port }));
 }
 
+/** True when this process opened the local database itself (not handing off to another `surface serve`). */
+export async function ownsDatabase(): Promise<boolean> {
+  await ensure();
+  return holdsLock;
+}
+
 async function ensure(): Promise<void> {
   if (db || remote) return;
   const got = await acquire();

@@ -353,16 +353,17 @@ export async function serve(co: Checkout, opts: { port: number; host?: string; w
     // ---- sync state for this workspace (local store only)
     if (parts[0] === "sync" && (m === "GET" || m === "POST")) {
       if (storeKind() !== "local") return send(200, { enabled: false, store: "cloud" });
-      const { syncStatus, syncWorkspace, resolveConflict } = await import("./sync.ts");
+      // syncCall runs here if this process owns the database, else hands off to the `surface serve` that does
+      const { syncCall } = await import("./sync.ts");
       if (m === "POST") {
         const b = await readBody();
-        if (b.resolve) await resolveConflict(ws, String(b.resolve));
+        if (b.resolve) await syncCall("resolve", ws, String(b.resolve));
         else {
-          await syncWorkspace(ws);
+          await syncCall("now", ws);
           await refresh("sync");
         }
       }
-      const s = await syncStatus(ws);
+      const s = await syncCall("status", ws);
       if (!s) return send(200, { enabled: false, store: "local" });
       const offline = !!s.last_error?.startsWith("offline");
       return send(200, { enabled: true, store: "local", hub: s.hub.kind === "cloud" ? "the cloud" : s.hub.url, hubWorkspace: s.hub.workspace, lastSync: s.last_sync, error: offline ? null : s.last_error, offline, pending: Object.values(s.pending as Record<string, number>).reduce((a, b) => a + b, 0), conflicts: s.conflicts });
@@ -759,9 +760,11 @@ export async function serve(co: Checkout, opts: { port: number; host?: string; w
     server.listen(port, host, () => resolve());
   });
   if (storeKind() === "local") {
-    (await import("./local.ts")).announceServer(port);
+    const local = await import("./local.ts");
+    local.announceServer(port);
     // Workspaces with sync on trade changes with their hub in the background.
-    if (process.env.SURFACE_SYNC !== "off") {
+    // Only the process that owns the database syncs; a second server (e.g. `surface data`) leaves it to the owner.
+    if (process.env.SURFACE_SYNC !== "off" && (await local.ownsDatabase())) {
       const { startSyncLoop } = await import("./sync.ts");
       syncLoop = startSyncLoop(() => void refresh("sync"), Number(process.env.SURFACE_SYNC_MS ?? 5000), () => broadcast({ type: "sync" }));
     }
