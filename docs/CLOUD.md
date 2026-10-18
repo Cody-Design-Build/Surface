@@ -98,6 +98,7 @@ surface share
 
 ```sh
 surface share device            # prints a one-line join command (--mail: email it to yourself)
+                                # uses this folder's workspace; elsewhere it asks which one (or pass --workspace <name>)
 ```
 
 On the other computer: install Surface, then run the line it printed:

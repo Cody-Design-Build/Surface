@@ -96,10 +96,27 @@ async function workspaceId(a: Args): Promise<string> {
   if (w) return resolveWorkspace(w);
   const co = findCheckout();
   if (co) return co.config.workspace;
-  const { data, error } = await sb().from("workspaces").select("id,name");
+  const { data, error } = await sb().from("workspaces").select("id,name").order("name");
   if (error) throw dbError(error);
-  if (data.length === 1) return data[0].id;
-  throw new UserError(data.length ? "Several workspaces: pass --workspace <id or name>, or run inside a checkout." : "No workspace yet: `surface workspace create <name>`.");
+  if (data.length === 1) { wsSource = "your only workspace"; return data[0].id; }
+  if (!data.length) throw new UserError("No workspace yet: `surface workspace create <name>`.");
+  const list = data.map((x, i) => `  ${i + 1}. ${x.name} (${x.id})`).join("\n");
+  if (!process.stdin.isTTY || !process.stdout.isTTY)
+    throw new UserError(`Which workspace? Pass --workspace <id or name>, or run inside its folder. Yours:\n${list}`);
+  console.log(`Which workspace?\n${list}`);
+  const ans = (await prompt(`Number or name [1-${data.length}]: `)).trim();
+  const n = Number(ans);
+  const hit = Number.isInteger(n) && n >= 1 && n <= data.length ? data[n - 1] : data.find((x) => x.id === ans || x.name.toLowerCase() === ans.toLowerCase());
+  if (!hit) throw new UserError(`No workspace "${ans}".`);
+  wsSource = "you picked it";
+  return hit.id;
+}
+let wsSource = "";
+
+/** Say which workspace a command is acting on, and why (flag, folder, or picked). */
+function workspaceSource(a: Args): string {
+  if (flag(a, "workspace")) return "from --workspace";
+  return findCheckout() ? `from this folder, ${findCheckout()!.root}` : wsSource;
 }
 
 async function resolveWorkspace(w: string): Promise<string> {
@@ -942,7 +959,8 @@ const commands: Record<string, Cmd> = {
     const cloud = await import("./cloud.ts");
     if (sub === "device" || sub === "computer") {
       const d = await cloud.deviceInvite(ws);
-      console.log(bold(`Add "${d.name}" to your other computer`) + "\n");
+      console.log(bold(`Add "${d.name}" to your other computer`));
+      console.log(dim(`Workspace: ${d.name} (${ws}), ${workspaceSource(a)}. For another one: --workspace <name>`) + "\n");
       console.log(d.body);
       if (a.flags.mail) {
         (await import("./open.ts")).openWindow(cloud.mailtoUrl(d.email, `Surface: "${d.name}" on another computer`, d.body), { tab: true });
