@@ -142,6 +142,15 @@ export async function createInvite(ws: string, email: string, role: string) {
   return inviteMessage({ url: c.url, key: c.publishableKey, workspace, workspaceName: await workspaceName(db, workspace), email: e, project: c.name }, me.user?.email ?? undefined);
 }
 
+/** The signed-in email for the workspace's cloud (undefined if not signed in / not shared). */
+export async function myEmail(ws: string): Promise<string | undefined> {
+  try {
+    const { db } = await shareTarget(ws);
+    const { data } = await db.auth.getUser();
+    return data.user?.email ?? undefined;
+  } catch { return undefined; }
+}
+
 /** A join code for YOUR other computer: no invite needed, you're already a member. */
 export async function deviceInvite(ws: string) {
   const { UserError } = await import("./client.ts");

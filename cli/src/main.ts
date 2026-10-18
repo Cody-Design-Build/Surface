@@ -20,7 +20,7 @@ import { writeAgentFiles } from "./skills.ts";
 // ---------------------------------------------------------------------------
 // Arguments
 // ---------------------------------------------------------------------------
-const BOOL = new Set(["force", "dry-run", "new", "json", "multiple", "single", "required", "optional", "deleted", "yes", "help", "all", "paths", "open", "personal", "no-watch", "service", "cloud", "local", "rebuild", "skip-app", "tab", "print"]);
+const BOOL = new Set(["force", "dry-run", "new", "json", "multiple", "single", "required", "optional", "deleted", "yes", "help", "all", "paths", "open", "personal", "no-watch", "service", "cloud", "local", "rebuild", "skip-app", "tab", "print", "mail"]);
 
 interface Args {
   _: string[];
@@ -957,7 +957,10 @@ const commands: Record<string, Cmd> = {
     const ws = await workspaceId(a);
     const sub = a._[0] ?? "status";
     const cloud = await import("./cloud.ts");
-    if (sub === "device" || sub === "computer") {
+    // `share invite <your own email>` = a code for your other computer (you're already a member)
+    const inviteEmail = sub.includes("@") ? sub : sub === "invite" ? a._[1] : undefined;
+    const self = inviteEmail ? (await cloud.myEmail(ws))?.toLowerCase() === inviteEmail.trim().toLowerCase() : false;
+    if (sub === "device" || sub === "computer" || self) {
       const d = await cloud.deviceInvite(ws);
       console.log(bold(`Add "${d.name}" to your other computer`));
       console.log(dim(`Workspace: ${d.name} (${ws}), ${workspaceSource(a)}. For another one: --workspace <name>`) + "\n");
