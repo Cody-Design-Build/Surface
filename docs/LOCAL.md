@@ -24,6 +24,22 @@ Status markers: **Decided**, **Leaning** (direction agreed, details open), **Ope
 
 This doesn't reverse the Oct 14 decision against a local database (SPEC §3). That design had a database on every device, kept in step by a merge engine. Here a local workspace has exactly one database and nothing to sync.
 
+## 1a. Exploring: every device has its own Postgres (Oct 18)
+
+**Exploring.** Push the idea further: Surface is local-first by nature, not as a mode.
+
+- **Every device runs its own Postgres** (PGlite inside `surface`). It's the truth for that device. No account, no server, no sign-up, ever, to use Surface alone.
+- **Team and multi-computer features are a separate, optional layer** on top: sync between your devices, members, roles, sharing with outside people, hosted links to artifacts. Turning it on adds to a workspace; it doesn't replace its database.
+- **The same schema and rules run everywhere,** so every device validates its own writes, offline included. The hosted layer runs them too.
+
+What this changes from §1: §1 says a workspace lives in exactly one database (local *or* cloud). With a sync layer, a shared workspace has a copy on each device plus the hosted one. So the layer has to answer how copies converge. Leaning: the hosted copy is in charge for shared workspaces (it checks permissions and revisions and orders changes); devices send their changes up and replay others' down; edits to different fields merge, and only the same field changed on two devices is a conflict. A private workspace synced only between your own devices could later use encrypted sync instead (the hosted side stores only what it can't read).
+
+This revisits part of the Oct 14 decision (a database on every device was dropped along with a merge engine). The difference: no peer-to-peer merge engine; one copy stays in charge whenever people share.
+
+**Spike step 1 passed (Oct 18):** the five existing migrations apply unchanged in PGlite with a small auth shim (`auth.users`, `auth.uid()`, `auth.jwt()`, the `authenticated` role). `push_record` works under the same row-level security, 200 writes in 73 ms, and invalid values are rejected by the same rules. See `spikes/pglite/`.
+
+Open (TODO.md): the sync layer's protocol (change log, ordering, field-level merge), what's hosted (our Supabase, any Postgres, self-hosted), identity when a local-only user later joins a team, and whether local Postgres for a shared workspace is a full copy or only what the person can see.
+
 ## 2. The database engine
 
 **Leaning: PGlite** (Postgres compiled to WebAssembly, run inside Node), pending the spike in §8.
@@ -116,6 +132,6 @@ If 1 or 2 fail in ways a small shim can't fix, revisit the SQLite fallback (§2)
 
 1. Is local mode the default for new users, with sync a later upgrade, or is the choice made at install?
 2. The database location: outside the checkout only, or optionally inside it (§3).
-3. **Several workspaces on one computer. Leaning (Oct 17): one local database per computer**, holding every local workspace. Every table already carries `workspace_id` and row-level security is per workspace, so a second database per workspace buys nothing. What stays true: each workspace has one home, local or cloud. A shared workspace's truth is the cloud database; a local copy of it would be a cache (fast reads, offline edits queued as normal pushes with revision checks), not a peer that merges. Moving a workspace between modes copies its rows (`where workspace_id = …`) instead of a whole database folder.
+3. **Several workspaces on one computer. Leaning (Oct 17): one local database per computer** (see also §1a), holding every local workspace. Every table already carries `workspace_id` and row-level security is per workspace, so a second database per workspace buys nothing. What stays true: each workspace has one home, local or cloud. A shared workspace's truth is the cloud database; a local copy of it would be a cache (fast reads, offline edits queued as normal pushes with revision checks), not a peer that merges. Moving a workspace between modes copies its rows (`where workspace_id = …`) instead of a whole database folder.
 4. Pricing: local free and sync paid fits naturally, but it's a business decision (SPEC §11).
 5. Mobile: local mode on a phone is unlikely; mobile probably means sync mode with the hosted app.

@@ -4,6 +4,10 @@ Everything still to decide, in one place. Tick an item when it's decided, and re
 
 ## Next up
 
+- [ ] **Explore: every device has its own Postgres, local-first with no account; team and multi-computer features are an optional layer.** (LOCAL §1a) Spike step 1 passed Oct 18. Next: steps 2–3 (the CLI test suite against PGlite, 10,000 records), then the store interface.
+- [ ] **Sync layer design:** change log and ordering, field-level merge, which copy is in charge, encrypted sync for private workspaces later.
+- [ ] **Identity:** a local user with no account later joins a team or links a second computer; how records and history keep their author.
+
 - [ ] **Offline edits in a shared workspace:** merge both edits automatically, or reject the stale edit and show the newer one? Merging needs a sync engine (dropped Oct 14). (LOCAL §10)
 - [ ] **Local database:** confirm one database per computer for every local workspace (leaning). (LOCAL §10.3)
 - [ ] **Local mode as the default** for new users, or a choice at install? (LOCAL §10.1)
