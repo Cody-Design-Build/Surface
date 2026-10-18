@@ -6,7 +6,8 @@ Everything still to decide, in one place. Tick an item when it's decided, and re
 
 - [ ] **Explore: every device has its own Postgres, local-first with no account; team and multi-computer features are an optional layer.** (LOCAL §1a) Local store built Oct 18 (default, no account; 16/16 tests on both stores), plus `install.sh` / `surface setup`. Next: test on the Linux machine, the 10,000-record speed check, backups, then the sync layer.
 - [x] **Sync layer:** decided and built Oct 18 (LOCAL §1b): a local database per computer, optional sync record by record with a hub, conflicts kept as copies. `npm run test:sync` 10/10.
-- [ ] **Sync next:** sync state in the app (last sync, offline badge, conflicts); incremental pull (a change sequence on the hub); move cdb-os to local + sync.
+- [x] Sync state in the app, incremental pull, cdb-os on local + sync (Oct 18).
+- [ ] **Sync next:** a second computer joins cdb-os (Mac); a hub-side change sequence instead of the updated_at cursor; conflict copies for types and views.
 - [ ] **Identity:** a local user with no account later joins a team or links a second computer; how records and history keep their author.
 
 - [ ] **Offline edits in a shared workspace:** merge both edits automatically, or reject the stale edit and show the newer one? Merging needs a sync engine (dropped Oct 14). (LOCAL §10)

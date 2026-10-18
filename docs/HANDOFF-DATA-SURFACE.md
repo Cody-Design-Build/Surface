@@ -108,7 +108,7 @@ The test seeds uniquely named contact, company and empty types on each run. It u
 ## Real workspace / ongoing workflow
 
 - Repo: `/home/ductape/Work/Surface`, GitHub `Cody-Design-Build/Surface`.
-- Existing writing-app checkout: `/home/ductape/Surface-cdb-os`; 570 records, 9 types at last check.
+- cdb-os checkout: `/home/ductape/Surface-cdb-os`. **Since Oct 18 it runs on this computer's local store** (local workspace `1ndahjxwpw00`), syncing with the cloud workspace `1nd7c49fg6tk` (`surface sync status`; design in LOCAL.md §1b). This computer's store is `local` now; cloud commands need `SURFACE_STORE=cloud`. The previous cloud checkout is kept at `/home/ductape/Surface-cdb-os-cloud-backup`. All data is test data.
 - Other checkouts: `/home/ductape/Surface-Vault` (Surface Test), `/home/ductape/Work/Surface-Test`.
 - Signed-in Surface account owns cdb-os; credentials are in the normal config. Do not expose them.
 - Existing writing server: port 4317, last session `92981`; do not stop it merely to launch the independent data server on 4318.

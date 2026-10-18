@@ -255,7 +255,7 @@ async function syncTypes(ws: string, hub: Hub, client: Client, hubTypes: TypeRow
   // push local type changes first (schema edits are expected while online)
   for (const t of local) {
     const m = markOf.get(t.id);
-    if (m && !m.dirty) continue;
+    if (!m || !m.dirty) continue; // only tracked local changes go up (enable marks everything; joins start clean)
     const h = hubFor(t);
     if (h && m?.synced && h.updated_at !== m.synced) continue; // changed on the hub too: the hub wins below
     const body = { key: t.key, name: t.name, icon: t.icon, folder: t.folder, display: t.display ?? "document", fields: toHubFields(t, h) };

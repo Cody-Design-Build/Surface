@@ -140,6 +140,7 @@ try {
   fs.mkdirSync(path.join(tmp, "b"), { recursive: true });
   const jn = run("b", ["sync", "join", hubWs, dir("b"), ...H], { cwd: path.join(tmp, "b") });
   assert.match(jn, /Checked out/);
+  assert.match(jn, /: 0 up, \d+ down/); // joining never writes to the hub
   const bt = find("b", "task", "Order tile")!;
   assert.equal(bt.id, t1);
   assert.equal(bt.fields.project, proj);

@@ -73,9 +73,11 @@ Open (TODO.md): the sync layer's protocol (change log, ordering, field-level mer
 **Not done yet:**
 
 - **Permissions on a Surface hub:** a peer with the token acts as the hub's owner. Fine for your own computers; teams should use the cloud, where row-level security applies per member.
-- **Pull is a full `id:rev` scan** each round: fine for thousands of records, not for hundreds of thousands. A change sequence on the hub would make it incremental.
+- **Pull is incremental** (built): only records the hub changed since a cursor (the hub's `updated_at`, minus a 2-minute margin for late commits), with a full `id:rev` comparison every 10 minutes as a safety net. A true change sequence on the hub would remove the margin.
 - **Conflicts on types and views** keep the hub's version silently (no copy).
-- The app doesn't show sync state yet (last sync, offline, conflicts); it's in `surface sync status`.
+- **Sync state in the app** (built): a chip in the sidebar (writing app) and the top bar (Surface Data): Synced / Syncing n / Offline · n waiting / n conflicts. Its popover shows the hub, last sync, and conflicts, with buttons to open theirs or yours and mark one Done. `GET/POST /api/sync`.
+
+**In use (Oct 18):** cdb-os on this Linux machine runs on the local store, syncing with the cloud workspace `1nd7c49fg6tk`. Checkout `~/Surface-cdb-os` (local workspace `1ndahjxwpw00`); the old cloud checkout is kept at `~/Surface-cdb-os-cloud-backup`. Joining copied 585 rows and wrote nothing to the cloud. Live check: an app edit reached the cloud, a cloud edit came back, a delete went up.
 - Attachments don't sync.
 
 ## 2. The database engine
