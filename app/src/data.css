@@ -176,25 +176,3 @@
 .data-nav.is-collapsed .data-nav-top { justify-content: center; }
 .data-nav.is-collapsed .data-nav-action { justify-content: center; padding-inline: 0; }
 .data-nav.is-collapsed .data-nav-action span { display: none; }
-
-/* relationship map (adapted from Morrow's graph view, Apache-2.0) */
-.data-map-link { flex: none; padding: 6px 30px 6px 22px !important; gap: 8px !important; margin-bottom: 4px; }
-.data-graph { display: flex; flex-direction: column; flex: 1; min-height: 0; }
-.data-graph-sub { align-self: center; font-size: 12px; color: var(--text-muted); }
-.data-graph-wrap { position: relative; flex: 1; min-height: 0; overflow: hidden; }
-.data-graph-canvas { position: absolute; inset: 0; cursor: grab; touch-action: none; }
-.data-graph-controls { position: absolute; top: 12px; right: 12px; left: auto; width: 230px; max-height: calc(100% - 24px); overflow-y: auto; display: grid; gap: 8px; padding: 10px; }
-.data-graph-search { display: flex; align-items: center; gap: 6px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; color: var(--text-muted); }
-.data-graph-search input { flex: 1; min-width: 0; border: 0; outline: none; background: transparent; font-size: 12px; color: var(--text-strong); }
-.data-graph-legend { display: grid; gap: 2px; }
-.data-graph-legend label { display: flex; align-items: center; gap: 7px; font-size: 12px; padding: 3px 2px; cursor: pointer; color: var(--text-soft); }
-.data-graph-legend label.is-off { opacity: .45; }
-.data-graph-legend input { margin: 0; }
-.data-graph-legend i { width: 9px; height: 9px; border-radius: 50%; flex: none; }
-.data-graph-legend small { margin-left: auto; color: var(--text-muted); font-variant-numeric: tabular-nums; }
-.data-graph-row { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--text-soft); }
-.data-graph-row select { margin-left: auto; font: inherit; font-size: 12px; padding: 3px 6px; border: 1px solid var(--line); border-radius: 5px; background: var(--bg-raised); color: var(--text-strong); }
-.data-graph-link { justify-self: start; font-size: 12px; color: var(--accent-text); }
-.data-graph-hint { margin: 0; font-size: 11px; line-height: 1.5; color: var(--text-muted); }
-.data-nav.is-collapsed .data-map-link { justify-content: center; padding-inline: 0 !important; }
-.data-nav.is-collapsed .data-map-link span { display: none; }

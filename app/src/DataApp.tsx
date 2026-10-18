@@ -6,7 +6,6 @@ import { Properties } from "./Properties.tsx";
 import { TypesPanel } from "./TypesPanel.tsx";
 import { FieldDialog, NewTableDialog } from "./DataSchema.tsx";
 import { TableNav } from "./TableNav.tsx";
-import { RelationshipGraph } from "./RelationshipGraph.tsx";
 import { GroupPanel, SortPanel } from "./DataToolbar.tsx";
 import { parseGroup, parseSort } from "./Grid.tsx";
 import { ViewEditor } from "./ViewEditor.tsx";
@@ -14,11 +13,10 @@ import { SyncBadge } from "./SyncBadge.tsx";
 import { defaultsFrom, deleteRecord } from "./edits.ts";
 import { did, onUndo, redo, typingTarget, undo } from "./undo.ts";
 
-type Route = { type: string; view?: string; personal: boolean; map?: boolean };
+type Route = { type: string; view?: string; personal: boolean };
 function readRoute(): Route {
   const [path, query] = location.hash.slice(1).split("?");
   const params = new URLSearchParams(query);
-  if (path === "/map") return { type: "", map: true, personal: false };
   return { type: path?.startsWith("/table/") ? decodeURIComponent(path.slice(7)) : "", view: params.get("view") || undefined, personal: params.get("personal") === "1" };
 }
 function navigate(type: string, view?: ViewInfo) {
@@ -126,8 +124,7 @@ export function DataApp() {
           <label className="data-table-search"><Icon name="search" size={14} /><input aria-label="Find a table" placeholder="Find a table" value={typeSearch} onChange={e => setTypeSearch(e.target.value)} /></label>
           <button className="icon-btn data-nav-toggle" onClick={toggleNav} aria-label={navCollapsed ? "Expand tables list" : "Collapse tables list"} aria-expanded={!navCollapsed} title={navCollapsed ? "Expand tables list" : "Collapse tables list"}><Icon name="sidebar" size={15} /></button>
         </div>
-        <button className={`data-table-link data-map-link ${route.map ? "is-active" : ""}`} title="Relationship map" onClick={() => { if (canLeaveSheet()) { sheetDirty.current = false; setRecordId(null); location.hash = "/map"; } }}><Icon name="nest" size={15} /><span>Relationship map</span></button>
-        <TableNav app={app} active={route.map ? undefined : type?.key} search={typeSearch} disabled={switching} onOpen={go} onChanged={changed} toast={setToast} newFolderSignal={newFolderSignal} />
+        <TableNav app={app} active={type?.key} search={typeSearch} disabled={switching} onOpen={go} onChanged={changed} toast={setToast} newFolderSignal={newFolderSignal} />
         <div className="data-nav-bottom">
           {(app.role === "owner" || app.role === "admin") && <span className="data-add-wrap">
             <button className="data-nav-action" onClick={() => setAddMenu(m => !m)} aria-label="Add table or folder" aria-expanded={addMenu} title="Add a table or folder"><Icon name="plus" size={15} /><span>Add</span></button>
@@ -137,7 +134,7 @@ export function DataApp() {
       </aside>
       <main className="data-main">
         {error && <div className="banner" role="alert">{error}<button className="btn-soft" onClick={reload}>Retry</button></div>}
-        {route.map && !switching ? <RelationshipGraph app={app} tick={tick} open={openRecord} /> : type && !switching ? <>
+        {type && !switching ? <>
           <div className="data-table-heading"><h1>{type.name}</h1><nav className="data-view-tabs" aria-label="Saved table views"><button className={!view ? "is-active" : ""} onClick={() => go(type.key)}><Icon name="table" size={14} />All records</button>{views.map(v => <button key={`${v.personal}:${v.key}`} className={view?.key === v.key && view.personal === v.personal ? "is-active" : ""} onClick={() => go(type.key, v)}><Icon name={v.personal ? "lock" : "table"} size={13} />{v.name}</button>)}</nav>{(app.role === "owner" || app.role === "admin") && <button className="data-edit-fields" onClick={() => setAddField(true)}><Icon name="plus" size={13} />Add field</button>}<button className="data-edit-fields data-edit-fields-secondary" onClick={() => setSchema(true)}><Icon name="sliders" size={13} />Edit fields</button></div>
           {route.view && !view && <div className="banner">That view is unavailable. Showing all records in this table.</div>}
           <DataTable key={`${app.workspace.id}:${type.key}:${view?.personal}:${view?.key ?? "all"}`} app={app} type={type} initial={view} tick={tick} changed={changed} open={openRecord} toast={setToast} onView={v => { changed(); navigate(type.key, v); }} />
