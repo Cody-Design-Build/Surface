@@ -200,7 +200,12 @@ function ChoiceEditor({ app, f, row, onRowChange, onClose }: RenderEditCellProps
 }
 
 // ------------------------------------------------------------------ the grid
+/** TreeDataGrid's group rows are plain objects with childRows; records have an id and fields. */
+const GROUP_PREFIX = "__group:";
+const isGroupRow = (r: unknown) => !!r && typeof r === "object" && "childRows" in (r as object) && "groupKey" in (r as object);
+
 export function Grid({ app, type, layout, sort, rows, readOnly, embedded, open, onLayout, onChanges, onDelete, addRow, groupCommand }: Props) {
+  const fieldOf = (key: string) => type.fields.find((f) => f.key === key);
   const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set());
   const [collapsed, setCollapsed] = useState<ReadonlySet<unknown>>(() => new Set());
   const groupLevels = useMemo(() => parseGroup(layout.group).filter((g) => type.fields.some((f) => f.key === g.columnKey)), [layout.group, type.fields]);
@@ -212,15 +217,8 @@ export function Grid({ app, type, layout, sort, rows, readOnly, embedded, open, 
 
   const fields = useMemo(() => {
     const keys = layout.columns?.length ? layout.columns : type.fields.slice(0, 6).map((f) => f.key);
-    const list = keys.map((k) => type.fields.find((f) => f.key === k)).filter((f): f is FieldDef => !!f);
-    // a grouped field must be a column for the grid to group by it
-    for (const key of [...groupKeys].reverse()) {
-      if (list.some((f) => f.key === key)) continue;
-      const g = type.fields.find((f) => f.key === key);
-      if (g) list.unshift(g);
-    }
-    return list;
-  }, [layout.columns, groupKeys, type.fields]);
+    return keys.map((k) => type.fields.find((f) => f.key === k)).filter((f): f is FieldDef => !!f);
+  }, [layout.columns, type.fields]);
 
   const columns = useMemo<Column<RecordFull>[]>(() => {
     const w = layout.widths ?? {};
@@ -234,7 +232,6 @@ export function Grid({ app, type, layout, sort, rows, readOnly, embedded, open, 
       width: w.title ?? 260,
       minWidth: 120,
       editable: !readOnly,
-      cellClass: "sg-title",
       renderCell: ({ row }) => (
         <span className="sg-title-inner">
           <Icon name={typeIcon(row.type)} size={14} />
@@ -253,6 +250,23 @@ export function Grid({ app, type, layout, sort, rows, readOnly, embedded, open, 
         </span>
       ),
       renderEditCell: (p) => <TextEditor {...p} />,
+      // grouped tables: the group header is drawn here and its text runs across the row (CSS), so
+      // record cells keep their columns
+      cellClass: "sg-title",
+      renderGroupCell: ({ groupKey, childRows, isExpanded, toggleGroup, row }) => {
+        const level = (row as unknown as { level: number }).level ?? 0;
+        const f = fieldOf(groupKeys[level]);
+        return (
+          <button className="sg-group" onClick={toggleGroup} tabIndex={-1} style={{ paddingInlineStart: level * 18 }}>
+            <span className={`sg-chev ${isExpanded ? "is-open" : ""}`}>
+              <Icon name="chevron" size={12} />
+            </span>
+            <span className="sg-group-field">{f?.name}</span>
+            {groupKey === "" ? <span className="empty">No {f?.name.toLowerCase()}</span> : f?.kind === "select" || f?.kind === "multi_select" ? <Pill label={String(groupKey)} /> : <span className="sg-group-key">{String(groupKey)}</span>}
+            <span className="sg-group-count">{childRows.length}</span>
+          </button>
+        );
+      },
     };
     const cols: Column<RecordFull>[] = fields.map((f, i) => ({
       key: f.key,
@@ -289,19 +303,15 @@ export function Grid({ app, type, layout, sort, rows, readOnly, embedded, open, 
           <CellView app={app} f={f} v={row.fields[f.key]} />
         ),
       renderEditCell: (p) => (TEXTY.has(f.kind) || f.kind === "date" ? <TextEditor {...p} f={f} /> : <ChoiceEditor {...p} app={app} f={f} />),
-      renderGroupCell: ({ groupKey, childRows, isExpanded, toggleGroup }) => !groupKeys.includes(f.key) ? null : (
-        <button className="sg-group" onClick={toggleGroup} tabIndex={-1}>
-          <span className={`sg-chev ${isExpanded ? "is-open" : ""}`}>
-            <Icon name="chevron" size={12} />
-          </span>
-          {groupKey === "" ? <span className="empty">No {f.name.toLowerCase()}</span> : f.kind === "select" || f.kind === "multi_select" ? <Pill label={String(groupKey)} /> : <span>{String(groupKey)}</span>}
-          <span className="sg-group-field">{f.name}</span>
-          <span className="sg-group-count">{childRows.length}</span>
-        </button>
-      ),
     }));
-    return readOnly ? [title, ...cols] : [SelectColumn, title, ...cols];
-  }, [fields, layout.widths, layout.frozen, groupKeys, readOnly, app, open, onChanges]);
+    // TreeDataGrid moves grouped columns to the front and freezes them. Group by zero-width stand-in
+    // columns instead, so the real columns stay where they are.
+    const groupCols: Column<RecordFull>[] = groupKeys.map((k) => ({
+      key: GROUP_PREFIX + k, name: "", width: 0, minWidth: 0, maxWidth: 0, resizable: false, sortable: false, editable: false,
+      cellClass: "sg-groupcol", headerCellClass: "sg-groupcol", renderCell: () => null, renderGroupCell: () => null,
+    }));
+    return readOnly ? [...groupCols, title, ...cols] : [SelectColumn, ...groupCols, title, ...cols];
+  }, [fields, layout.widths, layout.frozen, groupKeys, readOnly, app, open, onChanges]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const sorted = useMemo(() => sortRows(app, type, rows, sortColumns), [app, type, rows, sortColumns]);
 
@@ -323,7 +333,6 @@ export function Grid({ app, type, layout, sort, rows, readOnly, embedded, open, 
   };
   const rowsById = useMemo(() => new Map(rows.map((r) => [r.id, r])), [rows]);
 
-  const fieldOf = (key: string) => type.fields.find((f) => f.key === key);
   const common = {
     columns,
     rowKeyGetter: (r: RecordFull) => r.id,
@@ -388,7 +397,8 @@ export function Grid({ app, type, layout, sort, rows, readOnly, embedded, open, 
   // grouping: up to three levels; group order per level (select fields by option order,
   // checkboxes unchecked first, others A→Z; empty values last), records keep the view's sort inside
   const groupId = (k: string, parent?: string) => (parent !== undefined ? `${parent}__${k}` : k);
-  const rowGrouper = (rs: readonly RecordFull[], key: string) => {
+  const rowGrouper = (rs: readonly RecordFull[], groupColumn: string) => {
+    const key = groupColumn.startsWith(GROUP_PREFIX) ? groupColumn.slice(GROUP_PREFIX.length) : groupColumn;
     const f = fieldOf(key);
     const desc = groupLevels.find((g) => g.columnKey === key)?.direction === "DESC";
     const buckets = new Map<string, RecordFull[]>();
@@ -457,7 +467,7 @@ export function Grid({ app, type, layout, sort, rows, readOnly, embedded, open, 
           {...common}
           rows={sorted}
           style={style}
-          groupBy={groupKeys}
+          groupBy={groupKeys.map((k) => GROUP_PREFIX + k)}
           rowGrouper={rowGrouper}
           expandedGroupIds={expanded}
           onExpandedGroupIdsChange={(ids) => setCollapsed(new Set([...allGroups].filter((g) => !ids.has(g))))}

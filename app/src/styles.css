@@ -886,7 +886,18 @@ select.ve-input { padding-right: 4px; }
 .sgk-multi_select, .sgk-link { mask-image: linear-gradient(to right, #000 calc(100% - 18px), transparent); }
 .surface-grid [aria-level] > [role="gridcell"] { border-inline-end-color: transparent; }
 .page-body.wide.is-grid { max-width: none; padding-left: 40px; padding-right: 40px; }
-.sg-group { display: inline-flex; align-items: center; gap: 8px; font-weight: 500; color: var(--text-strong); }
+.sg-group { display: inline-flex; align-items: center; gap: 8px; font-weight: 500; color: var(--text-strong); white-space: nowrap; }
+/* zero-width stand-in columns used for grouping */
+.surface-grid .sg-groupcol { padding: 0 !important; border: 0 !important; overflow: hidden; }
+/* the group header lives in the Title cell; let its text run across the (empty) cells to the right */
+.surface-grid [aria-level] > [role="gridcell"]:has(> .sg-group) { overflow: visible; z-index: 3; }
+/* group rows: the row carries the background; empty cells are see-through so the header text
+   (overflowing the frozen Title cell) stays readable across the row */
+.surface-grid [aria-level] > [role="gridcell"] { background: transparent; }
+.surface-grid [aria-level] { background: var(--bg-side); }
+.surface-grid [aria-level] > [role="gridcell"].rdg-cell-frozen-start { background: var(--bg-side); }
+.surface-grid [aria-level] .sg-group { position: relative; z-index: 3; background: var(--bg-side); padding-inline-end: 10px; }
+.sg-group-key { overflow: visible; }
 .sg-chev { display: inline-flex; color: var(--text-muted); transition: transform 0.12s; }
 .sg-chev.is-open { transform: rotate(90deg); }
 .sg-group-count { color: var(--text-muted); font-weight: 400; font-size: 12px; }

@@ -130,7 +130,6 @@ export function DataApp() {
             <button className="data-nav-action" onClick={() => setAddMenu(m => !m)} aria-label="Add table or folder" aria-expanded={addMenu} title="Add a table or folder"><Icon name="plus" size={15} /><span>Add</span></button>
             {addMenu && <div className="menu data-nav-menu data-add-menu" role="menu"><button className="menu-item" onClick={() => { setAddMenu(false); setNewTable(true); }}><Icon name="table" size={13} />New table</button><button className="menu-item" onClick={() => { setAddMenu(false); if (navCollapsed) toggleNav(); setNewFolderSignal(n => n + 1); }}><Icon name="folder" size={13} />New folder</button></div>}
           </span>}
-          <button className="data-nav-action" title="Tables and fields" onClick={() => setSchema(true)}><Icon name="settings" size={15} /><span>Tables and fields</span></button>
         </div>
       </aside>
       <main className="data-main">
