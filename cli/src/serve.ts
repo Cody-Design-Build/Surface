@@ -9,7 +9,8 @@ import os from "node:os";
 import { CONFIG_DIR, findCheckout, knownCheckouts, rememberCheckout, saveCheckout, type Checkout } from "./config.ts";
 import { storeKind, dbError, requireUser, sb } from "./client.ts";
 import { deleteView, fetchInvites, fetchMembers, fetchViews, myInvites, pushRecord, saveView, type RecordRow, type TypeRow, type ViewRow } from "./db.ts";
-import { makeResolver, pull, snapshot, type Snapshot } from "./checkout.ts";
+import { makeResolver, linkNames, pull, snapshot, type Snapshot } from "./checkout.ts";
+import { toShown, toStored } from "./links.ts";
 import { normalize } from "./normalize.ts";
 import { asTreeDef, defaultTree, isTreeDef, resolveTree, validateDataView, validateTree, type TreeDef, type TreeNode } from "./tree.ts";
 import { matches, parseWhere, sortRows } from "./query.ts";
@@ -189,13 +190,16 @@ export async function serve(co: Checkout, opts: { port: number; host?: string; w
     const t = typeOf(r.type_id);
     const fields: Record<string, unknown> = {};
     for (const f of t.fields) fields[f.key] = r.fields[f.id] ?? null;
-    return { ...summary(r), rev: r.rev, fields, body: r.body, created_at: r.created_at };
+    // the app edits readable text: [[id:…]] shows as [[Current name]]; saving turns it back
+    return { ...summary(r), rev: r.rev, fields, body: toShown(r.body, linkNames(co, state.snap)), aliases: r.aliases ?? [], created_at: r.created_at };
   }
   function backlinks(r: RecordRow) {
     const out: { id: string; title: string; type: string; via: string }[] = [];
     const name = r.title.toLowerCase();
     const file = co.state.records[r.id]?.path;
     const base = file ? path.basename(file, ".md").toLowerCase() : name;
+    const names = new Set([name, base, ...(r.aliases ?? []).map((a) => a.toLowerCase())]);
+    const idLink = `[[id:${r.id}`;
     for (const o of state.snap.all) {
       if (o.id === r.id) continue;
       const t = typeOf(o.type_id);
@@ -210,12 +214,14 @@ export async function serve(co: Checkout, opts: { port: number; host?: string; w
         }
       }
       if (!via && o.parent_id === r.id) via = "nested";
+      if (!via && o.body.includes(idLink)) via = "mention";
       if (!via) {
+        // typed links that predate id links (or were never resolved)
         const re = /\[\[([^\]|#]+)/g;
         let m: RegExpExecArray | null;
         while ((m = re.exec(o.body))) {
           const l = m[1].trim().toLowerCase();
-          if (l === name || l === base) {
+          if (names.has(l)) {
             via = "mention";
             break;
           }
@@ -229,7 +235,7 @@ export async function serve(co: Checkout, opts: { port: number; host?: string; w
   const sidebarRow = (personal: boolean) => state.views.find((x) => x.key === "sidebar" && !!x.owner === personal);
   function sidebarJson(personal: boolean) {
     const v = sidebarRow(personal);
-    const def: TreeDef = v ? asTreeDef(v.definition) : personal ? { items: [] } : defaultTree(state.snap.types);
+    const def: TreeDef = v ? asTreeDef(v.definition) : { items: [] }; // nothing arranged yet: the Vault section shows the folders
     return {
       exists: !!v,
       rev: v?.rev ?? null,
@@ -287,6 +293,9 @@ export async function serve(co: Checkout, opts: { port: number; host?: string; w
     let parent: string | null = null;
     if (body.parent !== undefined) parent = body.parent ? String(body.parent) : "";
     const title = String(body.title ?? r?.title ?? "Untitled").trim() || "Untitled";
+    const names = linkNames(co, state.snap, resolver);
+    const text = body.body !== undefined ? toStored(String(body.body), names).body : r?.body ?? "";
+    const aliases = Array.isArray(body.aliases) ? (body.aliases as unknown[]).map((x) => String(x).trim()).filter(Boolean) : undefined;
     const res = await pushRecord({
       workspace: ws,
       id: r?.id ?? null,
@@ -294,9 +303,10 @@ export async function serve(co: Checkout, opts: { port: number; host?: string; w
       type: t.key,
       title,
       fields,
-      body: body.body !== undefined ? String(body.body) : r?.body ?? "",
+      body: text,
       folder: r ? null : (body.folder as string | undefined) ?? null,
       parent,
+      aliases,
     });
     if (!res.ok) throw new HttpError(res.kind === "conflict" ? 409 : 422, res.message);
     await refresh("save", [res.record.id]);

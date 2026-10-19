@@ -5,9 +5,10 @@ import { type Checkout, saveCheckout } from "./config.ts";
 import YAML from "yaml";
 import { fetchRecords, fetchTypes, fetchViews, pushRecord, saveView, type RecordRow, type TypeRow } from "./db.ts";
 import { isTreeDef, validateDataView, validateTree } from "./tree.ts";
-import { basename, hash, isBuiltinKey, parse, planPaths, render } from "./markdown.ts";
+import { basename, hash, isBuiltinKey, linkTextFor, parse, planPaths, render } from "./markdown.ts";
 import { normalize, type Resolver } from "./normalize.ts";
 import { writeAgentFiles } from "./skills.ts";
+import { toStored, type LinkNames } from "./links.ts";
 
 const IGNORED_DIRS = new Set([".surface", ".obsidian", ".git", ".agents", ".claude", "node_modules", ".trash"]);
 const IGNORED_FILES = new Set(["AGENTS.md", "CLAUDE.md"]);
@@ -77,7 +78,9 @@ export async function snapshot(co: Checkout): Promise<Snapshot> {
   const typeMap = new Map(types.map((t) => [t.id, t]));
   const all = await fetchRecords(co.config.workspace);
   const only = co.config.only?.length ? new Set(types.filter((t) => co.config.only!.includes(t.key)).map((t) => t.id)) : null;
-  const records = only ? all.filter((r) => only.has(r.type_id)) : all;
+  const under = co.config.under?.replace(/^\/+|\/+$/g, "");
+  const inUnder = (r: RecordRow) => !under || r.folder === under || (r.folder ?? "").startsWith(under + "/");
+  const records = all.filter((r) => (!only || only.has(r.type_id)) && inUnder(r));
   return { types, typeMap, records, all, byId: new Map(all.map((r) => [r.id, r])) };
 }
 
@@ -118,12 +121,13 @@ export interface PullReport {
 /** Write the database into the folder. Files with unpushed edits are left alone unless `force`. */
 export async function pull(co: Checkout, opts: { force?: boolean } = {}): Promise<PullReport> {
   const snap = await snapshot(co);
-  const paths = planPaths(snap.records, snap.typeMap, co.config.layout);
+  const paths = planPaths(snap.records, snap.typeMap, co.config.layout, co.config.under);
   const edited = localEdits(co);
   const report: PullReport = { written: [], removed: [], moved: [], skipped: [] };
+  const linkText = linkTextFor(paths.values());
   const linkName = (id: string) => {
     const p = paths.get(id);
-    return p ? basename(p) : (snap.byId.get(id)?.title ?? id);
+    return p ? linkText(p) : (snap.byId.get(id)?.title ?? id);
   };
   const next: typeof co.state.records = {};
 
@@ -243,25 +247,64 @@ export async function pushViews(co: Checkout, types: TypeRow[], opts: { dryRun?:
   return results;
 }
 
-/** Map link labels to record ids: checkout filenames first, then titles. */
+/** Map link labels to record ids: checkout filenames first, then aliases, then titles (Obsidian's order). */
 export function makeResolver(co: Checkout, snap: Snapshot): Resolver {
+  // lookup tables, rebuilt only when records were added (so records created earlier in the same push become linkable)
+  let built = "";
+  let byBase = new Map<string, string>();
+  let byAlias = new Map<string, string[]>();
+  let byTitle = new Map<string, string[]>();
+  const add = (m: Map<string, string[]>, k: string, id: string) => m.set(k, [...(m.get(k) ?? []), id]);
+  const build = () => {
+    const key = `${Object.keys(co.state.records).length}:${snap.all.length}:${snap.byId.size}`;
+    if (key === built) return;
+    built = key;
+    // filenames: a basename used by one file, or a path (Obsidian's form when two files share a name)
+    byBase = new Map();
+    const seen = new Map<string, number>();
+    for (const st of Object.values(co.state.records)) seen.set(basename(st.path).toLowerCase(), (seen.get(basename(st.path).toLowerCase()) ?? 0) + 1);
+    for (const [id, st] of Object.entries(co.state.records)) {
+      byBase.set(st.path.replace(/\.md$/i, "").toLowerCase(), id);
+      if (seen.get(basename(st.path).toLowerCase()) === 1) byBase.set(basename(st.path).toLowerCase(), id);
+    }
+    byAlias = new Map();
+    byTitle = new Map();
+    const live = new Map(snap.all.map((r) => [r.id, r]));
+    for (const r of snap.byId.values()) if (!r.deleted_at) live.set(r.id, r);
+    for (const r of live.values()) {
+      add(byTitle, r.title.toLowerCase(), r.id);
+      for (const a of r.aliases ?? []) add(byAlias, a.toLowerCase(), r.id);
+    }
+  };
   return {
     link(label, target) {
-      // rebuilt per call: records created earlier in the same push become linkable
-      const byBase = new Map<string, string>();
-      for (const [id, st] of Object.entries(co.state.records)) byBase.set(basename(st.path).toLowerCase(), id);
+      build();
       const ok = (id: string) => {
         const r = snap.byId.get(id);
         return r && (!target || r.type_id === target) ? id : null;
       };
       if (snap.byId.has(label)) return ok(label);
-      const viaFile = byBase.get(label.toLowerCase());
+      const l = label.toLowerCase();
+      const viaFile = byBase.get(l);
       if (viaFile && ok(viaFile)) return viaFile;
-      const byTitle = snap.all.filter(
-        (r) => r.title.toLowerCase() === label.toLowerCase() && (!target || r.type_id === target),
-      );
-      return byTitle.length === 1 ? byTitle[0].id : null;
+      const a = (byAlias.get(l) ?? []).filter((id) => ok(id));
+      if (a.length === 1) return a[0];
+      const t = (byTitle.get(l) ?? []).filter((id) => ok(id));
+      return t.length === 1 ? t[0] : null;
     },
+  };
+}
+
+/** Names for links in page text: [[Name]] <-> [[id:…]], using this checkout's filenames. */
+export function linkNames(co: Checkout, snap: Snapshot, resolver = makeResolver(co, snap)): LinkNames {
+  const linkText = linkTextFor(Object.values(co.state.records).map((s) => s.path));
+  return {
+    name: (id) => {
+      const p = co.state.records[id]?.path;
+      if (p) return linkText(p);
+      return snap.byId.get(id)?.title ?? null;
+    },
+    resolve: (typed) => resolver.link(typed),
   };
 }
 
@@ -284,6 +327,9 @@ export interface Prepared {
   folder: string | null;
   /** "" = no parent, otherwise the parent's id */
   parent: string;
+  aliases: string[];
+  /** link names in the body that matched no record */
+  unresolved: string[];
   notices: string[];
   errors: string[];
 }
@@ -311,7 +357,7 @@ export function prepare(co: Checkout, snap: Snapshot, rel: string, resolver: Res
 
   const fields: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(fm)) {
-    if (isBuiltinKey(k)) continue;
+    if (isBuiltinKey(k) || k === "alias") continue;
     const def = type.fields.find((f) => f.key === k) ?? type.fields.find((f) => f.key === k.toLowerCase().replace(/[\s-]+/g, "_"));
     if (!def) {
       errors.push(`"${k}" isn't a field of ${type.key} (add it: surface field add ${type.key} ${k.toLowerCase().replace(/[\s-]+/g, "_")} --kind text)`);
@@ -341,10 +387,17 @@ export function prepare(co: Checkout, snap: Snapshot, rel: string, resolver: Res
   const rev = fm.rev == null ? null : Number(fm.rev);
   let folder: string | null = null;
   if (co.config.layout === "folder") {
-    const dir = path.dirname(rel);
-    folder = dir === "." ? "" : dir;
+    const dir = path.dirname(rel).replace(/\\/g, "/");
+    const u = co.config.under?.replace(/^\/+|\/+$/g, "");
+    folder = dir === "." ? (u ?? "") : u ? `${u}/${dir}` : dir;
   }
-  return { path: rel, id, rev: Number.isFinite(rev) ? rev : null, type, title, fields, body: parsed.body, folder, parent, notices, errors };
+  // aliases: Obsidian's list (or one string, or a comma list)
+  const rawAliases = fm.aliases ?? fm.alias;
+  const aliases = (Array.isArray(rawAliases) ? rawAliases : typeof rawAliases === "string" && rawAliases.trim() ? rawAliases.split(",") : [])
+    .map((x) => String(x ?? "").trim()).filter(Boolean).filter((x, i, a) => a.indexOf(x) === i);
+  // links in the text are stored by record id, so renames never break them
+  const stored = toStored(parsed.body, linkNames(co, snap, resolver));
+  return { path: rel, id, rev: Number.isFinite(rev) ? rev : null, type, title, fields, body: stored.body, folder, parent, aliases, unresolved: stored.unresolved, notices, errors };
 }
 
 const isPrepared = (x: Prepared | FileResult): x is Prepared => "type" in x;
@@ -437,6 +490,7 @@ export async function push(
       body: p.body,
       folder: p.folder,
       parent: p.parent,
+      aliases: p.aliases,
     });
     if (!res.ok) {
       results.push({ path: rel, status: res.kind === "conflict" ? "conflict" : "rejected", id: p.id ?? undefined, notices: p.notices, errors: [res.message] });
@@ -460,9 +514,40 @@ export async function push(
       }
     }
     saveCheckout(co);
+    // new records can be the targets of links typed earlier: resolve those now
+    if (results.some((r) => r.status === "created")) await relink(co);
     await pull(co);
   }
   return results;
+}
+
+export interface RelinkReport {
+  /** records whose stored text gained resolved links */
+  fixed: { id: string; title: string; links: number }[];
+  /** typed link names that still match nothing: name -> titles of records that use it */
+  unresolved: Map<string, string[]>;
+}
+
+/** Resolve typed [[links]] in stored text that now match a record (e.g. after the target was created). */
+export async function relink(co: Checkout, opts: { dryRun?: boolean } = {}): Promise<RelinkReport> {
+  const snap = await snapshot(co);
+  const names = linkNames(co, snap);
+  const rep: RelinkReport = { fixed: [], unresolved: new Map() };
+  for (const r of snap.all) {
+    if (!r.body.includes("[[")) continue;
+    const { body, unresolved } = toStored(r.body, names);
+    for (const n of unresolved) rep.unresolved.set(n, [...(rep.unresolved.get(n) ?? []), r.title]);
+    if (body === r.body) continue;
+    const before = (r.body.match(/\[\[id:/g) ?? []).length;
+    const links = (body.match(/\[\[id:/g) ?? []).length - before;
+    rep.fixed.push({ id: r.id, title: r.title, links });
+    if (opts.dryRun) continue;
+    const t = snap.typeMap.get(r.type_id)!;
+    const fields = Object.fromEntries(t.fields.map((f) => [f.key, r.fields[f.id] ?? null]));
+    const res = await pushRecord({ workspace: co.config.workspace, id: r.id, baseRev: r.rev, type: t.key, title: r.title, fields, body, folder: null });
+    if (!res.ok) rep.fixed.pop();
+  }
+  return rep;
 }
 
 function isTrackedPath(co: Checkout, rel: string) {
@@ -471,6 +556,7 @@ function isTrackedPath(co: Checkout, rel: string) {
 
 function sameContent(r: RecordRow, p: Prepared): boolean {
   if (r.title !== p.title || r.type_id !== p.type.id || r.body !== p.body) return false;
+  if (JSON.stringify(r.aliases ?? []) !== JSON.stringify(p.aliases)) return false;
   if (p.folder !== null && (r.folder ?? "") !== p.folder) return false;
   if ((r.parent_id ?? "") !== p.parent) return false;
   for (const def of p.type.fields) {

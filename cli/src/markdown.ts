@@ -3,10 +3,11 @@ import crypto from "node:crypto";
 import YAML from "yaml";
 import type { RecordRow, TypeRow } from "./db.ts";
 import type { Layout } from "./config.ts";
+import { toShown } from "./links.ts";
 
 export const hash = (s: string) => crypto.createHash("sha1").update(s).digest("hex");
 
-const BUILTIN_KEYS = ["id", "type", "rev", "title", "parent"];
+const BUILTIN_KEYS = ["id", "type", "rev", "title", "parent", "aliases"];
 
 /** Characters that break filenames or Obsidian links. */
 export function safeName(title: string): string {
@@ -26,16 +27,20 @@ const safeFolder = (f: string) =>
  *  Layouts: "type" (a folder per type), "folder" (the record's own folder), "flat",
  *  or "link:<field>[,<field>]": under the record it links to, e.g. link:project puts
  *  a task in `Projects/Steiner Kitchen/Tasks/`, and link:parent nests pages in pages. */
-export function planPaths(records: RecordRow[], types: Map<string, TypeRow>, layout: Layout): Map<string, string> {
+export function planPaths(records: RecordRow[], types: Map<string, TypeRow>, layout: Layout, under?: string): Map<string, string> {
   const out = new Map<string, string>();
   const bases = new Map<string, string>();
   const taken = new Map<string, string>(); // lowercased basename -> record id
   // stable order: oldest first keeps the plain name
   const sorted = [...records].sort((a, b) => a.id.localeCompare(b.id));
+  // your own folders keep your own filenames (two README.md in different folders are fine; links to them
+  // use the path, as Obsidian does). Generated layouts keep names unique so [[Name]] is never ambiguous.
+  const ownFolders = layout === "folder";
+  const dirKey = (r: RecordRow) => (ownFolders ? (r.folder ?? "").toLowerCase() + "/" : "");
   for (const r of sorted) {
     let base = safeName(r.title);
-    if (taken.has(base.toLowerCase())) base = `${base} (${r.id.slice(-5)})`;
-    taken.set(base.toLowerCase(), r.id);
+    if (taken.has(dirKey(r) + base.toLowerCase())) base = `${base} (${r.id.slice(-5)})`;
+    taken.set(dirKey(r) + base.toLowerCase(), r.id);
     bases.set(r.id, base);
   }
   const byId = new Map(records.map((r) => [r.id, r]));
@@ -65,7 +70,12 @@ export function planPaths(records: RecordRow[], types: Map<string, TypeRow>, lay
     const t = types.get(r.type_id)!;
     let dir = "";
     if (layout === "type") dir = typeDir(t);
-    else if (layout === "folder") dir = r.folder != null ? safeFolder(r.folder) : typeDir(t);
+    else if (layout === "folder") {
+      dir = r.folder != null ? safeFolder(r.folder) : typeDir(t);
+      // a vault of one folder: paths start inside it
+      const u = under ? safeFolder(under) : "";
+      if (u && (dir === u || dir.startsWith(u + "/"))) dir = dir.slice(u.length).replace(/^\//, "");
+    }
     else if (linkKeys) {
       const up = anchor(r);
       if (up && !visiting.has(up.id) && visiting.size < 20) {
@@ -88,6 +98,13 @@ export function planPaths(records: RecordRow[], types: Map<string, TypeRow>, lay
   return out;
 }
 
+/** The name to write in [[…]] for each path: the basename, or the path (no .md) when two files share a basename. */
+export function linkTextFor(paths: Iterable<string>): (rel: string) => string {
+  const count = new Map<string, number>();
+  for (const p of paths) count.set(basename(p).toLowerCase(), (count.get(basename(p).toLowerCase()) ?? 0) + 1);
+  return (rel) => ((count.get(basename(rel).toLowerCase()) ?? 0) > 1 ? rel.replace(/\.md$/i, "") : basename(rel));
+}
+
 export function basename(p: string) {
   return p.replace(/^.*\//, "").replace(/\.md$/i, "");
 }
@@ -95,6 +112,7 @@ export function basename(p: string) {
 /** Render a record as Markdown. `linkName` maps a record id to the name to show in [[…]]. */
 export function render(r: RecordRow, t: TypeRow, linkName: (id: string) => string): string {
   const fm: Record<string, unknown> = { id: r.id, type: t.key, rev: r.rev, title: r.title };
+  if (r.aliases?.length) fm.aliases = r.aliases;
   if (r.parent_id) fm.parent = `[[${linkName(r.parent_id)}]]`;
   for (const f of t.fields) {
     let v = r.fields[f.id];
@@ -113,7 +131,7 @@ export function render(r: RecordRow, t: TypeRow, linkName: (id: string) => strin
     },
   });
   const yaml = doc.toString({ lineWidth: 0, nullStr: "" });
-  const body = canonBody(r.body ?? "");
+  const body = canonBody(toShown(r.body ?? "", { name: (id) => linkName(id), resolve: () => null }));
   return `---\n${yaml}---\n${body ? "\n" + body + "\n" : ""}`;
 }
 

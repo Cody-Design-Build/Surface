@@ -39,6 +39,7 @@ interface Pending {
   title?: string;
   body?: string;
   fields?: Record<string, unknown>;
+  aliases?: string[];
 }
 
 export function Page({ id, app, remoteTick, remoteIds, open, openTitle, createPage, onStatus, onDeleted, onMove, openView, toast }: Props) {
@@ -349,6 +350,15 @@ export function Page({ id, app, remoteTick, remoteIds, open, openTitle, createPa
             onOpen={open}
           />
         ) : null}
+        <Aliases
+          key={rec.id}
+          value={rec.aliases ?? []}
+          readOnly={app.role === "viewer"}
+          onChange={(aliases) => {
+            setRec((cur) => (cur ? { ...cur, aliases } : cur));
+            change({ aliases });
+          }}
+        />
 
         {type?.display === "fields" && !editorValue.trim() && !showText ? (
           <button className="add-notes" onClick={() => setShowText(true)}>
@@ -413,5 +423,58 @@ export function Page({ id, app, remoteTick, remoteIds, open, openTitle, createPa
         ) : null}
       </div>
     </article>
+  );
+}
+
+/** Other names this page answers to (Obsidian's `aliases`): [[Any of these]] links here. */
+function Aliases({ value, readOnly, onChange }: { value: string[]; readOnly: boolean; onChange: (v: string[]) => void }) {
+  const [draft, setDraft] = useState("");
+  const [editing, setEditing] = useState(false);
+  if (!value.length && !editing) {
+    return readOnly ? null : (
+      <button className="aliases-add" onClick={() => setEditing(true)} title="Other names that link to this page">
+        + Alias
+      </button>
+    );
+  }
+  const add = () => {
+    const v = draft.trim();
+    setDraft("");
+    if (v && !value.some((x) => x.toLowerCase() === v.toLowerCase())) onChange([...value, v]);
+  };
+  return (
+    <div className="aliases" title="Other names that link to this page">
+      <span className="aliases-label">Also called</span>
+      {value.map((a) => (
+        <span className="alias-chip" key={a}>
+          {a}
+          {readOnly ? null : (
+            <button aria-label={`Remove ${a}`} onClick={() => onChange(value.filter((x) => x !== a))}>
+              ×
+            </button>
+          )}
+        </span>
+      ))}
+      {readOnly ? null : (
+        <input
+          className="alias-input"
+          value={draft}
+          placeholder={value.length ? "Add…" : "Another name"}
+          autoFocus={editing && !value.length}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === ",") {
+              e.preventDefault();
+              add();
+            } else if (e.key === "Backspace" && !draft && value.length) onChange(value.slice(0, -1));
+            else if (e.key === "Escape") setEditing(false);
+          }}
+          onBlur={() => {
+            add();
+            setEditing(false);
+          }}
+        />
+      )}
+    </div>
   );
 }

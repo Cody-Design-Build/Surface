@@ -69,10 +69,12 @@ export function disconnect() {
   fs.rmSync(CLOUD_FILE, { force: true });
 }
 
-/** Every migration in order, as one script for the Supabase SQL editor (or psql). */
-export function schemaSql(): string {
-  const files = fs.readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith(".sql")).sort();
-  const head = `-- Surface schema: paste into your Supabase project's SQL editor (Dashboard → SQL Editor → New query) and Run.
+/** Every migration in order, as one script for the Supabase SQL editor (or psql). `since` = only from that number on (an upgrade). */
+export function schemaSql(since?: number): string {
+  const files = fs.readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith(".sql") && (!since || Number(f.slice(0, 4)) >= since)).sort();
+  const head = since
+    ? `-- Surface schema upgrade: migrations ${files.join(", ")}. Paste into your Supabase project's SQL editor and Run.\n-- Only for a project that already has the earlier migrations.\n`
+    : `-- Surface schema: paste into your Supabase project's SQL editor (Dashboard → SQL Editor → New query) and Run.
 -- Creates Surface's tables, rules and functions in a new, empty project. Generated from supabase/migrations (${files.length} files).
 -- Safe to read: it creates tables, row-level security policies and functions. It reads no existing data.
 `;

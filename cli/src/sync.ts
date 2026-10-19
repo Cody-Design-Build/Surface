@@ -429,11 +429,17 @@ async function pushRecords(ws: string, hub: Hub, client: Client, types: Types, r
       }
       const lt = types.localById.get(r.type_id);
       if (!lt) throw new Error(`unknown type ${r.type_id}`);
-      const args = {
+      const args: Row = {
         p_workspace: hub.workspace, p_id: id, p_base_rev: base, p_type: lt.key, p_title: r.title,
         p_fields: byKey(r.fields, lt), p_body: r.body, p_folder: r.folder, p_parent: r.parent_id ?? "",
       };
+      if (r.aliases?.length) args.p_aliases = r.aliases;
       let res = await client.rpc("push_record", args);
+      if (res.error && "p_aliases" in args && /p_aliases|Could not find the function|function public\.push_record/i.test(res.error.message)) {
+        L.warn("hub has no aliases yet (needs migration 0006); pushed without them", { ws, id });
+        delete args.p_aliases;
+        res = await client.rpc("push_record", args);
+      }
       if (res.error && /^deleted: /.test(res.error.message)) {
         // deleted on the hub, edited here: the edit wins and brings it back
         must(await client.from("records").update({ deleted_at: null }).eq("id", id).select("id"), "restore on hub");
@@ -476,8 +482,8 @@ async function conflictCopy(ws: string, client: Client, types: Types, r: Row, re
   const copyTitle = `${r.title} (conflict ${stamp})`;
   await localAdmin(async (tx) => {
     const copy = (await tx.query<any>(
-      `insert into public.records (workspace_id, type_id, title, fields, body, folder, parent_id)
-       values ($1, $2, $3, $4::jsonb, $5, $6, $7) returning id`,
+      `insert into public.records (workspace_id, type_id, title, fields, body, folder, parent_id, aliases)
+       values ($1, $2, $3, $4::jsonb, $5, $6, $7, '{}') returning id`,
       [ws, r.type_id, copyTitle, JSON.stringify(r.fields), r.body, r.folder, r.parent_id])).rows[0];
     await tx.query("insert into surface_local.sync_conflicts (workspace_id, record_id, copy_id, title) values ($1, $2, $3, $4)", [ws, r.key, copy.id, r.title]);
     // the copy is a normal local change: mark it so it syncs up too
@@ -493,12 +499,13 @@ async function applyRecord(ws: string, h: Row, lt: TypeRow, ht: TypeRow | undefi
   await localAdmin(async (tx) => {
     const exists = (await tx.query<any>("select 1 from public.records where id = $1", [h.id])).rows.length > 0;
     const parent = strip ? null : h.parent_id;
+    // a hub without migration 0006 sends no aliases: keep the local ones rather than clearing them
     if (exists) {
-      await tx.query("update public.records set type_id = $2, title = $3, fields = $4::jsonb, body = $5, folder = $6, parent_id = $7, deleted_at = $8 where id = $1",
-        [h.id, lt.id, h.title, JSON.stringify(fields), h.body ?? "", h.folder, parent, h.deleted_at]);
+      await tx.query("update public.records set type_id = $2, title = $3, fields = $4::jsonb, body = $5, folder = $6, parent_id = $7, deleted_at = $8, aliases = coalesce($9::text[], aliases) where id = $1",
+        [h.id, lt.id, h.title, JSON.stringify(fields), h.body ?? "", h.folder, parent, h.deleted_at, Array.isArray(h.aliases) ? h.aliases : null]);
     } else {
-      await tx.query("insert into public.records (id, workspace_id, type_id, title, fields, body, folder, parent_id, deleted_at) values ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9)",
-        [h.id, ws, lt.id, h.title, JSON.stringify(fields), h.body ?? "", h.folder, parent, h.deleted_at]);
+      await tx.query("insert into public.records (id, workspace_id, type_id, title, fields, body, folder, parent_id, deleted_at, aliases) values ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, coalesce($10::text[], '{}'))",
+        [h.id, ws, lt.id, h.title, JSON.stringify(fields), h.body ?? "", h.folder, parent, h.deleted_at, Array.isArray(h.aliases) ? h.aliases : null]);
     }
     await tx.query(`insert into surface_local.sync_rows (workspace_id, kind, key, synced, dirty) values ($1, 'record', $2, $3, false)
        on conflict (workspace_id, kind, key) do update set synced = $3, dirty = false`, [ws, h.id, strip ? null : String(h.rev)]);

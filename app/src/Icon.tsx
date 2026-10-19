@@ -2,7 +2,7 @@
 const paths: Record<string, string> = {
   page: "M7 3.5h6.5L17 7v13.5H7z M13.5 3.5V7H17",
   folder: "M3.5 7.5a2 2 0 0 1 2-2h3.6l1.8 2h7.6a2 2 0 0 1 2 2v7.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z",
-  chevron: "M9.5 6.5l5 5.5-5 5.5",
+  chevron: "M9.5 7l5 5-5 5",
   search: "M10.8 17.2a6.4 6.4 0 1 0 0-12.8 6.4 6.4 0 0 0 0 12.8z M15.5 15.5l4.5 4.5",
   plus: "M12 5v14 M5 12h14",
   sidebar: "M4 5.5h16v13H4z M9.5 5.5v13",
@@ -31,9 +31,9 @@ const paths: Record<string, string> = {
   rename: "M4.5 19.5h4l10-10-4-4-10 10z M13 7l4 4",
 };
 
-export function Icon({ name, size = 16, className = "" }: { name: keyof typeof paths | string; size?: number; className?: string }) {
+export function Icon({ name, size = 16, className = "", weight = 1.5 }: { name: keyof typeof paths | string; size?: number; className?: string; weight?: number }) {
   return (
-    <svg className={`icon ${className}`} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <svg className={`icon ${className}`} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={weight} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
       {(paths[name] ?? paths.page).split(" M").map((d, i) => (
         <path key={i} d={i ? "M" + d : d} />
       ))}

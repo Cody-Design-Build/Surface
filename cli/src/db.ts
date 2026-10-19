@@ -1,5 +1,5 @@
 // Reading types and records from the database.
-import { sb, dbError, UserError } from "./client.ts";
+import { sb, dbError, UserError, storeKind } from "./client.ts";
 
 export type Kind =
   | "text" | "number" | "date" | "checkbox" | "select" | "multi_select"
@@ -40,6 +40,8 @@ export interface RecordRow {
   body: string;
   folder: string | null;
   parent_id: string | null;
+  /** Other names the record answers to (Obsidian's `aliases`). Missing on hubs without migration 0006. */
+  aliases?: string[] | null;
   rev: number;
   created_at: string;
   updated_at: string;
@@ -97,6 +99,8 @@ export interface PushArgs {
   folder?: string | null;
   /** undefined/null = keep, "" = clear, id = set */
   parent?: string | null;
+  /** undefined = keep */
+  aliases?: string[];
 }
 
 export type PushResult =
@@ -104,7 +108,7 @@ export type PushResult =
   | { ok: false; kind: "conflict" | "deleted" | "invalid"; message: string };
 
 export async function pushRecord(a: PushArgs): Promise<PushResult> {
-  const { data, error } = await sb().rpc("push_record", {
+  const args: Record<string, unknown> = {
     p_workspace: a.workspace,
     p_id: a.id,
     p_base_rev: a.baseRev,
@@ -114,7 +118,17 @@ export async function pushRecord(a: PushArgs): Promise<PushResult> {
     p_body: a.body,
     p_folder: a.folder ?? null,
     p_parent: a.parent ?? null,
-  });
+  };
+  // aliases need migration 0006; only send them when there's something to say (or the local store, which always has it),
+  // so cloud projects that haven't upgraded keep working without a failed call per save
+  if (a.aliases && (a.aliases.length || (a.id && storeKind() === "local"))) args.p_aliases = a.aliases;
+  let { data, error } = await sb().rpc("push_record", args);
+  if (error && "p_aliases" in args && /p_aliases|function public\.push_record|Could not find the function/i.test(error.message)) {
+    const { logger } = await import("./log.ts");
+    logger("db").warn("database has no aliases yet (needs migration 0006: surface cloud schema --since 6); saved without them", { id: a.id });
+    delete args.p_aliases;
+    ({ data, error } = await sb().rpc("push_record", args));
+  }
   if (error) {
     if (error.message.startsWith("conflict: ")) return { ok: false, kind: "conflict", message: error.message.slice(10) };
     if (error.message.startsWith("deleted: ")) return { ok: false, kind: "deleted", message: error.message.slice(9) };

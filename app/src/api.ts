@@ -34,6 +34,8 @@ export interface RecordFull extends Summary {
   rev: number;
   fields: Record<string, unknown>;
   body: string;
+  /** other names the record answers to; [[any of them]] links here */
+  aliases?: string[];
   created_at: string;
 }
 export interface TreeNode {
@@ -160,7 +162,7 @@ async function call<T>(method: string, url: string, body?: unknown): Promise<T> 
 export const api = {
   state: () => call<AppState>("GET", "/api/state"),
   record: (id: string) => call<{ record: RecordFull; backlinks: Backlink[] }>("GET", `/api/record/${id}`),
-  save: (id: string, patch: { baseRev?: number; title?: string; body?: string; fields?: Record<string, unknown>; parent?: string | null }) =>
+  save: (id: string, patch: { baseRev?: number; title?: string; body?: string; fields?: Record<string, unknown>; parent?: string | null; aliases?: string[] }) =>
     call<{ record: RecordFull; notices: string[] }>("PUT", `/api/record/${id}`, patch),
   create: (input: { type: string; title: string; parent?: string | null; body?: string; fields?: Record<string, unknown> }) =>
     call<{ record: RecordFull; notices: string[] }>("POST", "/api/records", input),

@@ -359,7 +359,7 @@ const commands: Record<string, Cmd> = {
     if (bad) throw new UserError(bad);
     if (fs.existsSync(path.join(dir, ".surface", "config.json")) && !a.flags.force) throw new UserError(`${dir} is already a checkout (use --force to re-initialise).`);
     const { data: w } = await sb().from("workspaces").select("name").eq("id", ws).single();
-    const co: Checkout = { root: dir, config: { workspace: ws, workspaceName: w?.name, layout, only: list(flag(a, "only")) }, state: { records: {} } };
+    const co: Checkout = { root: dir, config: { workspace: ws, workspaceName: w?.name, layout, only: list(flag(a, "only")), ...(flag(a, "under") ? { under: flag(a, "under") } : {}) }, state: { records: {} } };
     fs.mkdirSync(dir, { recursive: true });
     saveCheckout(co);
     const rep = await pull(co);
@@ -651,6 +651,15 @@ const commands: Record<string, Cmd> = {
     const prevType = types.find((x) => x.id === r.type_id)!;
     const base = t.id === prevType.id ? fieldsByKey(r, t) : carryFields(r, prevType, t);
     const { fields, notices } = await applyAssignments(ws, co, t, base, rest);
+    if (body !== r.body) {
+      // typed [[links]] are stored by id
+      const { toStored } = await import("./links.ts");
+      const all = await fetchRecords(ws);
+      const titles = new Map<string, string[]>();
+      for (const x of all) for (const n of [x.title, ...(x.aliases ?? [])]) titles.set(n.toLowerCase(), [...(titles.get(n.toLowerCase()) ?? []), x.id]);
+      const byId = new Map(all.map((x) => [x.id, x]));
+      body = toStored(body, { name: (id) => byId.get(id)?.title ?? null, resolve: (n) => (titles.get(n.toLowerCase())?.length === 1 ? titles.get(n.toLowerCase())![0] : null) }).body;
+    }
     const res = await pushRecord({ workspace: ws, id: r.id, baseRev: r.rev, type: t.key, title, fields, body, folder, parent });
     if (!res.ok) throw new UserError(res.message);
     for (const n of notices) console.log(dim(`  ${n}`));
@@ -981,6 +990,161 @@ const commands: Record<string, Cmd> = {
     await new Promise(() => {});
   },
 
+  async vault(a) {
+    // vaults: generated folders of Markdown (Obsidian, VS Code, Finder) over a workspace. A vault is a checkout.
+    const sub = a._[0] ?? "list";
+    if (sub === "list") {
+      const { knownCheckouts } = await import("./config.ts");
+      const rows = knownCheckouts().map((k) => {
+        const c = JSON.parse(fs.readFileSync(path.join(k.root, ".surface", "config.json"), "utf8")) as Checkout["config"];
+        return [k.name ?? k.workspace, k.root, c.layout, [c.under ? `folder ${c.under}` : "", c.only?.length ? `tables ${c.only.join(",")}` : ""].filter(Boolean).join("; ") || "everything"];
+      });
+      return void table([["WORKSPACE", "VAULT", "LAYOUT", "CONTAINS"], ...rows]);
+    }
+    if (sub === "new" || sub === "add") {
+      const dir = a._[1];
+      if (!dir) throw new UserError("Usage: surface vault new <folder> [--workspace <name>] [--layout folder|type|flat] [--under <folder>] [--only table,table]");
+      return commands.init({ _: [dir], flags: { layout: "folder", ...a.flags } });
+    }
+    throw new UserError("Usage: surface vault [list | new <folder> …]");
+  },
+
+  async links(a) {
+    // links that match no record, and records whose typed links can now be resolved
+    await requireUser();
+    const co = requireCheckout();
+    const { relink } = await import("./checkout.ts");
+    const rep = await relink(co, { dryRun: true });
+    const rows = [...rep.unresolved.entries()].sort((x, y) => y[1].length - x[1].length);
+    if (a.flags.json) return void console.log(JSON.stringify({ unresolved: Object.fromEntries(rows), resolvable: rep.fixed }, null, 2));
+    if (rep.fixed.length) console.log(yellow(`${rep.fixed.length} page(s) have typed links that now match a record. \`surface relink\` stores them.`));
+    if (!rows.length) return void console.log(green("Every link points at a record."));
+    const n = Number(flag(a, "lines") ?? 40);
+    console.log(bold(`${rows.length} link name(s) match no record`) + dim(` (used ${rows.reduce((s, [, v]) => s + v.length, 0)} times). Create the page, add the name as an alias, or fix the link.`));
+    table([["LINK", "USED", "IN"], ...rows.slice(0, n).map(([name, from]) => [`[[${name}]]`, String(from.length), [...new Set(from)].slice(0, 3).join(", ") + (new Set(from).size > 3 ? ", …" : "")])]);
+    if (rows.length > n) console.log(dim(`… ${rows.length - n} more (--lines N, or --json)`));
+  },
+
+  async relink(a) {
+    await requireUser();
+    const co = requireCheckout();
+    const { relink, pull: pullCo } = await import("./checkout.ts");
+    const rep = await relink(co, { dryRun: !!a.flags["dry-run"] });
+    if (!a.flags["dry-run"] && rep.fixed.length) await pullCo(co);
+    console.log(green(`${a.flags["dry-run"] ? "Would store" : "Stored"} ${rep.fixed.reduce((s, f) => s + f.links, 0)} link(s) in ${rep.fixed.length} page(s).`) + dim(` ${rep.unresolved.size} link name(s) still match nothing (surface links).`));
+  },
+
+  async import(a) {
+    // copy a folder of Markdown (an Obsidian vault, a git repo) into this workspace, keeping its folders.
+    // Front matter keys become fields (add them first with `surface field add`, or --fields text to add them as text).
+    await requireUser();
+    const co = requireCheckout();
+    const src = path.resolve(a._[0] ?? "");
+    if (!a._[0] || !fs.existsSync(src)) throw new UserError("Usage: surface import <folder> [--type <table>] [--dry-run]   (copies the folder's Markdown into this vault, then pushes it)");
+    if (co.config.layout !== "folder") throw new UserError("Import keeps the source's folders: use a vault with the folder layout (`surface layout folder`).");
+    const { listMarkdown } = await import("./checkout.ts");
+    const files = listMarkdown(src);
+    let copied = 0;
+    for (const rel of files) {
+      const to = path.join(co.root, rel);
+      if (fs.existsSync(to)) continue;
+      if (!a.flags["dry-run"]) {
+        fs.mkdirSync(path.dirname(to), { recursive: true });
+        fs.copyFileSync(path.join(src, rel), to);
+      }
+      copied++;
+    }
+    // attachments (images, PDFs) come along as plain files next to the notes
+    let other = 0;
+    const walk = (d: string) => {
+      for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+        if (e.name.startsWith(".")) continue;
+        const abs = path.join(d, e.name);
+        if (e.isDirectory()) walk(abs);
+        else if (!e.name.toLowerCase().endsWith(".md")) {
+          const to = path.join(co.root, path.relative(src, abs));
+          if (fs.existsSync(to)) continue;
+          if (!a.flags["dry-run"]) {
+            fs.mkdirSync(path.dirname(to), { recursive: true });
+            fs.copyFileSync(abs, to);
+          }
+          other++;
+        }
+      }
+    };
+    walk(src);
+    console.log(`${a.flags["dry-run"] ? "Would copy" : "Copied"} ${copied} note(s) and ${other} other file(s) from ${src}.`);
+    if (a.flags["dry-run"]) return;
+    // Tables and fields from the notes' own front matter (the copies are ours to adjust; the source is untouched):
+    //   --type-from <key>: a front-matter key naming each note's table (e.g. document_type: wiki). Its values become
+    //   tables (--tables limits which; the rest stay pages). Other keys become fields, typed from their values.
+    const typeFrom = flag(a, "type-from");
+    const allowed = list(flag(a, "tables"));
+    const { parse: parseMd } = await import("./markdown.ts");
+    const notes = files.map((rel) => ({ rel, ...parseMd(fs.readFileSync(path.join(co.root, rel), "utf8")) }));
+    const tableOf = (fm: Record<string, unknown> | null): string => {
+      if (fm?.type) return String(fm.type);
+      const v = typeFrom && fm?.[typeFrom] != null ? String(fm[typeFrom]).trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "") : "";
+      return v && (!allowed?.length || allowed.includes(v)) ? v : flag(a, "type") ?? "page";
+    };
+    const ws = co.config.workspace;
+    let types = await fetchTypes(ws);
+    const byTable = new Map<string, typeof notes>();
+    for (const n of notes) byTable.set(tableOf(n.frontmatter), [...(byTable.get(tableOf(n.frontmatter)) ?? []), n]);
+    const RESERVED = new Set(["id", "type", "rev", "title", "parent", "aliases", "alias", "tags"]);
+    for (const [tkey, group] of byTable) {
+      if (!types.some((t) => t.key === tkey)) {
+        await commands.type({ _: ["add", tkey], flags: { workspace: ws, folder: "" } });
+        types = await fetchTypes(ws);
+      }
+      const t = types.find((x) => x.key === tkey)!;
+      // collect each key's values across the group
+      const vals = new Map<string, unknown[]>();
+      for (const n of group) for (const [k, v] of Object.entries(n.frontmatter ?? {})) {
+        if (RESERVED.has(k) || (typeFrom && k === typeFrom && tkey !== "page")) continue;
+        vals.set(k, [...(vals.get(k) ?? []), v]);
+      }
+      for (const [k, vs] of vals) {
+        const key = k.toLowerCase().replace(/[\s-]+/g, "_");
+        if (t.fields.some((f) => f.key === key)) continue;
+        const filled = vs.filter((v) => v != null && String(v).trim() !== "");
+        const strs = filled.map((v) => (v instanceof Date ? v.toISOString().slice(0, 10) : Array.isArray(v) ? "" : String(v).trim()));
+        const distinct = [...new Set(strs)].filter(Boolean);
+        let kind = "text";
+        let options: string[] | undefined;
+        if (filled.some((v) => Array.isArray(v))) kind = "text"; // lists: kept as text for now
+        else if (filled.length && strs.every((s) => /^\d{4}-\d{2}-\d{2}$/.test(s))) kind = "date";
+        else if (filled.length && strs.every((s) => /^-?\d+(\.\d+)?$/.test(s))) kind = "number";
+        else if (filled.length && strs.every((s) => /^https?:\/\//.test(s))) kind = "url";
+        else if (distinct.length >= 1 && distinct.length <= 12 && filled.length >= Math.max(3, distinct.length * 3) && distinct.every((s) => s.length <= 40 && !s.includes(","))) {
+          kind = "select";
+          options = distinct;
+        }
+        await commands.field({ _: ["add", tkey, key], flags: { workspace: ws, kind, ...(options ? { options: options.join(",") } : {}) } });
+        types = await fetchTypes(ws);
+      }
+    }
+    // tell each copied note its table (type: …) in place of the key that named it, so push files it there
+    for (const n of notes) {
+      const tkey = tableOf(n.frontmatter);
+      if (tkey === "page" || n.frontmatter?.type) continue;
+      const abs = path.join(co.root, n.rel);
+      let text = fs.readFileSync(abs, "utf8");
+      if (typeFrom) text = text.replace(new RegExp(`^${typeFrom}:.*\\r?\\n`, "m"), "");
+      fs.writeFileSync(abs, text.replace(/^---\r?\n/, `---\ntype: ${tkey}\n`));
+    }
+    // array values (lists) for text fields: join them, so they import instead of failing
+    for (const n of notes) {
+      const fm = n.frontmatter;
+      if (!fm || !Object.entries(fm).some(([k, v]) => Array.isArray(v) && !RESERVED.has(k))) continue;
+      const abs = path.join(co.root, n.rel);
+      let text = fs.readFileSync(abs, "utf8");
+      for (const [k, v] of Object.entries(fm)) if (Array.isArray(v) && !RESERVED.has(k)) text = text.replace(new RegExp(`^${k}:.*$`, "m"), `${k}: ${JSON.stringify(v.map(String).join(", "))}`);
+      fs.writeFileSync(abs, text);
+    }
+    return commands.push({ _: [], flags: { new: true, ...(flag(a, "type") ? { type: flag(a, "type")! } : {}) } });
+  },
+
   async share(a) {
     // one place for sharing: your other computers, other people, and who has access
     const ws = await workspaceId(a);
@@ -1108,7 +1272,9 @@ const commands: Record<string, Cmd> = {
       return;
     }
     if (sub === "schema") {
-      const sql = cloud.schemaSql();
+      // --since 6: only migrations 0006 and later, to upgrade a project that already has the rest
+      const since = flag(a, "since");
+      const sql = cloud.schemaSql(since ? Number(since) : undefined);
       const out = flag(a, "out");
       if (out) {
         fs.writeFileSync(out, sql);
@@ -1474,6 +1640,10 @@ Sharing (needs the workspace in your cloud: surface sync enable)
   share device [--mail]               a one-line join code for YOUR other computer
   share invite <email> [--role …] [--mail]   invite someone; prints the message with their join code
                                       (your own email = a code for your other computer)
+  vault new <folder> [--under <folder>] [--only t,t] [--layout …] | vault list
+                                      generated folders of Markdown (Obsidian, VS Code); docs/LINKS.md
+  import <folder> [--type-from <key>] [--tables a,b]   copy a folder of notes in, keeping folders; links resolved
+  links [--json] | relink [--dry-run]   links that match no page; store links that now match
   log [--lines N] [--area sync|http|serve|files|cli|proc] [--level warn] [--follow] | log path
                                       the log every Surface process writes (SURFACE_LOG=debug for more)
   workspace members                   who's in this workspace, and pending invites

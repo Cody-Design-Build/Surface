@@ -75,7 +75,7 @@ export function Sidebar(props: Props) {
       return {};
     }
   });
-  const [closedSections, setClosedSections] = useState<Record<string, boolean>>({});
+  const [closedS, toggleS] = useClosedSections();
   const [drag, setDrag] = useState<{ src: Src; x: number; y: number; copy: boolean } | null>(null);
   const [target, setTarget] = useState<Target | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null);
@@ -370,7 +370,7 @@ export function Sidebar(props: Props) {
             data-container={container ? "1" : undefined}
             data-open={open && hasKids ? "1" : undefined}
             className={`node ${isGroup ? "is-group" : ""} ${n.kind === "view" ? "is-view" : ""} ${selected ? "is-selected" : ""} ${placed ? "is-placed" : "is-generated"} ${notFound ? "is-missing" : ""}`}
-            style={{ paddingLeft: 6 + depth * 16 }}
+            style={{ paddingLeft: 4 + depth * 14 }}
             data-drop={isTarget ? (target!.ok ? target!.pos : "no") : undefined}
             data-dragging={drag && drag.src.kind === "placed" && placed && drag.src.scope === scope && drag.src.loc.join(",") === n.loc!.join(",") ? "" : drag && drag.src.kind === "generated" && !placed && drag.src.id === n.id ? "" : undefined}
             onPointerDown={(e) => {
@@ -402,7 +402,7 @@ export function Sidebar(props: Props) {
               tabIndex={-1}
               aria-label={open ? "Collapse" : "Expand"}
             >
-              {hasKids ? <Icon name="chevron" size={12} /> : null}
+              {hasKids ? <Icon name="chevron" size={12} weight={2} /> : null}
             </button>
             <Icon name={icon} size={15} className="node-icon" />
             {isRenaming ? (
@@ -460,56 +460,58 @@ export function Sidebar(props: Props) {
               <Icon name="more" size={14} />
             </button>
           </div>
-          {hasKids && open ? <ul>{render(n.children, scope, p, depth + 1, childFrom)}</ul> : null}
+          {hasKids && open ? <ul style={{ "--guide": `${13 + depth * 14}px` } as React.CSSProperties}>{render(n.children, scope, p, depth + 1, childFrom)}</ul> : null}
         </li>
       );
     });
 
-  const section = (scope: Scope) => {
+  const dropAt = (scope: Scope) => (target?.rowKey === `section:${scope}` ? (target.ok ? "inside" : "no") : undefined);
+  const addButton = (scope: Scope, label: string) =>
+    canEdit(scope) ? (
+      <button
+        className="section-add"
+        title={label}
+        onClick={(e) => {
+          e.stopPropagation();
+          const b = (e.currentTarget as HTMLElement).getBoundingClientRect();
+          setMenu({ x: b.left, y: b.bottom + 4, items: addMenu(scope, null, b.left, b.bottom) });
+        }}
+      >
+        <Icon name="plus" size={13} />
+      </button>
+    ) : null;
+  const countOf = (scope: Scope) => sb[scope].tree.length;
+  // the entries of one scope (no header)
+  const body = (scope: Scope) => {
     const info = sb[scope];
-    const closed = closedSections[scope];
     const empty = !info.tree.length;
     return (
-      <section className={`side-section ${closed ? "is-closed" : ""}`} key={scope}>
-        {!merged ? (
-          <div
-            className="section-head"
-            data-section={scope}
-            data-drop={target?.rowKey === `section:${scope}` ? (target.ok ? "inside" : "no") : undefined}
-            onClick={() => setClosedSections((c) => ({ ...c, [scope]: !c[scope] }))}
-          >
-            <span className="section-name">{scope === "workspace" ? app.workspace.name : "Personal"}</span>
-            {scope === "workspace" && !canWs ? (
-              <span className="section-lock" title="Owners and admins arrange this section. Copy entries to Personal to arrange them yourself.">
-                <Icon name="lock" size={11} />
-              </span>
-            ) : null}
-            {canEdit(scope) ? (
-              <button
-                className="section-add"
-                title={`Add to ${SCOPE_NAME[scope]}`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  const b = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                  setMenu({ x: b.left, y: b.bottom + 4, items: addMenu(scope, null, b.left, b.bottom) });
-                }}
-              >
-                <Icon name="plus" size={13} />
-              </button>
-            ) : null}
+      <div key={scope}>
+        <ul>{render(info.tree, scope, [scope], 0, null)}</ul>
+        {empty && (scope === "personal" ? !merged : !sb.personal.tree.length) ? (
+          <div className="tree-hint" data-section={scope} data-drop={dropAt(scope)}>
+            {scope === "personal" ? "Your own entries. Only you see them. Drag pages here, or use + to add folders and views." : "Arrange your own folders, pages and views here. Use + to add a view or a folder, or drag pages in."}
           </div>
         ) : null}
-        {!closed ? (
-          <>
-            <ul>{render(info.tree, scope, [scope], 0, null)}</ul>
-            {empty && scope === "personal" && !merged ? (
-              <div className="tree-hint" data-section={scope} data-drop={target?.rowKey === `section:${scope}` ? (target.ok ? "inside" : "no") : undefined}>
-                Your own entries. Only you see them. Drag pages here, or use + to add folders and views.
-              </div>
-            ) : null}
-            {merged || !empty ? <div className="section-tail" data-section={scope} data-drop={target?.rowKey === `section:${scope}` ? (target.ok ? "inside" : "no") : undefined} /> : null}
-          </>
-        ) : null}
+        {!empty ? <div className="section-tail" data-section={scope} data-drop={dropAt(scope)} /> : null}
+      </div>
+    );
+  };
+  // split display: Views (the workspace's) and Personal, each folding on its own
+  const section = (scope: Scope) => {
+    const key = scope === "workspace" ? "views" : "personal";
+    const closed = !!closedS[key];
+    return (
+      <section className={`side-section ${closed ? "is-closed" : ""}`} key={scope}>
+        <SectionHead name={scope === "workspace" ? "Views" : "Personal"} closed={closed} onToggle={() => toggleS(key)} count={countOf(scope)} section={scope} drop={dropAt(scope)}>
+          {scope === "workspace" && !canWs ? (
+            <span className="section-lock" title="Owners and admins arrange this section. Copy entries to Personal to arrange them yourself.">
+              <Icon name="lock" size={11} />
+            </span>
+          ) : null}
+          {addButton(scope, `Add to ${SCOPE_NAME[scope]}`)}
+        </SectionHead>
+        {!closed ? body(scope) : null}
       </section>
     );
   };
@@ -538,19 +540,17 @@ export function Sidebar(props: Props) {
         </button>
       </div>
       <nav className="tree" ref={treeRef}>
-        {order.map(section)}
+        <VaultSection app={app} current={current} openRecord={openRecord} closed={!!closedS.vault} onToggle={() => toggleS("vault")} />
         {merged ? (
-          <button
-            className="merged-add"
-            onClick={(e) => {
-              const b = (e.currentTarget as HTMLElement).getBoundingClientRect();
-              const scope: Scope = canWs ? "workspace" : "personal";
-              setMenu({ x: b.left, y: b.top - 4, items: addMenu(scope, null, b.left, b.top) });
-            }}
-          >
-            <Icon name="plus" size={13} /> Add to sidebar
-          </button>
-        ) : null}
+          <section className={`side-section ${closedS.views ? "is-closed" : ""}`}>
+            <SectionHead name="Views" closed={!!closedS.views} onToggle={() => toggleS("views")} count={countOf("workspace") + countOf("personal")} section={canWs ? "workspace" : "personal"} drop={dropAt(canWs ? "workspace" : "personal")} title="Your own arrangement: folders, pages and views">
+              {addButton(canWs ? "workspace" : "personal", "Add a folder, page or view")}
+            </SectionHead>
+            {!closedS.views ? order.map(body) : null}
+          </section>
+        ) : (
+          order.map(section)
+        )}
       </nav>
       <div className="side-bottom">
         <button className="new-btn" onClick={newPage}>
@@ -628,7 +628,7 @@ export function Menu({ x, y, items, onClose }: { x: number; y: number; items: Me
             {m.icon ? <Icon name={m.icon} size={14} /> : null}
             <span className="menu-label">{m.label}</span>
             {m.meta ? <span className="menu-meta">{m.meta}</span> : null}
-            {m.submenu ? <Icon name="chevron" size={12} /> : null}
+            {m.submenu ? <Icon name="chevron" size={12} weight={2} /> : null}
           </button>
         ),
       )}
@@ -697,4 +697,119 @@ function WorkspaceMenu({ app }: { app: AppState }) {
       ) : null}
     </div>
   );
+}
+
+// ------------------------------------------------------------------ vault
+// The vault's folders exactly as they are on disk, the way Obsidian shows them: folders first,
+// then notes, alphabetical. Read-only here (folders come from the files); the sections below
+// are where custom views and arrangements go.
+interface VNode {
+  name: string;
+  path: string;
+  id?: string;
+  type?: string;
+  kids: VNode[];
+}
+
+function buildVault(records: AppState["records"]): VNode[] {
+  const root: VNode = { name: "", path: "", kids: [] };
+  for (const r of records) {
+    if (!r.path) continue;
+    const parts = r.path.split("/");
+    let at = root;
+    for (let i = 0; i < parts.length - 1; i++) {
+      const p = parts.slice(0, i + 1).join("/");
+      let next = at.kids.find((k) => !k.id && k.path === p);
+      if (!next) at.kids.push((next = { name: parts[i], path: p, kids: [] }));
+      at = next;
+    }
+    at.kids.push({ name: parts[parts.length - 1].replace(/\.md$/i, ""), path: r.path, id: r.id, type: r.type, kids: [] });
+  }
+  const sort = (n: VNode) => {
+    n.kids.sort((a, b) => Number(!!a.id) - Number(!!b.id) || a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }));
+    n.kids.forEach(sort);
+  };
+  sort(root);
+  return root.kids;
+}
+
+function VaultSection({ app, current, openRecord, closed, onToggle }: { app: AppState; current: Route; openRecord: (id: string) => void; closed: boolean; onToggle: () => void }) {
+  const tree = useMemo(() => buildVault(app.records), [app.records]);
+  const [open, setOpen] = useState<Record<string, boolean>>(() => {
+    try {
+      return JSON.parse(localStorage.getItem("surface.vault.open") ?? "{}");
+    } catch {
+      return {};
+    }
+  });
+  useEffect(() => localStorage.setItem("surface.vault.open", JSON.stringify(open)), [open]);
+  // reveal the open note: unfold the folders above it
+  useEffect(() => {
+    if (current?.kind !== "record") return;
+    const p = app.records.find((r) => r.id === current.id)?.path;
+    if (!p || !p.includes("/")) return;
+    const parts = p.split("/").slice(0, -1);
+    setOpen((o) => ({ ...o, ...Object.fromEntries(parts.map((_, i) => [parts.slice(0, i + 1).join("/"), true])) }));
+  }, [current]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (!tree.length) return null;
+
+  const count = (n: VNode): number => n.kids.reduce((s, k) => s + (k.id ? 1 : count(k)), 0);
+  const render = (nodes: VNode[], depth: number): React.ReactNode =>
+    nodes.map((n) => {
+      const folder = !n.id;
+      const isOpen = !!open[n.path];
+      const selected = !folder && current?.kind === "record" && current.id === n.id;
+      return (
+        <li key={n.path}>
+          <div
+            className={`node ${folder ? "is-group" : ""} ${selected ? "is-selected" : ""}`}
+            style={{ paddingLeft: 4 + depth * 14 }}
+            title={n.path}
+            onClick={() => (folder ? setOpen((o) => ({ ...o, [n.path]: !isOpen })) : openRecord(n.id!))}
+          >
+            <span className={`twirl ${folder ? "" : "is-leaf"} ${isOpen ? "is-open" : ""}`}>{folder ? <Icon name="chevron" size={12} weight={2} /> : null}</span>
+            <Icon name={folder ? "folder" : "page"} size={15} className="node-icon" />
+            <span className="node-label">{n.name}</span>
+            {folder && !isOpen ? <span className="node-count">{count(n)}</span> : null}
+          </div>
+          {folder && isOpen ? <ul className="tree-kids" style={{ "--guide": `${13 + depth * 14}px` } as React.CSSProperties}>{render(n.kids, depth + 1)}</ul> : null}
+        </li>
+      );
+    });
+
+  return (
+    <section className={`side-section ${closed ? "is-closed" : ""}`}>
+      <SectionHead name="Vault" closed={closed} onToggle={onToggle} count={app.records.filter((r) => r.path).length} title={`The folders in ${app.root}, as Obsidian and other editors see them`} />
+      {!closed ? <ul>{render(tree, 0)}</ul> : null}
+    </section>
+  );
+}
+
+/** One header style for every sidebar section: chevron, name, count when folded, actions on hover. */
+function SectionHead({ name, closed, onToggle, count, title, children, drop, section }: { name: string; closed: boolean; onToggle: () => void; count?: number; title?: string; children?: React.ReactNode; drop?: string; section?: string }) {
+  return (
+    <div className="section-head" onClick={onToggle} title={title} role="button" aria-expanded={!closed} data-section={section} data-drop={drop}>
+      <span className={`section-chev ${closed ? "" : "is-open"}`}>
+        <Icon name="chevron" size={12} weight={2} />
+      </span>
+      <span className="section-name">{name}</span>
+      {closed && count ? <span className="section-count">{count}</span> : null}
+      {children}
+    </div>
+  );
+}
+
+/** Folded sections, remembered per browser (vault, workspace, personal). */
+function useClosedSections() {
+  const [closed, setClosed] = useState<Record<string, boolean>>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem("surface.sections.closed") ?? "{}");
+      if (localStorage.getItem("surface.vault.closed") === "1") saved.vault = true; // earlier setting
+      return saved;
+    } catch {
+      return {};
+    }
+  });
+  useEffect(() => localStorage.setItem("surface.sections.closed", JSON.stringify(closed)), [closed]);
+  return [closed, (k: string) => setClosed((c) => ({ ...c, [k]: !c[k] }))] as const;
 }

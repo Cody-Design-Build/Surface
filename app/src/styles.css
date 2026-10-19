@@ -154,9 +154,9 @@ code { font-family: var(--font-mono); font-size: 0.9em; }
 .tree ul { list-style: none; margin: 0; padding: 0; }
 .node {
   display: flex; align-items: center; gap: 6px;
-  height: 29px;
-  padding-right: 8px;
-  border-radius: 7px;
+  height: 28px;
+  padding-right: 6px;
+  border-radius: 6px;
   cursor: default;
   color: var(--text-soft);
   font-size: 13.5px;
@@ -179,7 +179,7 @@ code { font-family: var(--font-mono); font-size: 0.9em; }
 .node-icon { color: var(--text-muted); }
 .node-count { font-size: 11.5px; color: var(--text-faint); }
 .twirl {
-  width: 16px; height: 16px; flex: none;
+  width: 18px; height: 18px; flex: none;
   display: grid; place-items: center;
   color: var(--text-faint);
   border-radius: 4px;
@@ -187,6 +187,7 @@ code { font-family: var(--font-mono); font-size: 0.9em; }
 .twirl svg { transition: transform 0.15s ease; }
 .twirl.is-open svg { transform: rotate(90deg); }
 .twirl.is-leaf { pointer-events: none; }
+.node > .twirl { margin-right: 1px; }
 .twirl:hover { color: var(--text-soft); background: var(--bg-hover); }
 .node-add { opacity: 0; color: var(--text-muted); padding: 3px; border-radius: 5px; margin-right: -4px; }
 .node:hover .node-add { opacity: 1; }
@@ -267,6 +268,15 @@ code { font-family: var(--font-mono); font-size: 0.9em; }
 
 /* ------------------------------------------------------------------ properties */
 .props { margin: 0 0 22px; padding: 6px 0 14px; border-bottom: 1px solid var(--line); }
+/* aliases: other names a page answers to */
+.aliases { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin: -12px 0 18px; font-size: 13px; color: var(--muted); }
+.aliases-label { margin-right: 2px; }
+.alias-chip { display: inline-flex; align-items: center; gap: 2px; padding: 1px 4px 1px 8px; border-radius: 10px; background: var(--accent-soft); color: var(--text); }
+.alias-chip button { border: 0; background: none; color: var(--muted); cursor: pointer; padding: 0 3px; font-size: 13px; line-height: 1; }
+.alias-chip button:hover { color: var(--text); }
+.alias-input { border: 0; outline: none; background: none; font: inherit; color: var(--text); min-width: 80px; flex: 1; padding: 2px 0; }
+.aliases-add { border: 0; background: none; color: var(--muted); font-size: 12px; cursor: pointer; padding: 0; margin: -14px 0 16px; opacity: 0; transition: opacity .15s; }
+article:hover .aliases-add, .aliases-add:focus { opacity: 1; }
 .prop { display: flex; align-items: flex-start; min-height: 32px; }
 .prop-label {
   width: 150px; flex: none;
@@ -526,22 +536,27 @@ code { font-family: var(--font-mono); font-size: 0.9em; }
 /* ------------------------------------------------------------------ sidebar: sections, placed/generated, drag */
 .ws-text { flex: 1; min-width: 0; }
 .ws-btn { width: 26px; height: 26px; color: var(--text-muted); }
-.side-section + .side-section { margin-top: 10px; }
+.side-section + .side-section { margin-top: 14px; }
+/* section headers: one style for Vault, Views, Personal. Chevron, name, count when folded, + on hover. */
 .section-head {
   display: flex; align-items: center; gap: 6px;
-  height: 26px; padding: 0 6px 0 8px; margin-top: 6px;
-  border-radius: 7px;
-  font-size: 11.5px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
-  color: var(--text-muted);
-  cursor: default;
+  height: 28px; padding: 0 4px 0 2px;
+  border-radius: 6px;
+  font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--text-faint);
+  cursor: pointer; user-select: none;
 }
-.section-head:hover { color: var(--text-soft); }
+.section-head:hover { color: var(--text-soft); background: var(--bg-hover); }
+.section-chev { width: 18px; height: 18px; flex: none; display: grid; place-items: center; color: var(--text-faint); }
+.section-chev svg { transition: transform 0.15s ease; }
+.section-chev.is-open svg { transform: rotate(90deg); }
+.section-head:hover .section-chev { color: var(--text-soft); }
 .section-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.section-count { font-size: 11px; font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--text-faint); padding-right: 4px; }
 .section-lock { color: var(--text-faint); display: grid; place-items: center; }
-.section-add { opacity: 0; color: var(--text-muted); padding: 3px; border-radius: 5px; }
+.section-add { opacity: 0; color: var(--text-muted); width: 22px; height: 22px; display: grid; place-items: center; border-radius: 5px; }
 .section-head:hover .section-add { opacity: 1; }
-.section-add:hover { background: var(--bg-hover); color: var(--text); }
-.side-section.is-closed .section-head::after { content: "hidden"; font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--text-faint); }
+.section-add:hover { background: var(--bg-active); color: var(--text); }
 .section-tail { height: 10px; border-radius: 6px; }
 .merged-add { display: flex; align-items: center; gap: 6px; margin: 8px 6px 0; padding: 4px 8px; border-radius: 7px; color: var(--text-faint); font-size: 12.5px; }
 .merged-add:hover { color: var(--text-soft); background: var(--bg-hover); }
@@ -935,3 +950,9 @@ select.ve-input { padding-right: 4px; }
 .btn-primary.sm { height: 28px; padding: 0 10px; }
 .view-dirty { display: inline-flex; gap: 6px; }
 .view-embed .surface-grid { border-radius: 6px; }
+
+/* indent guides: a faint line down each open folder, like Obsidian and VS Code */
+.tree li { position: relative; }
+.tree ul ul::before, .tree-kids::before { content: ""; position: absolute; top: 30px; bottom: 6px; width: 1px; background: color-mix(in srgb, var(--text-faint) 35%, transparent); left: var(--guide, 13px); pointer-events: none; }
+.tree li:hover > ul::before { background: color-mix(in srgb, var(--text-faint) 70%, transparent); }
+.node-count { min-width: 18px; text-align: right; }

@@ -56,6 +56,8 @@ export interface CheckoutConfig {
   workspaceName?: string;
   layout: Layout;
   only?: string[]; // limit the checkout to these type keys
+  /** limit to records in this folder (and below); paths in the vault are relative to it */
+  under?: string;
 }
 
 export interface FileState {

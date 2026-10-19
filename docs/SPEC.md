@@ -15,6 +15,7 @@ The current design in one place. Last consolidated: Oct 16, 2026.
 - **How we got here:** the working notes in `docs/notes/` (DATA-MODEL, CONVENTIONS, SYNC), kept as design history.
 - **Research:** `docs/research/`.
 - **Local mode and sync mode:** `docs/LOCAL.md`.
+- **Links and vaults:** `docs/LINKS.md`. Links in page text are stored by record id and shown by current name, so renames never break them; vaults are generated folders of Markdown, any number per workspace (built Oct 18).
 - **Parked:** importing existing vaults (`docs/IMPORT.md`).
 
 Status markers: **Decided**, **Leaning** (direction agreed, details open), **Open**.
@@ -416,7 +417,8 @@ Built behaviour in the MVP (`surface type …` / `surface field …`):
   - `id`: the record ID; ties the file to its database record. **Open:** use a namespaced key such as `surface_id` to avoid clashing with vaults that already use `id` (see IMPORT).
   - `type`: the record's type (Note, Task, …).
   - `title`.
-  - `aliases`, `tags`: Obsidian's conventions, reused as-is.
+  - `aliases`: Obsidian's convention; a built-in list on every record, used to resolve typed links (`LINKS.md`).
+  - `tags`: Obsidian's convention, reused as-is.
 - **Every other key** is a schema field.
 - **Plain YAML scalars and lists only.** Links are quoted wikilinks (`assignee: "[[Jane Doe]]"`). No Surface-only syntax.
 - **Canonical layout** when Surface writes a file: one field per line, in schema order, so edits to different fields touch different lines.
