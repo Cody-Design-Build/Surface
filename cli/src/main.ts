@@ -20,7 +20,7 @@ import { writeAgentFiles } from "./skills.ts";
 // ---------------------------------------------------------------------------
 // Arguments
 // ---------------------------------------------------------------------------
-const BOOL = new Set(["force", "dry-run", "new", "json", "multiple", "single", "required", "optional", "deleted", "yes", "help", "all", "paths", "open", "personal", "no-watch", "service", "cloud", "local", "rebuild", "skip-app", "tab", "print", "mail"]);
+const BOOL = new Set(["force", "dry-run", "new", "json", "multiple", "single", "required", "optional", "deleted", "yes", "help", "all", "paths", "open", "personal", "no-watch", "service", "cloud", "local", "rebuild", "skip-app", "tab", "print", "mail", "follow"]);
 
 interface Args {
   _: string[];
@@ -952,6 +952,35 @@ const commands: Record<string, Cmd> = {
     await new Promise(() => {});
   },
 
+  async log(a) {
+    // show the shared log: where it is, the last lines, optionally only one area or errors, or follow it
+    const { logFile } = await import("./log.ts");
+    const file = logFile();
+    if (!file) return void console.log("File logging is off (SURFACE_LOG_FILE=off).");
+    if (a._[0] === "path") return void console.log(file);
+    if (!fs.existsSync(file)) return void console.log(`No log yet. It will be at ${file}`);
+    const area = flag(a, "area");
+    const level = flag(a, "level");
+    const levels = level ? ["DEBUG", "INFO", "WARN", "ERROR"].slice(["debug", "info", "warn", "error"].indexOf(level)) : null;
+    const keep = (l: string) => (!area || l.split(/\s+/)[2] === area) && (!levels || levels.includes(l.split(/\s+/)[1]));
+    const n = Number(flag(a, "lines") ?? 50);
+    const lines = fs.readFileSync(file, "utf8").split("\n").filter((l) => l && keep(l));
+    console.log(dim(`${file}  (last ${Math.min(n, lines.length)} of ${lines.length}${area ? `, area ${area}` : ""}${level ? `, ${level}+` : ""})`));
+    for (const l of lines.slice(-n)) console.log(/ ERROR /.test(l) ? red(l) : / WARN /.test(l) ? yellow(l) : l);
+    if (!a.flags.follow) return;
+    let size = fs.statSync(file).size;
+    fs.watchFile(file, { interval: 500 }, (cur) => {
+      if (cur.size < size) size = 0; // rotated
+      const fd = fs.openSync(file, "r");
+      const buf = Buffer.alloc(cur.size - size);
+      fs.readSync(fd, buf, 0, buf.length, size);
+      fs.closeSync(fd);
+      size = cur.size;
+      for (const l of buf.toString("utf8").split("\n").filter((x) => x && keep(x))) console.log(/ ERROR /.test(l) ? red(l) : / WARN /.test(l) ? yellow(l) : l);
+    });
+    await new Promise(() => {});
+  },
+
   async share(a) {
     // one place for sharing: your other computers, other people, and who has access
     const ws = await workspaceId(a);
@@ -1444,6 +1473,9 @@ Sharing (needs the workspace in your cloud: surface sync enable)
   share                               who has this workspace: people and pending invites
   share device [--mail]               a one-line join code for YOUR other computer
   share invite <email> [--role …] [--mail]   invite someone; prints the message with their join code
+                                      (your own email = a code for your other computer)
+  log [--lines N] [--area sync|http|serve|files|cli|proc] [--level warn] [--follow] | log path
+                                      the log every Surface process writes (SURFACE_LOG=debug for more)
   workspace members                   who's in this workspace, and pending invites
   workspace invite <email> [--role admin|member|viewer] [--mail]
                                       invite, and print a message with their \`surface join\` code (--mail: draft in your email app)
@@ -1461,7 +1493,18 @@ async function main() {
   if (!fn) throw new UserError(`Unknown command "${cmd}". Run \`surface help\`.`);
   const args = parseArgs(rest);
   if (args.flags.help) return void console.log(HELP);
-  await fn(args);
+  const { hookProcess, setRole, logger } = await import("./log.ts");
+  hookProcess();
+  setRole(cmd === "serve" || cmd === "data" ? `${cmd}:${flag(args, "port") ?? (cmd === "data" ? 4318 : 4317)}` : `cli ${cmd}`);
+  // long-running servers log their own start; quick commands log one line each (args only, no values that could be secrets)
+  if (cmd !== "serve" && cmd !== "data" && cmd !== "log") logger("cli").debug("command", { cwd: process.cwd(), sub: args._[0], flags: Object.keys(args.flags) });
+  const t0 = Date.now();
+  try {
+    await fn(args);
+  } catch (e) {
+    logger("cli").warn(`${cmd} failed`, { sub: args._[0], err: e as Error, ms: Date.now() - t0 });
+    throw e;
+  }
 }
 
 main()

@@ -164,3 +164,13 @@ Config is per user in `~/.config/surface-cli/`: `cloud.json` (project URL and pu
 ## Testing (for contributors)
 
 `npm run test:team` (in `cli/`) runs the whole path against the project this computer is connected to: a local workspace, `sync enable`, a second computer of yours joining with `share device`, a teammate joining with `share invite` + `join`, and edits flowing between them. It makes a temporary workspace and deletes it.
+
+## Logs
+
+Every Surface process (the app server, `surface data`, CLI commands, sync) writes one shared log:
+
+- Linux `~/.local/state/surface/surface.log`, macOS `~/Library/Logs/Surface/surface.log`, Windows `%LOCALAPPDATA%\\Surface\\Logs\\surface.log`. `surface log path` prints it.
+- `surface log` shows the last 50 lines; `--area sync`, `--level warn`, `--follow`.
+- Logged by default: server start (port, workspace, store, whether it owns the database, sync on/off), shutdowns and crashes, every sync round that moved anything (pushed, pulled, conflicts, errors, time), going offline and back, conflicts, failed pushes and pulls with record id and revisions, failed or slow API requests, file-watcher pushes.
+- `SURFACE_LOG=debug` adds every API request and every record a sync sends or receives. `SURFACE_LOG_FILE=<path>` moves it, `=off` turns it off.
+- One line per event with the process (`serve:4317`, `data:4318`, `cli push`) and pid. Rotates at 5 MB, keeps 3. Tokens, keys and record bodies are never logged.

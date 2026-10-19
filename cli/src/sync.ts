@@ -12,8 +12,11 @@
 // ids may differ between the local database and the hub); views by key and owner.
 import { localAdmin, localOwnerPort, localUser, remoteClient } from "./local.ts";
 import { CONFIG_DIR } from "./config.ts";
+import { logger } from "./log.ts";
 import fs from "node:fs";
 import path from "node:path";
+
+const L = logger("sync");
 
 export type Hub = { kind: "surface"; url: string; token: string; workspace: string } | { kind: "cloud"; workspace: string };
 
@@ -29,6 +32,7 @@ export interface SyncReport {
   conflicts: string[];
   errors: string[];
   offline?: boolean;
+  offlineReason?: string;
   scan?: "full" | "incremental";
 }
 
@@ -139,8 +143,13 @@ export async function syncWorkspace(ws: string): Promise<SyncReport> {
     await syncViews(ws, hub, client, rep);
     await localAdmin((tx) => tx.query("update surface_local.sync_workspaces set last_sync = now(), last_error = $2 where workspace_id = $1", [ws, rep.errors.length ? rep.errors.join("; ").slice(0, 2000) : null]));
   } catch (e) {
-    if (e instanceof Offline) rep.offline = true;
-    else rep.errors.push((e as Error).message);
+    if (e instanceof Offline) {
+      rep.offline = true;
+      rep.offlineReason = (e as Error).message;
+    } else {
+      rep.errors.push((e as Error).message);
+      L.error("round stopped", { ws, err: e as Error, pushed: rep.pushed, pulled: rep.pulled });
+    }
     await localAdmin((tx) => tx.query("update surface_local.sync_workspaces set last_error = $2 where workspace_id = $1", [ws, (rep.offline ? "offline: " : "") + (e as Error).message]));
   }
   return rep;
@@ -173,28 +182,63 @@ export async function syncCall(op: SyncOp, ...args: unknown[]): Promise<any> {
     if ("error" in out) throw new Error(out.error);
     return out.ok;
   }
-  return (OPS[op] as (...a: unknown[]) => Promise<unknown>)(...args);
+  return runOp(op, args);
 }
 /** For serve's /api/_sync endpoint. */
 export async function runSyncOp(op: string, args: unknown[]) {
   if (!(op in OPS)) throw new Error(`unknown sync operation ${op}`);
-  return (OPS[op as SyncOp] as (...a: unknown[]) => Promise<unknown>)(...args);
+  return runOp(op as SyncOp, args);
+}
+
+/** Run an op here, logging the ones that change things (enable, join, disable, resolve, now). */
+async function runOp(op: SyncOp, args: unknown[]) {
+  const quiet = op === "status" || op === "list";
+  const t0 = Date.now();
+  try {
+    const out = await (OPS[op] as (...a: unknown[]) => Promise<unknown>)(...args);
+    if (!quiet) L.info(`op ${op}`, { args, ms: Date.now() - t0, result: op === "now" ? (out as SyncReport[]).map((r) => ({ ws: r.workspace, pushed: r.pushed, pulled: r.pulled, conflicts: r.conflicts.length, errors: r.errors, offline: r.offline })) : undefined });
+    return out;
+  } catch (e) {
+    L.error(`op ${op} failed`, { args, ms: Date.now() - t0, err: e as Error });
+    throw e;
+  }
 }
 
 /** For `surface serve`: sync every few seconds, and soon after a local change. */
 export function startSyncLoop(onChange: () => void, everyMs = 5000, onTick: () => void = () => {}) {
   let running = false;
   let again = false;
+  // remember each workspace's last state so the log records changes (went offline, back online, new error), not every quiet round
+  const last = new Map<string, string>();
+  L.info("sync loop started", { everyMs });
   const tick = async () => {
     if (running) return void (again = true);
     running = true;
+    const t0 = Date.now();
     try {
       const reps = await syncAll();
       if (reps.some((r) => r.pulled || r.conflicts.length)) onChange();
-      for (const r of reps) for (const e of r.errors) console.error(`sync ${r.workspace}: ${e}`);
-      for (const r of reps) for (const c of r.conflicts) console.error(`sync ${r.workspace}: conflict: ${c}`);
+      for (const r of reps) {
+        const state = r.offline ? "offline" : r.errors.length ? "error" : "ok";
+        const prev = last.get(r.workspace);
+        last.set(r.workspace, state);
+        const data = { ws: r.workspace, pushed: r.pushed, pulled: r.pulled, conflicts: r.conflicts.length, errors: r.errors.length, ms: Date.now() - t0 };
+        if (state === "offline" && prev !== "offline") L.warn("hub unreachable, working offline", { ws: r.workspace, reason: r.offlineReason });
+        if (state !== "offline" && prev === "offline") L.info("hub reachable again", { ws: r.workspace });
+        if (r.pushed || r.pulled || r.conflicts.length || r.errors.length) L.info("round", data);
+        else L.debug("round (nothing to do)", data);
+        for (const e of r.errors) {
+          L.error("error", { ws: r.workspace, error: e });
+          console.error(`sync ${r.workspace}: ${e}`);
+        }
+        for (const c of r.conflicts) {
+          L.warn("conflict", { ws: r.workspace, conflict: c });
+          console.error(`sync ${r.workspace}: conflict: ${c}`);
+        }
+      }
       if (reps.length) onTick();
     } catch (e) {
+      L.error("round failed", { err: e as Error });
       console.error("sync:", (e as Error).message);
     } finally {
       running = false;
@@ -397,14 +441,17 @@ async function pushRecords(ws: string, hub: Hub, client: Client, types: Types, r
         res = await client.rpc("push_record", { ...args, p_base_rev: cur.rev });
       }
       if (res.error && /^conflict: /.test(res.error.message)) {
+        L.info("conflict on push: hub changed since last sync", { ws, id, title: r.title, baseRev: base });
         await conflictCopy(ws, client, types, r, rep);
         continue;
       }
       const saved = must(res, `push ${r.title}`);
       await markClean(ws, "record", id, String(saved.rev), r.rev);
+      L.debug("pushed record", { ws, id, title: r.title, baseRev: base, hubRev: saved.rev, localRev: r.rev });
       rep.pushed++;
     } catch (e) {
       if (e instanceof Offline) throw e;
+      L.error("push failed", { ws, id, title: r.title, baseRev: base, err: e as Error });
       rep.errors.push(`${r.title ?? id}: ${(e as Error).message}`);
     }
   }
@@ -512,8 +559,10 @@ async function pullRecords(ws: string, hub: Hub, client: Client, types: Types, r
     if (!lt) { rep.errors.push(`${h.title}: no local type ${ht?.key ?? h.type_id}`); continue; }
     try {
       await applyRecord(ws, h, lt, ht);
+      L.debug("pulled record", { ws, id: h.id, title: h.title, hubRev: h.rev, deleted: !!h.deleted_at });
       rep.pulled++;
-    } catch {
+    } catch (e) {
+      L.debug("pull deferred (retry after links)", { ws, id: h.id, err: (e as Error).message });
       retry.push(h);
     }
   }
@@ -533,6 +582,7 @@ async function pullRecords(ws: string, hub: Hub, client: Client, types: Types, r
       await applyRecord(ws, h, lt, ht);
       rep.pulled++;
     } catch (e) {
+      L.error("pull failed", { ws, id: h.id, title: h.title, hubRev: h.rev, err: e as Error });
       rep.errors.push(`${h.title}: ${(e as Error).message}`);
     }
   }

@@ -9,7 +9,7 @@ import { createPortal } from "react-dom";
 import { DataGrid, TreeDataGrid, SelectColumn, type Column, type RenderEditCellProps, type RowsChangeData, type SortColumn } from "react-data-grid";
 import "react-data-grid/lib/styles.css";
 import type { AppState, FieldDef, LayoutDef, RecordFull, TypeInfo } from "./api.ts";
-import { Icon, typeIcon } from "./Icon.tsx";
+import { Icon } from "./Icon.tsx";
 import { Pill } from "./Properties.tsx";
 import { CellView } from "./ViewPage.tsx";
 
@@ -234,7 +234,6 @@ export function Grid({ app, type, layout, sort, rows, readOnly, embedded, open, 
       editable: !readOnly,
       renderCell: ({ row }) => (
         <span className="sg-title-inner">
-          <Icon name={typeIcon(row.type)} size={14} />
           <span className="sg-title-text">{row.title || "Untitled"}</span>
           <button
             className="sg-open"

@@ -13,6 +13,10 @@ import { makeResolver, pull, snapshot, type Snapshot } from "./checkout.ts";
 import { normalize } from "./normalize.ts";
 import { asTreeDef, defaultTree, isTreeDef, resolveTree, validateDataView, validateTree, type TreeDef, type TreeNode } from "./tree.ts";
 import { matches, parseWhere, sortRows } from "./query.ts";
+import { logger, logFile, debugOn } from "./log.ts";
+
+const L = logger("serve");
+const HL = logger("http");
 
 const APP_DIR = path.resolve(import.meta.dirname, "../../app/dist");
 const TOKEN_FILE = path.join(CONFIG_DIR, "serve-token");
@@ -100,6 +104,7 @@ export async function serve(co: Checkout, opts: { port: number; host?: string; w
       }
       await pull(co);
     } catch (e) {
+      L.error("pull to files failed", { reason, err: e as Error });
       console.error("pull failed:", (e as Error).message);
     }
     broadcast({ type: "changed", reason, ids });
@@ -136,6 +141,7 @@ export async function serve(co: Checkout, opts: { port: number; host?: string; w
         await refresh("remote", changed);
       }
     } catch (e) {
+      L.warn("database watch failed", { err: e as Error });
       console.error("watch:", (e as Error).message);
     } finally {
       polling = false;
@@ -152,7 +158,10 @@ export async function serve(co: Checkout, opts: { port: number; host?: string; w
     const { watchCheckout } = await import("./watch.ts");
     watcher = watchCheckout(() => co, {
       exclusive,
-      log: (l) => console.log(l),
+      log: (l) => {
+        logger("files").info(l);
+        console.log(l);
+      },
       onPushed: (results) => {
         const ids = results.map((r) => r.id).filter((x): x is string => !!x);
         setImmediate(() => refresh("files", ids).catch(() => {}));
@@ -689,6 +698,18 @@ export async function serve(co: Checkout, opts: { port: number; host?: string; w
 
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
+    // log API requests: every one at debug, slow (>1 s) or failed (>=400) ones always. Path only, never the query (it can hold the token).
+    if (url.pathname.startsWith("/api/") && url.pathname !== "/api/events") {
+      const t0 = Date.now();
+      res.on("finish", () => {
+        const ms = Date.now() - t0;
+        const data = { method: req.method, path: url.pathname, status: res.statusCode, ms };
+        if (res.statusCode >= 500) HL.error("request failed", data);
+        else if (res.statusCode >= 400 && res.statusCode !== 401) HL.warn("request refused", data);
+        else if (ms > 1000) HL.warn("slow request", data);
+        else HL.debug("request", data);
+      });
+    }
     try {
       // Only answer requests addressed to this machine (blocks DNS rebinding).
       const h = (req.headers.host ?? "").toLowerCase();
@@ -749,26 +770,39 @@ export async function serve(co: Checkout, opts: { port: number; host?: string; w
       return staticFile(url, res);
     } catch (e) {
       const err = e instanceof HttpError ? e : new HttpError(500, (e as Error).message);
-      if (!(e instanceof HttpError)) console.error(e);
+      if (!(e instanceof HttpError)) {
+        L.error("handler crashed", { method: req.method, path: url.pathname, err: e as Error });
+        console.error(e);
+      }
       if (!res.headersSent) res.writeHead(err.status, { "content-type": "application/json" });
       res.end(JSON.stringify({ error: err.message, ...err.extra }));
     }
   });
 
   await new Promise<void>((resolve, reject) => {
-    server.once("error", reject);
+    server.once("error", (e) => {
+      L.error("could not listen", { port, err: e as Error });
+      reject(e);
+    });
     server.listen(port, host, () => resolve());
   });
+  let owner = false;
   if (storeKind() === "local") {
     const local = await import("./local.ts");
     local.announceServer(port);
+    owner = await local.ownsDatabase();
     // Workspaces with sync on trade changes with their hub in the background.
     // Only the process that owns the database syncs; a second server (e.g. `surface data`) leaves it to the owner.
-    if (process.env.SURFACE_SYNC !== "off" && (await local.ownsDatabase())) {
+    if (process.env.SURFACE_SYNC !== "off" && owner) {
       const { startSyncLoop } = await import("./sync.ts");
       syncLoop = startSyncLoop(() => void refresh("sync"), Number(process.env.SURFACE_SYNC_MS ?? 5000), () => broadcast({ type: "sync" }));
     }
   }
+  L.info("started", {
+    surface: opts.surface ?? "app", port, ws, workspace: co.config.workspaceName, root: co.root, store: storeKind(),
+    database: storeKind() === "local" ? (owner ? "owns it" : "hands off to the server that owns it") : "cloud",
+    watch: opts.watch !== false, sync: owner && process.env.SURFACE_SYNC !== "off", debug: debugOn(), node: process.version,
+  });
   const { announceRunning } = await import("./open.ts");
   if (opts.surface !== "data") announceRunning(port, co.root);
   const link = `http://127.0.0.1:${port}/${opts.surface === "data" ? "data/" : ""}?token=${token}`;
@@ -776,5 +810,6 @@ export async function serve(co: Checkout, opts: { port: number; host?: string; w
   console.log(`Open: ${link}`);
   if (opts.watch !== false) console.log(`Watching ${co.root}: saves in any editor go to the database.`);
   console.log("Then install it as an app (Omarchy: Install Web App; Chrome: Install; Safari: Add to Dock).");
+  console.log(`Log: ${logFile() ?? "off"}   (surface log; SURFACE_LOG=debug for every request and synced record)`);
   return { server, link };
 }
