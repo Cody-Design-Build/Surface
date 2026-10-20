@@ -17,7 +17,9 @@
     "test:sync": "node --no-warnings test/sync.ts",
     "test:sync:cloud": "SYNC_HUB=cloud node --no-warnings test/sync.ts",
     "test:team": "node --no-warnings test/team.ts",
-    "test:links": "node --no-warnings test/links.ts"
+    "test:links": "node --no-warnings test/links.ts",
+    "test:workflow": "node --no-warnings test/workflow.ts",
+    "test:updates": "node --no-warnings test/updates.ts"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.10",

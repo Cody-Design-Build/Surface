@@ -61,17 +61,16 @@ interface State {
   revKey: string;
 }
 
-export async function serve(co: Checkout, opts: { port: number; host?: string; watch?: boolean; surface?: "data" }) {
+async function workspaceHandler(co: Checkout, opts: { port: number; watch?: boolean }, kick: () => void) {
   const user = await requireUser();
-  let ws = co.config.workspace;
+  const ws = co.config.workspace;
   rememberCheckout(co);
   const token = serveToken();
-  const host = opts.host ?? "127.0.0.1";
   const port = opts.port;
 
   let state: State = await load();
   const clients = new Set<http.ServerResponse>();
-  let syncLoop: { kick: () => void } | null = null;
+  const extraCheckouts = new Map<string, { co: Checkout; watcher: { close: () => void } }>();
 
   async function load(): Promise<State> {
     const snap = await snapshot(co);
@@ -104,12 +103,17 @@ export async function serve(co: Checkout, opts: { port: number; host?: string; w
         co.state = disk.state;
       }
       await pull(co);
+      for (const entry of extraCheckouts.values()) {
+        const disk = findCheckout(entry.co.root);
+        if (disk) entry.co = disk;
+        await pull(entry.co);
+      }
     } catch (e) {
       L.error("pull to files failed", { reason, err: e as Error });
       console.error("pull failed:", (e as Error).message);
     }
     broadcast({ type: "changed", reason, ids });
-    if (reason !== "sync") syncLoop?.kick(); // a local change: send it up soon
+    if (reason !== "sync") kick(); // a local change: send it up soon
   }
   function broadcast(msg: unknown) {
     const line = `data: ${JSON.stringify(msg)}\n\n`;
@@ -119,7 +123,7 @@ export async function serve(co: Checkout, opts: { port: number; host?: string; w
   // Watch the database for changes made elsewhere (CLI, agents, teammates).
   let polling = false;
   let typesKey = "";
-  setInterval(async () => {
+  const pollTimer = setInterval(async () => {
     if (polling) return;
     polling = true;
     try {
@@ -148,7 +152,8 @@ export async function serve(co: Checkout, opts: { port: number; host?: string; w
       polling = false;
     }
   }, 2500).unref();
-  setInterval(() => broadcast({ type: "ping" }), 25000).unref();
+  const pingTimer = setInterval(() => broadcast({ type: "ping" }), 25000);
+  pingTimer.unref();
 
   // Push on save: edits from any editor (Obsidian, VS Code, agents) reach the database.
   let watcher: { close: () => void } | null = null;
@@ -170,6 +175,24 @@ export async function serve(co: Checkout, opts: { port: number; host?: string; w
     });
   }
   await startWatching();
+  async function watchCheckouts() {
+    if (opts.watch === false) return;
+    const { watchCheckout } = await import("./watch.ts");
+    const known = knownCheckouts().filter(k => k.workspace === ws && k.root !== co.root);
+    const roots = new Set(known.map(k => k.root));
+    for (const [root, entry] of extraCheckouts) if (!roots.has(root)) { entry.watcher.close(); extraCheckouts.delete(root); }
+    for (const k of known) if (!extraCheckouts.has(k.root)) {
+      const other = findCheckout(k.root);
+      if (!other) continue;
+      const entry = { co: other, watcher: { close() {} } };
+      entry.watcher = watchCheckout(() => entry.co, { exclusive,
+        log: line => logger("files").info(line),
+        onPushed: () => { setImmediate(() => void refresh("files").catch(e => L.warn("checkout refresh failed", { err: e }))); }
+      });
+      extraCheckouts.set(k.root, entry);
+    }
+  }
+  await watchCheckouts();
 
   // ------------------------------------------------------------------ helpers
   const typeOf = (id: string) => state.snap.typeMap.get(id)!;
@@ -341,6 +364,7 @@ export async function serve(co: Checkout, opts: { port: number; host?: string; w
       const abs = path.resolve(co.root, rel);
       if (!abs.startsWith(co.root + path.sep) || rel.split(/[\\/]/).includes(".surface")) return send(403, { error: "Not allowed" });
       if (!fs.existsSync(abs) || !fs.statSync(abs).isFile()) return send(404, { error: "Not found" });
+      if (!fs.realpathSync(abs).startsWith(fs.realpathSync(co.root) + path.sep)) return send(403, { error: "Not allowed" });
       const types: Record<string, string> = { ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp", ".svg": "image/svg+xml", ".avif": "image/avif", ".pdf": "application/pdf" };
       res.writeHead(200, { "content-type": types[path.extname(abs).toLowerCase()] ?? "application/octet-stream", "cache-control": "no-cache", "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'", "x-content-type-options": "nosniff" });
       fs.createReadStream(abs).pipe(res);
@@ -354,7 +378,7 @@ export async function serve(co: Checkout, opts: { port: number; host?: string; w
         mode: "local",
         user: { email: user.email, id: user.id },
         role: await myRole(),
-        workspace: { id: ws, name: co.config.workspaceName ?? ws },
+        workspace: { id: ws, name: co.config.workspaceName ?? ws, home: storeKind() === "cloud" || (await (await import("./sync.ts")).syncCall("status", ws))?.hub.kind === "cloud" ? "cloud" : "local" },
         root: co.root,
         layout: co.config.layout,
         types: state.snap.types.map(typeJson),
@@ -577,31 +601,7 @@ export async function serve(co: Checkout, opts: { port: number; host?: string; w
       const { data: w, error } = await sb().from("workspaces").select("id,name").eq("id", id).maybeSingle();
       if (error) throw dbError(error);
       if (!w) throw new HttpError(404, "No such workspace, or you're not a member.");
-      if (w.id === ws) return send(200, { ok: true, root: co.root });
-      let next = knownCheckouts().find((k) => k.workspace === w.id)?.root;
-      let created = false;
-      if (!next) {
-        const slug = w.name.replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-+|-+$/g, "") || w.id;
-        next = path.join(os.homedir(), `Surface-${slug}`);
-        for (let i = 2; fs.existsSync(path.join(next, ".surface")) || (fs.existsSync(next) && fs.readdirSync(next).length); i++) next = path.join(os.homedir(), `Surface-${slug}-${i}`);
-        fs.mkdirSync(next, { recursive: true });
-        const fresh: Checkout = { root: next, config: { workspace: w.id, workspaceName: w.name, layout: "type" }, state: { records: {} } };
-        saveCheckout(fresh);
-        created = true;
-      }
-      const nextCo = findCheckout(next);
-      if (!nextCo) throw new HttpError(500, `Couldn't open the checkout in ${next}`);
-      co = nextCo;
-      ws = w.id;
-      role = null;
-      typesKey = "";
-      if (created) await pull(co);
-      state = await load();
-      await startWatching();
-      (await import("./open.ts")).announceRunning(port, co.root);
-      broadcast({ type: "changed", reason: "workspace", ids: [] });
-      console.log(`Switched to "${w.name}" (${co.root})`);
-      return send(200, { ok: true, root: co.root, created });
+      return send(200, { ok: true, url: `/w/${w.id}/`, root: knownCheckouts().find(k => k.workspace === w.id)?.root ?? null });
     }
     if (parts[0] === "invites" && parts[1] && parts[2] === "accept" && m === "POST") {
       const { error } = await sb().rpc("accept_invite", { p_invite: parts[1] });
@@ -689,13 +689,93 @@ export async function serve(co: Checkout, opts: { port: number; host?: string; w
     throw new HttpError(404, "Not found");
   }
 
+  return { api, refresh, broadcast, watchCheckouts, clients: () => clients.size, close() {
+    clearInterval(pollTimer); clearInterval(pingTimer); watcher?.close();
+    for (const entry of extraCheckouts.values()) entry.watcher.close();
+    for (const client of clients) client.end();
+  } };
+}
+
+export async function serve(initial: Checkout, opts: { port: number; host?: string; watch?: boolean; listen?: boolean }) {
+  const { running } = await import("./open.ts");
+  if (await running()) throw new Error("Surface is already running. Use surface open or surface data.");
+  fs.mkdirSync(CONFIG_DIR, { recursive: true });
+  const lock = path.join(CONFIG_DIR, "server.lock");
+  const release = () => {
+    try { if (fs.readFileSync(lock,"utf8") === String(process.pid)) fs.rmSync(lock); } catch {}
+  };
+  try { fs.writeFileSync(lock,String(process.pid),{flag:"wx"}); }
+  catch {
+    let pid = 0;
+    try { pid = Number(fs.readFileSync(lock,"utf8")); } catch {}
+    let active = false;
+    if (pid > 0) try { process.kill(pid,0); active = true; } catch (e) { active = (e as NodeJS.ErrnoException).code === "EPERM"; }
+    if (active || !pid) throw new Error("Another Surface server is running or starting. Use surface open.");
+    fs.rmSync(lock);
+    fs.writeFileSync(lock,String(process.pid),{flag:"wx"});
+  }
+  process.once("exit",release);
+  const token = serveToken();
+  const port = opts.port;
+  const host = opts.host ?? "127.0.0.1";
+  const contexts = new Map<string, Promise<Awaited<ReturnType<typeof workspaceHandler>>>>();
+  let syncLoop: { kick: () => void; stop: () => void } | null = null;
+  let discovering = false;
+  let stopping = false;
+  async function context(ws: string) {
+    let promise = contexts.get(ws);
+    if (!promise) {
+      promise = (async () => {
+        const { data: w, error } = await sb().from("workspaces").select("id,name").eq("id", ws).maybeSingle();
+        if (error) throw dbError(error);
+        if (!w) throw new HttpError(404, "No such workspace, or you're not a member.");
+        let co = ws === initial.config.workspace ? initial : null;
+        if (!co) {
+          const known = knownCheckouts().find(k => k.workspace === ws);
+          if (known) co = findCheckout(known.root);
+        }
+        if (!co) {
+          // Keep UI-created workspaces visible to Markdown apps, without replacing a folder.
+          const slug = w.name.replace(/[^\p{L}\p{N}]+/gu,"-").replace(/^-+|-+$/g,"") || ws;
+          let root = path.join(os.homedir(),`Surface-${slug}`);
+          for (let i=2; fs.existsSync(root) && fs.readdirSync(root).length; i++) root = path.join(os.homedir(),`Surface-${slug}-${i}`);
+          co = { root, config: { workspace: ws, workspaceName: w.name, layout: "type" }, state: { records: {} } };
+          saveCheckout(co);
+          await pull(co);
+        }
+        return workspaceHandler(co, opts, () => syncLoop?.kick());
+      })();
+      contexts.set(ws, promise);
+      promise.catch(() => contexts.delete(ws));
+    }
+    return promise;
+  }
+  async function refreshAll() {
+    await Promise.all([...contexts.values()].map(async p => (await p).refresh("sync")));
+  }
+  async function discover() {
+    if (discovering || stopping) return;
+    discovering = true;
+    try {
+      // Watch every known workspace, even when none of its browser tabs is open.
+      const { data, error } = await sb().from("workspaces").select("id");
+      if (error) throw dbError(error);
+      const available = new Set((data ?? []).map(w => w.id));
+      for (const [ws,p] of contexts) if (!available.has(ws)) { (await p).close(); contexts.delete(ws); }
+      for (const k of knownCheckouts()) if (available.has(k.workspace)) await context(k.workspace).then(c => c.watchCheckouts()).catch(e => L.warn("checkout unavailable", { ws: k.workspace, err: e }));
+    } finally { discovering = false; }
+  }
+  await context(initial.config.workspace);
+  await discover();
+  const discoveryTimer = setInterval(() => void discover().catch(e => L.warn("workspace discovery failed", { err: e })), 2500);
+  discoveryTimer.unref();
   function staticFile(url: URL, res: http.ServerResponse) {
     if (!fs.existsSync(APP_DIR)) {
       res.writeHead(500, { "content-type": "text/plain" });
       return res.end("The app isn't built yet. Run `npm install && npm run build` in the app/ folder.");
     }
     let rel = decodeURIComponent(url.pathname).replace(/^\/+/, "");
-    if (rel === "data" || rel === "data/" || (!rel && opts.surface === "data")) rel = "data.html";
+    if (rel === "data" || rel === "data/") rel = "data.html";
     let file = path.join(APP_DIR, rel);
     if (!file.startsWith(APP_DIR) || !rel || !fs.existsSync(file) || fs.statSync(file).isDirectory()) file = path.join(APP_DIR, "index.html");
     const ext = path.extname(file);
@@ -731,6 +811,14 @@ export async function serve(co: Checkout, opts: { port: number; host?: string; w
       const origin = req.headers.origin;
       if (req.method !== "GET" && origin && origin !== `http://${h}`) throw new HttpError(403, "Forbidden origin");
 
+      if (url.pathname === "/api/_health" && req.method === "GET") {
+        if (req.headers["x-surface-token"] !== token || origin) throw new HttpError(403, "Forbidden");
+        const loaded = await Promise.all(contexts.values());
+        const { localAdmin } = await import("./local.ts");
+        const pending = storeKind() === "local" ? await localAdmin(async tx => (await tx.query<{n:number}>("select count(*)::int as n from surface_local.sync_rows where dirty")).rows[0].n) : 0;
+        res.writeHead(200,{"content-type":"application/json"});
+        return res.end(JSON.stringify({ clients: loaded.reduce((n,c) => n+c.clients(),0), pending }));
+      }
       // CLI processes on this computer send their queries here while serve owns the local database
       if (url.pathname === "/api/_db" && req.method === "POST") {
         if (req.headers["x-surface-token"] !== token || origin) throw new HttpError(403, "Forbidden");
@@ -751,7 +839,7 @@ export async function serve(co: Checkout, opts: { port: number; host?: string; w
         res.writeHead(200, { "content-type": "application/json" });
         try {
           const ok = await runSyncOp(op, args ?? []);
-          if (op !== "status" && op !== "list") void refresh("sync");
+          if (op !== "status" && op !== "list") void refreshAll().catch(e => L.warn("refresh failed", { err: e }));
           return res.end(JSON.stringify({ ok: ok ?? null }));
         } catch (e) {
           return res.end(JSON.stringify({ error: (e as Error).message }));
@@ -763,21 +851,33 @@ export async function serve(co: Checkout, opts: { port: number; host?: string; w
         if (given !== token) throw new HttpError(403, "Wrong token");
         res.writeHead(302, {
           "set-cookie": `surface_token=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=31536000`,
-          location: opts.surface === "data" || url.pathname === "/data/" || url.pathname === "/data.html" ? "/data/" : "/",
+          location: url.pathname.startsWith("/w/") ? url.pathname : `/w/${initial.config.workspace}/${url.pathname.startsWith("/data") ? "data/" : ""}`,
         });
         return res.end();
       }
       const authed = cookies.surface_token === token;
-      if (url.pathname.startsWith("/api/")) {
-        if (!authed) throw new HttpError(401, "Open the link printed by `surface serve` to sign this browser in.");
-        return await api(req, url, res);
+      const route = /^\/w\/([a-z0-9]+)(\/.*)?$/.exec(url.pathname);
+      if (url.pathname.startsWith("/w/") && !route) throw new HttpError(404, "No such workspace");
+      if (route && !route[2]) {
+        res.writeHead(302, { location: `${url.pathname}/` }); return res.end();
+      }
+      const ws = route?.[1] ?? initial.config.workspace;
+      const localUrl = new URL(url);
+      if (route) localUrl.pathname = route[2] || "/";
+      if (localUrl.pathname.startsWith("/api/")) {
+        if (!authed) throw new HttpError(401, "Open the link printed by surface serve to sign this browser in.");
+        return await (await context(ws)).api(req, localUrl, res);
       }
       if (!authed && !/\.(js|css|svg|png|webmanifest|woff2|ico)$/.test(url.pathname)) {
-        res.writeHead(401, { "content-type": "text/html; charset=utf-8" });
-        return res.end(`<!doctype html><meta charset=utf-8><title>Surface</title><body style="font:15px -apple-system,system-ui,sans-serif;padding:4rem;color:#444">
-<h2 style="font-weight:600">Surface is running</h2><p>Open the link printed in the terminal by <code>surface serve</code> to connect this browser.</p></body>`);
+        res.writeHead(401, { "content-type": "text/plain" });
+        return res.end("Surface is running. Open the link printed by surface serve to connect this browser.");
       }
-      return staticFile(url, res);
+      if (authed && !route && ["/", "/data", "/data/", "/data.html"].includes(url.pathname)) {
+        res.writeHead(302, { location: `/w/${initial.config.workspace}/${url.pathname.startsWith("/data") ? "data/" : ""}` });
+        return res.end();
+      }
+      if (route) await context(ws); // validate workspace before serving its page
+      return staticFile(localUrl, res);
     } catch (e) {
       const err = e instanceof HttpError ? e : new HttpError(500, (e as Error).message);
       if (!(e instanceof HttpError)) {
@@ -789,9 +889,12 @@ export async function serve(co: Checkout, opts: { port: number; host?: string; w
     }
   });
 
-  await new Promise<void>((resolve, reject) => {
+  if (opts.listen !== false) await new Promise<void>((resolve, reject) => {
     server.once("error", (e) => {
       L.error("could not listen", { port, err: e as Error });
+      release();
+      clearInterval(discoveryTimer);
+      for (const p of contexts.values()) void p.then(c => c.close());
       reject(e);
     });
     server.listen(port, host, () => resolve());
@@ -799,27 +902,26 @@ export async function serve(co: Checkout, opts: { port: number; host?: string; w
   let owner = false;
   if (storeKind() === "local") {
     const local = await import("./local.ts");
-    local.announceServer(port);
+    if (opts.listen !== false) local.announceServer(port);
     owner = await local.ownsDatabase();
     // Workspaces with sync on trade changes with their hub in the background.
     // Only the process that owns the database syncs; a second server (e.g. `surface data`) leaves it to the owner.
     if (process.env.SURFACE_SYNC !== "off" && owner) {
       const { startSyncLoop } = await import("./sync.ts");
-      syncLoop = startSyncLoop(() => void refresh("sync"), Number(process.env.SURFACE_SYNC_MS ?? 5000), () => broadcast({ type: "sync" }));
+      syncLoop = startSyncLoop(() => void refreshAll().catch(e => L.warn("refresh failed", { err: e })), Number(process.env.SURFACE_SYNC_MS ?? 5000), () => {
+        for (const p of contexts.values()) void p.then(c => c.broadcast({ type: "sync" }));
+      });
     }
   }
-  L.info("started", {
-    surface: opts.surface ?? "app", port, ws, workspace: co.config.workspaceName, root: co.root, store: storeKind(),
-    database: storeKind() === "local" ? (owner ? "owns it" : "hands off to the server that owns it") : "cloud",
-    watch: opts.watch !== false, sync: owner && process.env.SURFACE_SYNC !== "off", debug: debugOn(), node: process.version,
-  });
-  const { announceRunning } = await import("./open.ts");
-  if (opts.surface !== "data") announceRunning(port, co.root);
-  const link = `http://127.0.0.1:${port}/${opts.surface === "data" ? "data/" : ""}?token=${token}`;
-  console.log(`Surface is running for "${co.config.workspaceName ?? ws}" (${co.root})`);
+  L.info("started", { port, root: initial.root, store: storeKind(), workspaces: contexts.size, sync: !!syncLoop });
+  if (opts.listen !== false) (await import("./open.ts")).announceRunning(port, initial.root);
+  const link = `http://127.0.0.1:${port}/w/${initial.config.workspace}/?token=${token}`;
+  console.log(`Surface is running for all workspaces on this computer.`);
   console.log(`Open: ${link}`);
-  if (opts.watch !== false) console.log(`Watching ${co.root}: saves in any editor go to the database.`);
-  console.log("Then install it as an app (Omarchy: Install Web App; Chrome: Install; Safari: Add to Dock).");
-  console.log(`Log: ${logFile() ?? "off"}   (surface log; SURFACE_LOG=debug for every request and synced record)`);
+  console.log(`Log: ${logFile() ?? "off"}`);
+  server.on("close", () => {
+    stopping = true; release(); clearInterval(discoveryTimer); syncLoop?.stop();
+    for (const p of contexts.values()) void p.then(c => c.close());
+  });
   return { server, link };
 }

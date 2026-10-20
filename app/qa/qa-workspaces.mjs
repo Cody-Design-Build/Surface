@@ -17,7 +17,7 @@ page.on("response", (r) => r.status() === 404 && errors.push("404 " + r.url()));
 let pass = 0, fail = 0;
 const check = (name, ok, extra = "") => { console.log(`${ok ? "PASS" : "FAIL"}  ${name}${extra ? "  — " + extra : ""}`); ok ? pass++ : fail++; };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const api = (path, opts = {}) => page.evaluate(async (path, opts) => (await fetch(path, opts)).json(), path, opts);
+const api = (path, opts = {}) => page.evaluate(async (path, opts) => (await fetch((/^\/w\/[^/]+/.exec(location.pathname)?.[0] ?? "") + path, opts)).json(), path, opts);
 
 await page.goto(`${BASE}/?token=${token}`, { waitUntil: "domcontentloaded" });
 await sleep(1200);

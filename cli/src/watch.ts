@@ -31,10 +31,12 @@ export function watchCheckout(getCo: () => Checkout, opts: WatchOptions = {}) {
   const exclusive = opts.exclusive ?? (<T>(fn: () => Promise<T>) => fn());
   let timer: NodeJS.Timeout | null = null;
   let running = false;
+  let closed = false;
   let again = false;
   const missingReported = new Set<string>();
 
   async function run() {
+    if (closed) return;
     if (running) {
       again = true;
       return;
@@ -80,6 +82,7 @@ export function watchCheckout(getCo: () => Checkout, opts: WatchOptions = {}) {
   }
 
   function schedule() {
+    if (closed) return;
     if (timer) clearTimeout(timer);
     timer = setTimeout(run, settle);
   }
@@ -94,5 +97,5 @@ export function watchCheckout(getCo: () => Checkout, opts: WatchOptions = {}) {
   });
   watcher.on("error", (e) => log(`watch: ${e.message}`));
   schedule(); // pick up anything edited while nothing was watching
-  return { close: () => (timer && clearTimeout(timer), watcher.close()), flush: run };
+  return { close: () => { closed = true; if (timer) clearTimeout(timer); watcher.close(); }, flush: run };
 }

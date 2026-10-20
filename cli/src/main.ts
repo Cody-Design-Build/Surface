@@ -20,7 +20,7 @@ import { writeAgentFiles } from "./skills.ts";
 // ---------------------------------------------------------------------------
 // Arguments
 // ---------------------------------------------------------------------------
-const BOOL = new Set(["force", "dry-run", "new", "json", "multiple", "single", "required", "optional", "deleted", "yes", "help", "all", "paths", "open", "personal", "no-watch", "service", "cloud", "local", "rebuild", "skip-app", "tab", "print", "mail", "follow"]);
+const BOOL = new Set(["force", "dry-run", "new", "json", "multiple", "single", "required", "optional", "deleted", "yes", "help", "all", "paths", "open", "personal", "no-watch", "service", "cloud", "local", "rebuild", "skip-app", "tab", "print", "mail", "follow", "check", "background", "no-service"]);
 
 interface Args {
   _: string[];
@@ -165,6 +165,18 @@ async function refreshCheckout(co: Checkout | null) {
 type Cmd = (a: Args) => Promise<void>;
 
 const commands: Record<string, Cmd> = {
+  async update(a) {
+    const { update, configureUpdates } = await import("./update.ts");
+    if (a._[0] === "auto") return configureUpdates(a._[1] ?? "check");
+    await update({ check: !!a.flags.check, background: !!a.flags.background });
+  },
+  async service(a) {
+    const action = a._[0] ?? "status";
+    if (!["install", "start", "stop", "restart", "status"].includes(action)) throw new UserError("Usage: surface service install|start|stop|restart|status");
+    const { serviceAction } = await import("./service.ts");
+    console.log(serviceAction(action as "install" | "start" | "stop" | "restart" | "status", flag(a,"port") ? Number(flag(a,"port")) : undefined));
+  },
+
   async signup(a) {
     (await import("./client.ts")).cloudClient(); // no cloud configured: say so before asking anything
     const email = flag(a, "email") ?? (await prompt("Email: "));
@@ -524,6 +536,15 @@ const commands: Record<string, Cmd> = {
     } else if (sub === "rm" || sub === "remove") {
       const t = typeByKey(types, key ?? "");
       if (t.is_builtin) throw new UserError(`"${t.key}" is built in and can't be removed.`);
+      if ((await import("./client.ts")).storeKind() === "local") {
+        const { syncCall } = await import("./sync.ts");
+        if (await syncCall("status",ws)) {
+          await syncCall("removeType",ws,t.id,flag(a,"move-to") ?? null,!!a.flags.force);
+          console.log(green(`Removed shared type "${t.key}" on the cloud.`));
+          await refreshCheckout(co);
+          return;
+        }
+      }
       const all = await fetchRecords(ws, { typeIds: [t.id], includeDeleted: true });
       const live = all.filter((r) => !r.deleted_at);
       const into = flag(a, "move-to");
@@ -941,24 +962,31 @@ const commands: Record<string, Cmd> = {
   },
 
   async serve(a) {
+    const { running, openSurface } = await import("./open.ts");
     await requireUser();
-    const co = requireCheckout();
+    const { data: workspaces, error } = await sb().from("workspaces").select("id");
+    if (error) throw dbError(error);
+    const available = new Set(workspaces.map(w => w.id));
+    const current = findCheckout();
+    if (current && !available.has(current.config.workspace)) throw new UserError("This checkout isn't in the current database. Open a local workspace or join its cloud workspace first.");
+    const co = current ?? (await import("./config.ts")).knownCheckouts().filter(k => available.has(k.workspace)).map(k => findCheckout(k.root)).find(Boolean);
+    if (!co) throw new UserError("No workspace checkout yet. Run surface setup first.");
+    if (await running()) {
+      const opened = await openSurface(co, null, { port: Number(flag(a, "port") ?? 4317), print: !a.flags.open });
+      console.log(`Surface is already running. Open: ${opened.url}`);
+      return;
+    }
     const { serve } = await import("./serve.ts");
-    const port = Number(flag(a, "port") ?? 4317);
-    const host = flag(a, "host");
-    const { link } = await serve(co, { port, host, watch: !a.flags["no-watch"] });
-    if (a.flags.open) (await import("./open.ts")).openWindow(link, { tab: !!a.flags.tab });
-    await new Promise(() => {}); // run until stopped
+    const { link } = await serve(co, { port: Number(flag(a, "port") ?? 4317), host: flag(a, "host"), watch: !a.flags["no-watch"] });
+    if (a.flags.open) (await import("./open.ts")).openWindow(link);
+    await new Promise(() => {});
   },
 
   async data(a) {
-    await requireUser();
     const co = requireCheckout();
-    const { serve } = await import("./serve.ts");
-    const port = Number(flag(a, "port") ?? 4318);
-    const { link } = await serve(co, { port, watch: !a.flags["no-watch"], surface: "data" });
-    if (a.flags.open) (await import("./open.ts")).openWindow(link, { tab: !!a.flags.tab });
-    await new Promise(() => {});
+    const { openSurface } = await import("./open.ts");
+    const out = await openSurface(co, null, { port: Number(flag(a, "port") ?? 4317), data: true, print: !!a.flags.print, tab: !!a.flags.tab });
+    console.log(`Open: ${out.url}`);
   },
 
   async log(a) {
@@ -1602,7 +1630,7 @@ Folders (where files live, in the folder layout)
 
 App
   serve [--port 4317] [--open]        run the Surface app for this checkout on http://127.0.0.1
-  data [--port 4318] [--open]         run the standalone editable data surface
+  data [--port 4317] [--print]        open the data surface on the existing server
 
 Sidebars (organization only: arranging never changes records)
   tree [--personal] [--paths] [--json] show the workspace sidebar, or your own
@@ -1652,6 +1680,13 @@ Sharing (needs the workspace in your cloud: surface sync enable)
   workspace uninvite <email> | role <email> <role> | remove-member <email>
   workspace invites | join [id]       invites for you; accept one
 
+Updates and background server
+  update                              update code, rebuild, back up data, restart the existing server
+  update --check                      check for an update without installing it
+  update auto check|install|off        opt in to daily checks or updates while idle; off disables
+  service install|start|stop|restart|status
+                                      one background server for all workspaces
+
 Options: --workspace <id|name> works with any command outside a checkout.
 `;
 
@@ -1665,7 +1700,7 @@ async function main() {
   if (args.flags.help) return void console.log(HELP);
   const { hookProcess, setRole, logger } = await import("./log.ts");
   hookProcess();
-  setRole(cmd === "serve" || cmd === "data" ? `${cmd}:${flag(args, "port") ?? (cmd === "data" ? 4318 : 4317)}` : `cli ${cmd}`);
+  setRole(cmd === "serve" || cmd === "data" ? `${cmd}:${flag(args, "port") ?? (4317)}` : `cli ${cmd}`);
   // long-running servers log their own start; quick commands log one line each (args only, no values that could be secrets)
   if (cmd !== "serve" && cmd !== "data" && cmd !== "log") logger("cli").debug("command", { cwd: process.cwd(), sub: args._[0], flags: Object.keys(args.flags) });
   const t0 = Date.now();

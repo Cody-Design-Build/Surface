@@ -4,6 +4,8 @@ The dedicated Surface app: workspace and personal sidebars, a live-preview Markd
 
 **Separate data surface (decided Oct 18):** the Airtable-style table experience is intended to have its own standalone local entry point, workspace/type navigation, all records and saved views, independent of this writing app's shell. The grid currently integrated into this app's views is reusable groundwork; it is not the standalone surface. Both use the same Surface foundation. See `docs/SPEC.md` §5d.
 
+Both entry points now share one server: `/w/<workspace-id>/` for writing and `/w/<workspace-id>/data/` for tables. Each tab's API calls, event stream and attachments stay bound to that workspace. `surface data` opens the existing server; it does not launch another process. `surface service install` runs the server at login.
+
 ```sh
 npm install
 npm run build

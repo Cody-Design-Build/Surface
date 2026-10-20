@@ -105,7 +105,7 @@ export interface AppState {
   mode: "local" | "hosted";
   user: { email: string; id: string };
   role: Role;
-  workspace: { id: string; name: string };
+  workspace: { id: string; name: string; home?: "local" | "cloud" };
   root: string;
   layout: string;
   types: TypeInfo[];
@@ -147,8 +147,14 @@ export class ApiError extends Error {
   }
 }
 
+/** Keep every request and event stream bound to this tab's workspace. */
+export function workspaceUrl(url: string): string {
+  const prefix = /^\/w\/[^/]+/.exec(location.pathname)?.[0] ?? "";
+  return url.startsWith("/api/") ? prefix + url : url;
+}
+
 async function call<T>(method: string, url: string, body?: unknown): Promise<T> {
-  const res = await fetch(url, {
+  const res = await fetch(workspaceUrl(url), {
     method,
     headers: body ? { "content-type": "application/json" } : undefined,
     body: body ? JSON.stringify(body) : undefined,
@@ -168,7 +174,7 @@ export const api = {
     call<{ record: RecordFull; notices: string[] }>("POST", "/api/records", input),
   remove: (id: string) => call<{ ok: true }>("DELETE", `/api/record/${id}`),
   upload: async (id: string, file: File) => {
-    const r = await fetch(`/api/record/${id}/attach?name=${encodeURIComponent(file.name || "image.png")}`, { method: "POST", headers: { "content-type": file.type || "application/octet-stream" }, body: file });
+    const r = await fetch(workspaceUrl(`/api/record/${id}/attach?name=${encodeURIComponent(file.name || "image.png")}`), { method: "POST", headers: { "content-type": file.type || "application/octet-stream" }, body: file });
     const data = await r.json().catch(() => ({}));
     if (!r.ok) throw new ApiError(r.status, data.error ?? r.statusText);
     return data as { path: string; markdownPath: string };
@@ -198,7 +204,7 @@ export const api = {
   setRole: (userId: string, role: Role) => call<{ ok: true }>("PUT", `/api/members/${userId}`, { role }),
   removeMember: (userId: string) => call<{ ok: true }>("DELETE", `/api/members/${userId}`),
   workspaces: () => call<{ workspaces: { id: string; name: string; role: Role | null; current: boolean; checkout: string | null }[]; invites: Invite[] }>("GET", "/api/workspaces"),
-  switchWorkspace: (id: string) => call<{ ok: true; root: string; created?: boolean }>("POST", "/api/workspace/switch", { id }),
+  switchWorkspace: (id: string) => call<{ ok: true; root: string | null; url?: string; created?: boolean }>("POST", "/api/workspace/switch", { id }),
   createWorkspace: (name: string) => call<{ workspace: { id: string; name: string } }>("POST", "/api/workspaces", { name }),
   acceptInvite: (id: string) => call<{ ok: true }>("POST", `/api/invites/${id}/accept`),
 };
@@ -230,7 +236,7 @@ export function subscribe(onChange: (msg: { type: string; reason?: string; ids?:
   let es: EventSource | null = null;
   let timer: number | undefined;
   const open = () => {
-    es = new EventSource("/api/events");
+    es = new EventSource(workspaceUrl("/api/events"));
     es.onopen = () => onStatus(true);
     es.onmessage = (e) => {
       try {

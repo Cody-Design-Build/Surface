@@ -180,7 +180,7 @@ try {
 
   // conflict: both edit the same record; the second to sync keeps a conflict copy
   run("a", ["set", t1, "status=done"]);
-  run("b", ["set", t1, "status=todo", "body=B's note"]);
+  run("b", ["set", t1, "status=doing", "body=B's note"]);
   run("a", ["sync"]);
   const bs = run("b", ["sync"]);
   assert.match(bs, /conflict/);
@@ -188,7 +188,7 @@ try {
   assert.equal(bTasks.find((r) => r.id === t1)!.fields.status, "done"); // took A's (the hub's) version
   const copy = bTasks.find((r) => r.title.startsWith("Order tile (conflict"))!;
   assert.ok(copy, "conflict copy exists");
-  assert.equal(copy.fields.status, "todo");
+  assert.equal(copy.fields.status, "doing");
   assert.match(run("b", ["sync", "status"]), /Conflict: "Order tile"/);
   run("b", ["sync"]);
   run("a", ["sync"]);

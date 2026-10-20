@@ -18,7 +18,7 @@ git clone https://github.com/Cody-Design-Build/Surface.git ~/Developer/Surface
 4. creates a first workspace and checks it out to `~/Surface`;
 5. with `--service`, starts the web UI at login (launchd on a Mac, a systemd user service on Linux).
 
-Flags: `--dir <folder>`, `--name <workspace>`, `--service`, `--port <n>`, `--rebuild`, and `--cloud` to work directly against your own Supabase project instead (connect it first with `surface cloud connect`; see `../docs/CLOUD.md`). Re-running is safe and also updates (it pulls the code first). `surface doctor` checks everything.
+Flags: `--dir <folder>`, `--name <workspace>`, `--service`, `--port <n>`, `--rebuild`, and `--cloud` to work directly against your own Supabase project instead (connect it first with `surface cloud connect`; see `../docs/CLOUD.md`). For an existing installation, use `surface update` (or `surface update --check` to check first). `surface doctor` checks everything.
 
 **A remote Linux machine:** run the same two lines over SSH, then `surface setup --service` (and `loginctl enable-linger $USER` if it should keep running after you log out). The web UI listens on that machine's 127.0.0.1 only; reach it from your own computer with `ssh -L 4317:127.0.0.1:4317 you@that-machine` and open the link `surface serve` printed (`journalctl --user -u surface | grep Open` shows it for the service).
 
@@ -27,6 +27,24 @@ Flags: `--dir <folder>`, `--name <workspace>`, `--service`, `--port <n>`, `--reb
 **Push on save:** while `surface serve` runs it watches the checkout, so a save in Obsidian, VS Code or any editor goes to the database within about half a second: normalized, validated, revision-checked. New Markdown files become records (moved into their type's folder in the type layout). Invalid values are refused and the file is left as written; a file changed in both places is reported as a conflict. Deleting a file never deletes its record. Without the web UI, `surface watch` does the same in the foreground; `surface serve --no-watch` turns it off.
 
 **Local and cloud stores:** `surface store` shows which one this computer uses; `surface store local|cloud` switches. With the local store, a cloud workspace syncs to this computer with `surface sync join` (see Sync below).
+
+## Updates and one background server
+
+```sh
+surface update --check                 # check the tracked Git branch
+surface update                         # update, build, verify and restart
+surface update auto check              # daily checks, explicitly enabled
+surface update auto install            # daily installation only while idle and synced
+surface update auto off                # disable scheduling
+surface service install                # one server at login, all workspaces
+surface service status                 # also: start, stop, restart
+surface data                           # opens /w/<id>/data/ on that server
+surface data --print                   # print its address instead
+```
+
+Updates refuse local code changes or divergent branches. They keep a stopped database/config backup under `~/.config/surface-cli/update-backups/`. A failed build or check leaves a clear error; inspect it before restarting. Updates do not apply cloud migrations. Linux and macOS services are supported; use WSL on Windows. Automatic updates are off until explicitly enabled.
+
+The writing and data interfaces use the same port (4317 by default). A workspace is part of its URL, so tabs stay independent. Close any old data server on 4318 during the first upgrade.
 
 ## Start
 
@@ -52,7 +70,7 @@ Then, in your checkout:
 surface serve --open
 ```
 
-It serves the app on http://127.0.0.1:4317. Open the link it prints once (it carries a sign-in token), then install the page as an app: Omarchy's Install Web App, Chrome's Install, or Safari's Add to Dock. `--port` changes the port; `--open` opens the browser. The server listens on 127.0.0.1 only and keeps the checkout current while it runs. Edits made in other editors still need `surface push` (push on save is planned).
+It serves the app on http://127.0.0.1:4317. Open the link it prints once (it carries a sign-in token), then install the page as an app: Omarchy's Install Web App, Chrome's Install, or Safari's Add to Dock. `--port` changes the port; `--open` opens the browser. The server listens on 127.0.0.1 only and keeps the checkout current while it runs. Edits in other editors push on save while the server is running.
 
 ## Build your types
 
@@ -188,7 +206,7 @@ surface sync join <hub workspace id> ~/Team   # on another computer: a local cop
 surface sync status                           # last sync, changes waiting, conflicts
 ```
 
-`surface serve` syncs every few seconds and right after a local change. If the same record changed on two computers, the hub's version wins and yours is kept as a new record, "Title (conflict …)". Keep one, delete the other, then `surface sync resolve <record>`. Design: `docs/LOCAL.md` §1b.
+`surface serve` syncs every few seconds and right after a local change. Changes to different properties of the same record coexist. Only competing changes to the same property create a conflict copy; identical results do not. Keep one, delete the other, then `surface sync resolve <record>`. Design: `docs/LOCAL.md` §1c.
 
 ## For agents
 

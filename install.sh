@@ -22,7 +22,7 @@ node_ok() {
 
 if [ -d "$ROOT/.git" ] && [ "${SURFACE_NO_PULL:-}" != 1 ]; then
   say "Updating the code…"
-  git -C "$ROOT" pull --ff-only --quiet || say "  (couldn't fast-forward; using the code as it is)"
+  git -C "$ROOT" pull --ff-only --quiet || { say "Update failed; resolve the Git error before continuing."; exit 1; }
 fi
 
 if ! node_ok; then

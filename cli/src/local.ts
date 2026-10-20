@@ -67,6 +67,7 @@ create table if not exists surface_local.sync_rows (
   primary key (workspace_id, kind, key)
 );
 alter table surface_local.sync_rows add column if not exists hub_id text;
+alter table surface_local.sync_rows add column if not exists field_ids jsonb;
 alter table surface_local.sync_workspaces add column if not exists pull_cursor timestamptz;   -- hub clock: newest updated_at seen
 alter table surface_local.sync_workspaces add column if not exists full_scan_at timestamptz;  -- last full id:rev comparison
 create table if not exists surface_local.sync_conflicts (
@@ -77,6 +78,17 @@ create table if not exists surface_local.sync_conflicts (
   title        text,
   at           timestamptz not null default now(),
   resolved     boolean not null default false
+);
+-- Durable, coalesced field-change outbox. Before is the first unsent state; after is
+-- the latest local state. generation prevents an acknowledgement losing a newer edit.
+create table if not exists surface_local.outbox (
+  sequence bigint generated always as identity,
+  workspace_id text not null,
+  record_id text not null,
+  before_row jsonb,
+  after_row jsonb not null,
+  generation bigint not null default 1,
+  primary key (workspace_id, record_id)
 );
 create or replace function surface_local.track() returns trigger language plpgsql security definer as $f$
 declare
@@ -94,6 +106,12 @@ begin
   if oldk is not null and oldk is distinct from k then
     insert into surface_local.sync_rows (workspace_id, kind, key, dirty) values (ws, tg_argv[0], oldk, true)
       on conflict (workspace_id, kind, key) do update set dirty = true;
+  end if;
+  if tg_argv[0] = 'record' and tg_op <> 'DELETE' then
+    insert into surface_local.outbox(workspace_id, record_id, before_row, after_row)
+      values(ws, k, case when tg_op = 'INSERT' then null else to_jsonb(old) end, to_jsonb(new))
+      on conflict(workspace_id, record_id) do update
+        set after_row = excluded.after_row, generation = surface_local.outbox.generation + 1;
   end if;
   if k is not null then
     insert into surface_local.sync_rows (workspace_id, kind, key, dirty) values (ws, tg_argv[0], k, true)
@@ -491,6 +509,12 @@ export async function exec(d: Desc): Promise<Result> {
     } catch (e) {
       return { data: null, error: { message: `Couldn't reach surface serve on port ${remote.port}: ${(e as Error).message}` } };
     }
+  }
+  if (d.kind !== "user" && d.kind !== "rpc" && d.table === "types" && d.kind !== "select") {
+    try {
+      const routed = await (await import("./sync.ts")).routeSchemaWrite(d);
+      if (routed) return routed;
+    } catch (e) { return { data: null, error: { message: (e as Error).message } }; }
   }
   const p = queue.then(() => run(d)).then(
     (r) => ({ ...r, data: clean(r.data) }),

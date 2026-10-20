@@ -1,5 +1,7 @@
 # Handoff: standalone Airtable-style Surface data UI
 
+**Historical handoff.** The two-server startup instructions below are superseded by `LOCAL.md` §1c. Writing and data now use one server and workspace-specific URLs.
+
 Updated October 18, 2026. Work is in `/home/ductape/Work/Surface`, on `main`, based on `87adcad`. **All changes described here are uncommitted and unpushed. The standalone build is not finished or verified for daily use.** Another remote agent also works on this repository; preserve its changes and reconcile before pushing.
 
 ## User's intended outcome

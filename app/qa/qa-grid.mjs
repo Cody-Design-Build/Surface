@@ -21,7 +21,7 @@ const check = (name, ok, extra = "") => {
   console.log(`${ok ? "PASS" : "FAIL"}  ${name}${extra ? "  — " + extra : ""}`);
 };
 const shot = (n) => page.screenshot({ path: `shots/${n}.png` });
-const api = (path, opts) => page.evaluate(async (path, opts) => (await fetch(path, opts)).json(), path, opts);
+const api = (path, opts) => page.evaluate(async (path, opts) => (await fetch((/^\/w\/[^/]+/.exec(location.pathname)?.[0] ?? "") + path, opts)).json(), path, opts);
 const view = () => api("/api/view/all-tasks");
 const task = async (title) => (await view()).records.find((r) => r.title === title);
 const near = async (k) => {

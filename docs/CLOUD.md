@@ -15,7 +15,7 @@ Surface grows in three steps. Each one is optional and builds on the last.
                                                        └──────────────┘
 ```
 
-Every computer keeps a **full copy** in its own database and works offline. The cloud is the hub they sync through, record by record; if two computers change the same record, one version is kept and the other saved as a conflict copy ([`LOCAL.md`](LOCAL.md) §1b).
+Every computer keeps a **full copy** in its own database and works offline. The cloud is the hub they sync through, with durable pending edits. Different field changes coexist; competing changes to the same property preserve a conflict copy ([`LOCAL.md`](LOCAL.md) §1c).
 
 | | 1. Local (default) | 2. + your cloud | 3. + shared |
 |---|---|---|---|
@@ -167,10 +167,18 @@ Config is per user in `~/.config/surface-cli/`: `cloud.json` (project URL and pu
 
 ## Logs
 
-Every Surface process (the app server, `surface data`, CLI commands, sync) writes one shared log:
+Every Surface process (the single app server, CLI commands, sync) writes one shared log:
 
 - Linux `~/.local/state/surface/surface.log`, macOS `~/Library/Logs/Surface/surface.log`, Windows `%LOCALAPPDATA%\\Surface\\Logs\\surface.log`. `surface log path` prints it.
 - `surface log` shows the last 50 lines; `--area sync`, `--level warn`, `--follow`.
 - Logged by default: server start (port, workspace, store, whether it owns the database, sync on/off), shutdowns and crashes, every sync round that moved anything (pushed, pulled, conflicts, errors, time), going offline and back, conflicts, failed pushes and pulls with record id and revisions, failed or slow API requests, file-watcher pushes.
 - `SURFACE_LOG=debug` adds every API request and every record a sync sends or receives. `SURFACE_LOG_FILE=<path>` moves it, `=off` turns it off.
-- One line per event with the process (`serve:4317`, `data:4318`, `cli push`) and pid. Rotates at 5 MB, keeps 3. Tokens, keys and record bodies are never logged.
+- One line per event with the process (`serve:4317`, `cli push`) and pid. Rotates at 5 MB, keeps 3. Tokens, keys and record bodies are never logged.
+
+## Updating an installed computer
+
+Release the code to the Git branch the installation tracks, then ask its agent to run `surface update` from anywhere. It refuses uncommitted code changes or a divergent branch, backs up the stopped local database and config, installs locked dependencies, rebuilds, checks the installation and restarts the existing server. Data remains outside the code checkout. Cloud schema migrations are a separate deployment step; installing a client never changes shared schema automatically.
+
+For a one-time upgrade from the old two-server version, stop both writing and data servers first. If that installation predates `surface update`, have its agent check for local code changes, run `git pull --ff-only` in the installed repository, then `SURFACE_NO_PULL=1 ./install.sh --rebuild --dir "<existing workspace folder>"`. Run `surface service install` (or `surface serve`) afterward. Later releases use `surface update`. `surface data` now opens the existing server. Existing checkout folders, sign-ins and sync mappings are retained.
+
+`surface update --check` records whether an update is available. `surface update auto check` installs daily checks; `surface update auto install` opts into installation only when no app event streams are connected and no tracked edits are waiting. `surface update auto off` disables the schedule. Automatic installation is off by default. A failed update reports the error and retains the backup; it does not attempt a destructive database rollback.

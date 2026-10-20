@@ -659,8 +659,8 @@ function WorkspaceMenu({ app }: { app: AppState }) {
     setBusy(id);
     setErr(null);
     try {
-      await api.switchWorkspace(id);
-      location.replace(location.pathname);
+      const next = await api.switchWorkspace(id);
+      location.assign(next.url ?? location.pathname);
     } catch (e) {
       setErr((e as Error).message);
       setBusy(null);
@@ -675,7 +675,7 @@ function WorkspaceMenu({ app }: { app: AppState }) {
             {app.workspace.name}
             <Icon name="chevron" size={11} className="ws-caret" />
           </div>
-          <div className="ws-user">{app.user.email}</div>
+          <div className="ws-user">{app.workspace.home ? `${app.workspace.home === "cloud" ? "Cloud" : "Local"} · ` : ""}{app.user.email}</div>
         </div>
       </button>
       {open ? (

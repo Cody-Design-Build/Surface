@@ -4,6 +4,8 @@ How Surface runs on one computer with no account, and how the cloud database bec
 
 Status markers: **Decided**, **Leaning** (direction agreed, details open), **Open**.
 
+**Current implementation: §1c.** Sections 1, 1a, and 1b retain the design history; where they differ, §1c takes precedence.
+
 ## 1. The idea
 
 **Leaning (Oct 16).** Surface is the same software in two modes. Only where the database lives changes.
@@ -80,43 +82,42 @@ Open (TODO.md): the sync layer's protocol (change log, ordering, field-level mer
 **In use (Oct 18):** cdb-os on this Linux machine runs on the local store, syncing with the cloud workspace `1nd7c49fg6tk`. Checkout `~/Surface-cdb-os` (local workspace `1ndahjxwpw00`); the old cloud checkout is kept at `~/Surface-cdb-os-cloud-backup`. Joining copied 585 rows and wrote nothing to the cloud. Live check: an app edit reached the cloud, a cloud edit came back, a delete went up.
 - Attachments don't sync.
 
-## 1c. Decided (Oct 19): one server per computer; each workspace has one home
+## 1c. Decided and implemented (Oct 19): one server; local execution with cloud acceptance
 
-**Decided, not built.** Replaces the "copies negotiate" part of §1b. Why: on Oct 19, deleting a field rewrote two records on this computer and in the cloud seconds apart; sync compared revision numbers, saw both sides move, and made two conflict copies of records that were byte-for-byte identical. Separately, two servers (writing app on 4317 from one folder, data view on 4318 from another) showed different workspaces and routed cdb-os sync through the EcoSynthesis server.
+Surface remains a local-first database and CLI with Markdown checkouts. The app uses the local database **both online and offline**. For a shared workspace, the cloud accepts shared changes and assigns revisions; local workspaces need no cloud. The writing and data interfaces remain local.
 
-**Each workspace has exactly one home:**
+### One server per computer
 
-| | **Local workspace** | **Cloud workspace** |
-|---|---|---|
-| Truth | This computer's database | The cloud |
-| This computer holds | The database | A cache of it plus an outbox |
-| Use | Solo, no account, trying Surface, private scratch | Teams, or one person on several computers |
+- One `surface serve` owns the database and synchronizes every enabled workspace. It discovers registered checkouts and watches each workspace even with no tab open.
+- Each tab identifies its workspace in the URL: `/w/<workspace-id>/` and `/w/<workspace-id>/data/`. API requests, attachments and live events use that same workspace prefix. Opening one workspace never switches another tab.
+- `surface open` and `surface data` reuse the server, starting it detached if necessary. `surface serve` reuses an existing instance; a startup lock prevents competing instances, including on a different port.
+- `surface service install` installs the same server at login on Linux (systemd user service) or macOS (launchd). `start`, `stop`, `restart`, and `status` manage it. Windows currently uses WSL; a native Windows logon task is not implemented.
+- Tests use isolated config and data directories. Old 4318 data processes should be closed during the one-time upgrade; the new `surface data` does not start another server.
 
-Creating a workspace offers three choices: **New local**, **New cloud** (set up and join), **Join existing** (code or invite, as `surface join` today). A local workspace can **Move to cloud**: a one-time upload, after which it's a cloud workspace. The app shows Local or Cloud on every workspace.
+### Pending edits and reconciliation
 
-**Fix 1: one Surface server per computer.**
+1. Every edit is validated and committed to the local database immediately. In a synced workspace, the same transaction records a durable outbox entry: the state before the first unsent edit, the latest desired state, and a generation counter. Repeated edits to one record coalesce; records are sent in dependency order and then queue order.
+2. The owner server sends changes promptly while online and every five seconds. Offline edits stay in the database and outbox across restarts.
+3. Sync compares the before/after states to determine which properties changed, reads the latest cloud record, and applies those property changes. It uses a revision-filtered update, retrying against a fresh cloud record if another writer wins. The `fields` JSON column is merged before that atomic update; unrelated cloud field values are preserved.
+4. Edits to different properties coexist. The same resulting value is an acknowledgement, not a conflict or another revision. A lost acknowledgement can be retried against the accepted result.
+5. Competing edits to the **same property**, including the Markdown body, remain explicit conflicts: the original takes the cloud version and the latest local version is saved as a conflict copy. There is no silent last write wins and no paragraph patch protocol.
+6. An acknowledgement updates the accepted local state and replays any newer local edits over it in one transaction. A generation check prevents an in-flight upload from clearing later edits.
+7. Shared type and field changes require a connection: flush pending edits, change the schema on the hub, then pull the result. Cloud-originated record rewrites do not enter the local outbox. Stable field-id mappings preserve pending values through a field rename. Local-only schema changes stay local.
+8. Deletes versus edits retain the existing edit-wins behavior. Permission failures leave pending work locally. If a cloud type is deleted while this computer has unsent records of that type, syncing reports the problem and preserves those records rather than silently discarding them.
 
-1. One `surface serve` owns the local database and syncs every cloud workspace. No second server; `surface data` stops starting one.
-2. The workspace is in the link (for example `/w/cdb-os/` and `/w/cdb-os/data/`), so several workspaces are open in different tabs from the same server. The server no longer depends on the folder it was started in.
-3. `surface data` (and `surface open`) open the browser on the running server, starting it if needed.
-4. Installed as a background service: systemd user unit (Linux), launchd agent (macOS), a logon task (Windows). It survives terminal and agent sessions ending.
-5. Test runs use their own config and data directories (as the test suites already do), never a second server on the real database.
+A workspace's existing sync mapping determines its Local/Cloud label. `surface sync enable` adds the cloud copy to an existing local workspace; `surface join` obtains a local copy of a shared workspace. The legacy direct-cloud store remains supported for existing installations; it does not gain offline support until a local synced copy is joined.
 
-**Fix 2: cloud workspaces sync small changes, the cloud decides.**
+Existing dirty records from before this upgrade use the previous conservative whole-record path until acknowledged; their history does not contain a reliable new outbox baseline. New edits use the outbox automatically. Attachments still do not sync.
 
-1. A local edit applies to the cache right away and is written to an **outbox** as field-level changes ("set `trades` on Tile Fever to [Tile]", "replace paragraph 3 of the body").
-2. The outbox sends changes in order. The cloud applies each to its current version, assigns the revision, and returns the record, which replaces the cached one.
-3. Different fields never clash. The same field changed by two people: last write wins, no conflict copy; the overwritten value stays in the record's history with "changed by X · undo".
-4. Same result on both sides is not a change (would have prevented the Oct 19 conflicts on its own).
-5. Type and field changes (add, rename, delete field) run once, on the cloud; computers receive the rewritten records by normal pull.
-6. Offline: changes wait in the outbox. The outbox is the only thing a computer holds that the cloud doesn't; otherwise the cache can be deleted and downloaded again.
-7. Local workspaces have no outbox and are unchanged.
+### Verification and updates
 
-**Order:** Fix 1 (server), then workspace homes in the app (three create choices, Move to cloud, Local/Cloud label), then Fix 2 (sync). Hub-to-hub sync between two Surface servers (§1b `--hub`) is kept only if it falls out cheaply; the cloud is the supported hub.
+`npm run test:workflow` exercises two real PGlite databases and the HTTP request handler without sockets: field reconciliation, equivalent results, persisted offline edits, retries, in-flight edits, body conflicts, schema changes, workspace isolation and authentication. `npm run test:sync` retains the multi-process test against a Surface hub; `test:sync:cloud` uses a real cloud project.
+
+`surface update` checks for local code changes, fetches the tracked branch, requires a fast-forward, stops the existing server, backs up the stopped database/config, installs locked dependencies, builds the app, checks it and restarts the existing server. It does not change cloud configuration or push migrations to a cloud project. `surface update --check` only checks. Daily checks or idle installation can be enabled explicitly with `surface update auto check|install`; `auto off` disables them. Automatic installation waits while app tabs are connected or edits are pending. See `CLOUD.md` for deployment details.
 
 ## 2. The database engine
 
-**Leaning: PGlite** (Postgres compiled to WebAssembly, run inside Node), pending the spike in §8.
+**Built: PGlite** (Postgres compiled to WebAssembly, run inside Node). The spike in §8 and the local-store tests established it.
 
 Why:
 
@@ -143,16 +144,16 @@ The local user owns the workspace, so every policy passes for them. Permissions 
 ## 3. Where things live
 
 ```text
-~/Surface/                              the checkout: Markdown files, as today
-  .surface/config.json                  { "store": "local", "database": "<path>" } or { "store": "cloud", ... }
-~/Library/Application Support/Surface/  Mac
-~/.local/share/surface/                 Linux
-  workspaces/<id>/db/                   the PGlite database
-  workspaces/<id>/backups/              automatic backups
+~/Surface-<workspace>/                   a Markdown checkout (any chosen folder)
+  .surface/config.json                  workspace id, layout and checkout filters
+  .surface/state.json                   last-written file hashes and local revisions
+~/.local/share/surface/db/              one PGlite database per computer on Linux
+~/Library/Application Support/Surface/db/  the same on macOS
+~/.config/surface-cli/                  cloud connection, private sign-in, checkouts,
+                                        server metadata, startup/update locks
 ```
 
-- **Leaning: the database lives outside the checkout.** Checkouts are often inside Dropbox, iCloud or Syncthing. Those tools copy files independently and would corrupt a live database or make conflicted copies of it.
-- **Open:** offer "everything in one folder" (the database under `.surface/db/`) for people who want a single portable folder and don't sync it.
+`SURFACE_CONFIG_DIR` and `SURFACE_DATA_DIR` isolate a test or a separate installation. Local workspaces, cloud caches, pending edits and sync bookkeeping all live in the one database. The database stays outside Markdown checkouts so Dropbox or other file-sync tools never copy its live internal files individually.
 
 ## 4. Who opens the database
 
@@ -172,9 +173,10 @@ The checkout is the same in both modes, so **any Markdown editor is a surface**:
 
 ## 6. Moving between modes
 
-- **Turn on sync:** `surface sync enable` (and a button in the app). It signs in, creates a cloud workspace and copies everything: types, fields, records with their IDs and revisions, views and history. Then it switches the checkout to the cloud store. The local database is kept as a read-only backup until removed. Other computers then `surface clone` it.
-- **Leave sync:** `surface sync leave` copies a cloud workspace into a new local database. The cloud copy is untouched; deleting it is a separate, deliberate step.
-- **Same data model in both,** so moving is a straight copy, not a conversion.
+- **Share a local workspace:** `surface sync enable` uploads it to the configured cloud and keeps the local database in use. The workspace becomes a local copy of cloud-accepted shared data, with pending edits retained locally until acknowledged.
+- **Join a shared workspace:** `surface join <code>` or `surface sync join <cloud workspace id> <folder>` creates a local copy, with a mapping to the cloud workspace. It does not switch the app to direct-cloud operation.
+- **Stop sync:** `surface sync disable` keeps both copies and the local records but removes sync bookkeeping. Unsent changes remain in local records; they are no longer queued for the former hub.
+- **Legacy direct-cloud installations:** `surface store cloud` still exists for compatibility. A local synced copy must be joined explicitly to gain the offline behavior described here.
 
 ## 7. Backup, recovery and lock-in
 

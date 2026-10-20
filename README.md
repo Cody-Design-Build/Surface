@@ -20,10 +20,10 @@ That gets Node if needed, installs everything, puts `surface` on your PATH (`~/.
 
 ```sh
 cd ~/Surface && surface serve        # the app: open the link it prints
-surface data                         # the table app (Airtable-style), on port 4318
+surface data                         # the table app, on the same server
 ```
 
-`surface doctor` checks the install; `surface help` lists every command. Re-run `install.sh` to update.
+`surface doctor` checks the install; `surface help` lists every command. `surface update` updates an installed copy; `surface update --check` checks first. `surface service install` starts one background server at login.
 
 ### Then, if you want: your cloud, and sharing
 
@@ -36,7 +36,7 @@ surface share device                         # a one-line join command for your 
 surface share invite anna@yourco.com --mail  # emails Anna a one-line join command
 ```
 
-On the other computer (yours or Anna's): install Surface, then run the line, `surface join surface-invite:…`. It connects to your project, signs in (or creates the account), and copies the workspace there. Every computer keeps a full copy, works offline, and syncs record by record. The app's **Share** panel does the same.
+On the other computer (yours or Anna's): install Surface, then run the line, `surface join surface-invite:…`. It connects to your project, signs in (or creates the account), and copies the workspace there. Every computer keeps a full local copy online and offline. Pending changes sync to the cloud, which accepts shared revisions; edits to different fields coexist. The app's **Share** panel does the same.
 
 Rather have an agent do it? Ask it to follow [`skills/surface-setup`](skills/surface-setup/SKILL.md); with Supabase's MCP server it can create the project for you. Full guide: [`docs/CLOUD.md`](docs/CLOUD.md).
 
@@ -78,7 +78,8 @@ Records can be pulled as readable Markdown, with types and saved views in YAML. 
 - **Built, first version:** the web UI in local mode (`surface serve`): sidebars, live-preview Markdown editor, typed properties, full-page and embedded views, several workspaces, search, autosave with conflict handling and live updates.
 - **Next:** artifacts as records (agents make them, any surface shows them), sharing any part with outside people, and closing the gaps where the web UI can do something the CLI can't.
 - **Built (Oct 18):** local mode: every computer has its own Postgres (PGlite), no account, the default. `install.sh` + `surface setup` install the whole system.
-- **Planned:** the optional sync and team layer for local workspaces, hosted mode, push on save, the Obsidian plugin.
+- **Built:** optional cloud sync with durable pending edits, field-aware reconciliation, push on save, and one local server for all workspaces and interfaces.
+- **Planned:** hosted mode and the Obsidian plugin.
 
 ## Try it
 

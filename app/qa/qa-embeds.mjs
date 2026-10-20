@@ -19,7 +19,7 @@ const check = (name, ok, extra = "") => {
   ok ? pass++ : fail++;
 };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const api = (path, opts = {}) => page.evaluate(async (path, opts) => (await fetch(path, opts)).json(), path, opts);
+const api = (path, opts = {}) => page.evaluate(async (path, opts) => (await fetch((/^\/w\/[^/]+/.exec(location.pathname)?.[0] ?? "") + path, opts)).json(), path, opts);
 
 await page.goto(`${BASE}/?token=${token}`, { waitUntil: "domcontentloaded" });
 await sleep(800);

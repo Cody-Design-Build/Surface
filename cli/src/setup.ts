@@ -66,38 +66,6 @@ function linkBin(): string {
   return link;
 }
 
-function serviceFiles(port: number, checkout: string) {
-  const node = process.execPath;
-  if (process.platform === "darwin") {
-    const file = path.join(os.homedir(), "Library", "LaunchAgents", "dev.surface.serve.plist");
-    const log = path.join(os.homedir(), "Library", "Logs", "surface-serve.log");
-    const body = `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-  <key>Label</key><string>dev.surface.serve</string>
-  <key>ProgramArguments</key><array><string>${node}</string><string>--no-warnings</string><string>${path.join(CLI_DIR, "src", "main.ts")}</string><string>serve</string><string>--port</string><string>${port}</string></array>
-  <key>WorkingDirectory</key><string>${checkout}</string>
-  <key>RunAtLoad</key><true/><key>KeepAlive</key><true/>
-  <key>StandardOutPath</key><string>${log}</string><key>StandardErrorPath</key><string>${log}</string>
-</dict></plist>
-`;
-    return { file, body, start: [["launchctl", "unload", file], ["launchctl", "load", "-w", file]], logs: `tail -f ${log}` };
-  }
-  const file = path.join(os.homedir(), ".config", "systemd", "user", "surface.service");
-  const body = `[Unit]
-Description=Surface (surface serve)
-
-[Service]
-WorkingDirectory=${checkout}
-ExecStart=${node} --no-warnings ${path.join(CLI_DIR, "src", "main.ts")} serve --port ${port}
-Restart=on-failure
-
-[Install]
-WantedBy=default.target
-`;
-  return { file, body, start: [["systemctl", "--user", "daemon-reload"], ["systemctl", "--user", "enable", "--now", "surface.service"]], logs: "journalctl --user -u surface -f" };
-}
-
 export async function setup(flags: Record<string, string | boolean>) {
   // keep what this computer already uses unless told otherwise (a signed-in computer stays on the cloud)
   const cloud = flags.local ? false : flags.cloud ? true : storeKind() === "cloud";
@@ -167,13 +135,9 @@ export async function setup(flags: Record<string, string | boolean>) {
 
   step("6. Running the web UI");
   if (flags.service) {
-    const s = serviceFiles(port, dir);
-    fs.mkdirSync(path.dirname(s.file), { recursive: true });
-    fs.writeFileSync(s.file, s.body);
-    for (const c of s.start) spawnSync(c[0], c.slice(1), { stdio: "ignore" });
-    ok(`starts at login: ${s.file}`);
-    console.log(dim(`    logs: ${s.logs}`));
-    if (process.platform === "linux") console.log(dim("    to keep it running after you log out (servers): loginctl enable-linger $USER"));
+    const { serviceAction } = await import("./service.ts");
+    const file = serviceAction("install", port);
+    ok(`one server for all workspaces, starts at login: ${file}`);
   } else console.log(`  Run it when you want it:  cd ${dir} && surface serve` + dim("   (or re-run setup with --service to start it at login)"));
 
   console.log(`\n${green("Surface is set up.")}`);

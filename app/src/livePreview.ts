@@ -1,3 +1,4 @@
+import { workspaceUrl } from "./api.ts";
 // Live preview for Markdown in CodeMirror 6: markers step aside when the cursor leaves the line.
 import { syntaxTree } from "@codemirror/language";
 import { EditorState, RangeSet, type Extension, type Range } from "@codemirror/state";
@@ -70,7 +71,7 @@ function imageUrl(src: string) {
     if (p === "..") out.pop();
     else if (p && p !== ".") out.push(p);
   }
-  return `/api/file?path=${encodeURIComponent(out.join("/"))}`;
+  return workspaceUrl(`/api/file?path=${encodeURIComponent(out.join("/"))}`);
 }
 
 class ImageWidget extends WidgetType {

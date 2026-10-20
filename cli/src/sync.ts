@@ -10,7 +10,7 @@
 //
 // Records keep the same id everywhere. Types and fields are matched by key (field ids and type
 // ids may differ between the local database and the hub); views by key and owner.
-import { localAdmin, localOwnerPort, localUser, remoteClient } from "./local.ts";
+import { exec, localAdmin, localOwnerPort, localUser, remoteClient, type Desc } from "./local.ts";
 import { CONFIG_DIR } from "./config.ts";
 import { logger } from "./log.ts";
 import fs from "node:fs";
@@ -19,6 +19,8 @@ import path from "node:path";
 const L = logger("sync");
 
 export type Hub = { kind: "surface"; url: string; token: string; workspace: string } | { kind: "cloud"; workspace: string };
+
+export type HubInput = { kind: "cloud"; workspace?: string } | { kind: "surface"; url: string; token: string; workspace?: string };
 
 type Row = Record<string, any>;
 type Field = { id: string; key: string; kind: string; target?: string; [k: string]: unknown };
@@ -75,7 +77,10 @@ export async function syncStatus(ws: string) {
 }
 
 /** Turn sync on for a local workspace. With no hub workspace given, one is created on the hub. */
-export async function enableSync(ws: string, hubIn: Omit<Hub, "workspace"> & { workspace?: string }): Promise<Hub> {
+export function enableSync(ws: string, hubIn: HubInput): Promise<Hub> {
+  return inWorkspace(ws, () => enableSyncNow(ws,hubIn));
+}
+async function enableSyncNow(ws: string, hubIn: HubInput): Promise<Hub> {
   const client = await hubClient(hubIn as Hub);
   let hubWs = hubIn.workspace;
   if (!hubWs) {
@@ -97,7 +102,7 @@ export async function enableSync(ws: string, hubIn: Omit<Hub, "workspace"> & { w
 }
 
 /** Make a new local workspace that is a synced copy of a hub workspace. Returns the local id. */
-export async function joinSync(hubIn: Omit<Hub, "workspace"> & { workspace: string }, name?: string): Promise<string> {
+export async function joinSync(hubIn: HubInput & { workspace: string }, name?: string): Promise<string> {
   const client = await hubClient(hubIn as Hub);
   const w = must(await client.from("workspaces").select("id,name").eq("id", hubIn.workspace).maybeSingle(), "find the hub workspace");
   if (!w) throw new Error(`the hub has no workspace ${hubIn.workspace} you can see`);
@@ -113,9 +118,12 @@ export async function joinSync(hubIn: Omit<Hub, "workspace"> & { workspace: stri
   return ws;
 }
 
-export async function disableSync(ws: string) {
+export function disableSync(ws: string) {
+  return inWorkspace(ws, () => disableSyncNow(ws));
+}
+async function disableSyncNow(ws: string) {
   await localAdmin(async (tx) => {
-    for (const t of ["sync_rows", "sync_conflicts", "sync_workspaces"]) await tx.query(`delete from surface_local.${t} where workspace_id = $1`, [ws]);
+    for (const t of ["outbox", "sync_rows", "sync_conflicts", "sync_workspaces"]) await tx.query(`delete from surface_local.${t} where workspace_id = $1`, [ws]);
   });
 }
 
@@ -126,9 +134,9 @@ export async function resolveConflict(ws: string, id: string) {
 // ---------------------------------------------------------------------------
 // One sync round for one workspace
 // ---------------------------------------------------------------------------
-type Mark = { kind: string; key: string; synced: string | null; hub_id?: string | null };
+type Mark = { kind: string; key: string; synced: string | null; hub_id?: string | null; field_ids?: Record<string,string> | null };
 
-export async function syncWorkspace(ws: string): Promise<SyncReport> {
+async function syncWorkspaceNow(ws: string): Promise<SyncReport> {
   const rep: SyncReport = { workspace: ws, pushed: 0, pulled: 0, conflicts: [], errors: [] };
   const conf = (await syncedWorkspaces()).find((w) => w.workspace_id === ws);
   if (!conf) throw new Error(`sync is off for workspace ${ws}`);
@@ -155,6 +163,121 @@ export async function syncWorkspace(ws: string): Promise<SyncReport> {
   return rep;
 }
 
+const rounds = new Map<string, Promise<unknown>>();
+function inWorkspace<T>(ws: string, fn: () => Promise<T>): Promise<T> {
+  const p = (rounds.get(ws) ?? Promise.resolve()).then(fn, fn);
+  rounds.set(ws, p);
+  void p.finally(() => { if (rounds.get(ws) === p) rounds.delete(ws); }).catch(() => {});
+  return p;
+}
+export function syncWorkspace(ws: string): Promise<SyncReport> {
+  return inWorkspace(ws, () => syncWorkspaceNow(ws));
+}
+
+async function removeSharedType(ws: string, typeId: string, into: string | null, force: boolean) {
+  return inWorkspace(ws, async () => {
+    const conf = (await syncedWorkspaces()).find(w=>w.workspace_id===ws);
+    if (!conf) throw new Error("This workspace is local; use the normal type command.");
+    const report = await syncWorkspaceNow(ws);
+    if (report.offline || report.errors.length) throw new Error("Removing a shared type needs the cloud online and pending edits synced first.");
+    const client = await hubClient(conf.hub);
+    const types = await fetchHubTypes(client,conf.hub.workspace);
+    const localType = await localAdmin(async tx=>(await tx.query<any>("select key from public.types where id=$1 and workspace_id=$2",[typeId,ws])).rows[0]);
+    const source = types.find(t=>t.key===localType?.key);
+    if (!source || source.is_builtin) throw new Error("No removable cloud type.");
+    const target = into ? types.find(t=>t.key===into) : undefined;
+    if (into && (!target || target.id===source.id)) throw new Error("Choose a different existing destination type.");
+    const records: Row[] = [];
+    for (let offset=0;;offset+=1000) {
+      const page = must(await client.from("records").select("*").eq("workspace_id",conf.hub.workspace).eq("type_id",source.id).order("id").range(offset,offset+999),"read type records");
+      records.push(...page); if(page.length<1000) break;
+    }
+    if(records.some(r=>!r.deleted_at) && !force && !target) throw new Error("This type has records; use --move-to <type> or --force.");
+    for(const r of records) {
+      if(!r.deleted_at && target) {
+        const values = byKey(r.fields,source);
+        const fields = Object.fromEntries(Object.entries(values).filter(([k])=>target.fields.some(f=>f.key===k)));
+        must(await client.rpc("push_record",{p_workspace:conf.hub.workspace,p_id:r.id,p_base_rev:r.rev,p_type:target.key,p_title:r.title,p_fields:fields,p_body:r.body,p_folder:target.folder}),"move cloud record");
+      } else must(await client.from("records").delete().eq("id",r.id).eq("rev",r.rev).select("id"),"remove cloud record");
+    }
+    const deleted = must(await client.from("types").delete().eq("id",source.id).select("id"),"remove cloud type");
+    if(!deleted.length) throw new Error("Cloud refused to remove this type.");
+    // Pull moved records before deleting their former local type.
+    const targetMap = await mapTypes(ws,types);
+    for (const r of records) {
+      const fresh = must(await client.from("records").select("*").eq("id",r.id).maybeSingle(),"read moved record");
+      if (fresh) {
+        const ht=targetMap.hubById.get(fresh.type_id)!;
+        await applyRecord(ws,fresh,targetMap.localByKey.get(ht.key)!,ht);
+      }
+    }
+    const done=await syncWorkspaceNow(ws);
+    if(done.offline || done.errors.length) throw new Error("Cloud type was removed; this computer still needs to sync. " + done.errors.join("; "));
+    return {removed:source.key};
+  });
+}
+
+/** Shared schema changes execute at the hub, then return through the normal pull.
+ * No local rewrite is allowed before cloud acceptance, including while offline. */
+export async function routeSchemaWrite(d: Extract<Desc, { table: string }>) {
+  if (d.kind === "select") return null;
+  const input = Array.isArray(d.values) ? d.values : [d.values ?? {}];
+  const rows = d.kind === "insert" ? input : ((await exec({ ...d, kind: "select", columns: "*", single: undefined, returning: false })).data ?? []) as Row[];
+  const configs = await syncedWorkspaces();
+  const shared = rows.map(row => ({ row, config: configs.find(c => c.workspace_id === row.workspace_id) }));
+  if (!shared.some(x => x.config)) return null;
+  if (shared.some(x => !x.config) || new Set(shared.map(x => x.row.workspace_id)).size !== 1)
+    throw new Error("Change shared schemas one workspace at a time.");
+  const ws = rows[0].workspace_id as string;
+  return inWorkspace(ws, async () => {
+    const conf = shared[0].config!;
+    const report = await syncWorkspaceNow(ws);
+    if (report.offline || report.errors.length) throw new Error("Schema changes need the cloud online and pending edits synced first. " + (report.offlineReason ?? report.errors.join("; ")));
+    const client = await hubClient(conf.hub);
+    const localTypes = await localAdmin(async tx => (await tx.query<any>("select * from public.types where workspace_id=$1", [ws])).rows as TypeRow[]);
+    const cloudTypes = await fetchHubTypes(client, conf.hub.workspace);
+    const marks = await localAdmin(async tx => (await tx.query<any>("select key,hub_id from surface_local.sync_rows where workspace_id=$1 and kind='type'", [ws])).rows);
+    const cloudType = (id: string) => cloudTypes.find(t => t.id === marks.find(m => m.key === id)?.hub_id) ?? cloudTypes.find(t => t.key === localTypes.find(l => l.id === id)?.key);
+    const changed: string[] = [];
+    for (const { row } of shared) {
+      const old = localTypes.find(t => t.id === row.id);
+      if (old && (!equal(old.fields, row.fields) || old.key !== row.key)) throw new Error("Schema changed while syncing; refresh and retry your schema edit.");
+      const remote = old ? cloudType(old.id) : undefined;
+      const values: Row = { ...(d.kind === "insert" ? row : d.values as Row) };
+      delete values.id; delete values.workspace_id;
+      if (values.fields) values.fields = values.fields.map((f: Field) => {
+        const copy = { ...f };
+        const prior = old?.fields.find(p => p.id === f.id);
+        const rf = remote?.fields.find(p => p.key === prior?.key);
+        if (rf) copy.id = rf.id; else delete (copy as Row).id;
+        if (copy.target) copy.target = cloudType(copy.target)?.key ?? copy.target;
+        return copy;
+      });
+      let query;
+      if (d.kind === "insert") query = client.from("types").insert({ ...values, workspace_id: conf.hub.workspace }).select("*");
+      else {
+        if (!remote) throw new Error(`Cloud type ${old?.key} no longer exists; refresh and retry.`);
+        query = d.kind === "delete" ? client.from("types").delete().eq("id", remote.id).select("*")
+          : client.from("types").update(values).eq("id", remote.id).eq("updated_at", remote.updated_at).select("*");
+      }
+      const saved = must(await query, "change cloud schema");
+      if (!saved.length) throw new Error("Cloud schema changed or permission was denied. Refresh and retry.");
+      changed.push(saved[0].key);
+      if (d.kind === "delete" && old) await localAdmin(async tx => {
+        const waiting = (await tx.query<any>("select count(*)::int as n from surface_local.outbox where workspace_id=$1 and after_row->>'type_id'=$2",[ws,old.id])).rows[0].n;
+        if (waiting) throw new Error("The cloud type was removed, but new pending local records were preserved. Export or move them before syncing.");
+        await tx.query("delete from public.records where type_id=$1", [old.id]);
+        await tx.query("delete from public.types where id=$1", [old.id]);
+        await tx.query("delete from surface_local.sync_rows where workspace_id=$1 and kind='type' and key=$2", [ws,old.id]);
+      }, { applying: true });
+    }
+    const after = await syncWorkspaceNow(ws);
+    if (after.offline || after.errors.length) throw new Error("Cloud schema was saved, but this computer still needs to sync. " + after.errors.join("; "));
+    const local = await localAdmin(async tx => (await tx.query<any>("select * from public.types where workspace_id=$1 and key=any($2)", [ws,changed])).rows);
+    return { data: d.returning ? (d.single ? local[0] ?? null : local) : null, error: null };
+  });
+}
+
 export async function syncAll(): Promise<SyncReport[]> {
   const out: SyncReport[] = [];
   for (const w of await syncedWorkspaces()) out.push(await syncWorkspace(w.workspace_id));
@@ -162,11 +285,12 @@ export async function syncAll(): Promise<SyncReport[]> {
 }
 
 const OPS = {
+  removeType: (ws: string, typeId: string, into: string | null, force: boolean) => removeSharedType(ws,typeId,into,force),
   now: (ws?: string) => (ws ? syncWorkspace(ws).then((r) => [r]) : syncAll()),
   status: (ws: string) => syncStatus(ws),
   list: () => syncedWorkspaces().then((ws) => ws.map((w) => ({ ...w, hub: { ...w.hub, token: undefined } }))),
-  enable: (ws: string, hub: Omit<Hub, "workspace"> & { workspace?: string }) => enableSync(ws, hub),
-  join: (hub: Omit<Hub, "workspace"> & { workspace: string }, name?: string) => joinSync(hub, name),
+  enable: (ws: string, hub: HubInput) => enableSync(ws, hub),
+  join: (hub: HubInput & { workspace: string }, name?: string) => joinSync(hub, name),
   disable: (ws: string) => disableSync(ws),
   resolve: (ws: string, id: string) => resolveConflict(ws, id),
 } as const;
@@ -196,10 +320,10 @@ async function runOp(op: SyncOp, args: unknown[]) {
   const t0 = Date.now();
   try {
     const out = await (OPS[op] as (...a: unknown[]) => Promise<unknown>)(...args);
-    if (!quiet) L.info(`op ${op}`, { args, ms: Date.now() - t0, result: op === "now" ? (out as SyncReport[]).map((r) => ({ ws: r.workspace, pushed: r.pushed, pulled: r.pulled, conflicts: r.conflicts.length, errors: r.errors, offline: r.offline })) : undefined });
+    if (!quiet) L.info(`op ${op}`, { args: args.map(a => a && typeof a === "object" ? { ...a as object, token: undefined } : a), ms: Date.now() - t0, result: op === "now" ? (out as SyncReport[]).map((r) => ({ ws: r.workspace, pushed: r.pushed, pulled: r.pulled, conflicts: r.conflicts.length, errors: r.errors, offline: r.offline })) : undefined });
     return out;
   } catch (e) {
-    L.error(`op ${op} failed`, { args, ms: Date.now() - t0, err: e as Error });
+    L.error(`op ${op} failed`, { args: args.map(a => a && typeof a === "object" ? { ...a as object, token: undefined } : a), ms: Date.now() - t0, err: e as Error });
     throw e;
   }
 }
@@ -208,10 +332,12 @@ async function runOp(op: SyncOp, args: unknown[]) {
 export function startSyncLoop(onChange: () => void, everyMs = 5000, onTick: () => void = () => {}) {
   let running = false;
   let again = false;
+  let stopped = false;
   // remember each workspace's last state so the log records changes (went offline, back online, new error), not every quiet round
   const last = new Map<string, string>();
   L.info("sync loop started", { everyMs });
   const tick = async () => {
+    if (stopped) return;
     if (running) return void (again = true);
     running = true;
     const t0 = Date.now();
@@ -251,7 +377,7 @@ export function startSyncLoop(onChange: () => void, everyMs = 5000, onTick: () =
   const timer = setInterval(tick, everyMs);
   timer.unref();
   setTimeout(tick, 500);
-  return { kick: () => void tick(), stop: () => clearInterval(timer) };
+  return { kick: () => void tick(), stop: () => { stopped = true; clearInterval(timer); } };
 }
 
 
@@ -270,7 +396,7 @@ function fieldsByKey(t: TypeRow | undefined) {
 async function syncTypes(ws: string, hub: Hub, client: Client, hubTypes: TypeRow[], rep: SyncReport) {
   const { local, marks } = await localAdmin(async (tx) => ({
     local: (await tx.query<any>("select * from public.types where workspace_id = $1 order by created_at", [ws])).rows as TypeRow[],
-    marks: (await tx.query<any>("select key, synced, dirty, hub_id from surface_local.sync_rows where workspace_id = $1 and kind = 'type'", [ws])).rows as (Mark & { dirty: boolean })[],
+    marks: (await tx.query<any>("select key, synced, dirty, hub_id, field_ids from surface_local.sync_rows where workspace_id = $1 and kind = 'type'", [ws])).rows as (Mark & { dirty: boolean })[],
   }));
   const markOf = new Map(marks.map((m) => [m.key, m]));
   const hubById = new Map(hubTypes.map((t) => [t.id, t]));
@@ -296,7 +422,23 @@ async function syncTypes(ws: string, hub: Hub, client: Client, hubTypes: TypeRow
     });
   };
 
-  // push local type changes first (schema edits are expected while online)
+  // A deleted cloud type must never be recreated by a cached copy.
+  for (const t of [...local]) {
+    const m = markOf.get(t.id);
+    if (!m?.synced || hubFor(t)) continue;
+    await localAdmin(async tx => {
+      const waiting = (await tx.query<any>("select count(*)::int as n from surface_local.outbox where workspace_id=$1 and after_row->>'type_id'=$2",[ws,t.id])).rows[0].n;
+      if (waiting) throw new Error(`Cloud type ${t.key} was removed; pending local edits are preserved. Export or move them before syncing.`);
+      await tx.query("delete from surface_local.sync_rows where workspace_id=$1 and kind='record' and key in(select id from public.records where type_id=$2)",[ws,t.id]);
+      await tx.query("delete from public.records where type_id=$1",[t.id]);
+      await tx.query("delete from public.types where id=$1",[t.id]);
+      await tx.query("delete from surface_local.sync_rows where workspace_id=$1 and kind='type' and key=$2",[ws,t.id]);
+    },{applying:true});
+    localById.delete(t.id); markOf.delete(t.id);
+    local.splice(local.findIndex(x=>x.id===t.id),1);
+  }
+
+  // Bootstrap/legacy type edits only; new shared schema edits use routeSchemaWrite.
   for (const t of local) {
     const m = markOf.get(t.id);
     if (!m || !m.dirty) continue; // only tracked local changes go up (enable marks everything; joins start clean)
@@ -328,12 +470,12 @@ async function syncTypes(ws: string, hub: Hub, client: Client, hubTypes: TypeRow
       const lm = [...markOf.values()].find((m) => m.hub_id === h.id);
       const lt = (lm && localById.get(lm.key)) || local.find((t) => t.key === h.key);
       const m = lt ? markOf.get(lt.id) : undefined;
-      if (lt && m && m.synced === h.updated_at && m.hub_id === h.id) continue;
+      if (lt && m && m.synced === h.updated_at && m.hub_id === h.id && m.field_ids) continue;
       if (lt && m?.dirty && !m.synced) continue; // pushed above or failed
       const lk = fieldsByKey(lt);
       const fields = h.fields.map((f) => {
         const out: Field = { ...f };
-        const same = lk.get(f.key);
+        const same = lk.get(f.key) ?? lt?.fields.find(lf => lf.id === m?.field_ids?.[f.id]);
         if (same) out.id = same.id;
         if (f.kind === "link" && f.target) {
           const key = localKeyOfHubId(f.target);
@@ -354,6 +496,7 @@ async function syncTypes(ws: string, hub: Hub, client: Client, hubTypes: TypeRow
           }
           await tx.query(`insert into surface_local.sync_rows (workspace_id, kind, key, synced, dirty, hub_id) values ($1, 'type', $2, $3, false, $4)
              on conflict (workspace_id, kind, key) do update set synced = $3, dirty = false, hub_id = $4`, [ws, row.id, h.updated_at, h.id]);
+          await tx.query("update surface_local.sync_rows set field_ids=$3::jsonb where workspace_id=$1 and kind='type' and key=$2",[ws,row.id,JSON.stringify(Object.fromEntries(h.fields.map(f=>[f.id,row.fields.find(lf=>lf.key===f.key)!.id])))]);
           return row;
         }, { applying: true });
         localById.set(saved.id, saved);
@@ -399,8 +542,8 @@ const byId = (fields: Record<string, unknown>, t: TypeRow | undefined) => {
 // ---------------------------------------------------------------------------
 async function pushRecords(ws: string, hub: Hub, client: Client, types: Types, rep: SyncReport) {
   const dirty = await localAdmin(async (tx) => (await tx.query<any>(
-    `select s.key, s.synced, r.* from surface_local.sync_rows s left join public.records r on r.id = s.key
-      where s.workspace_id = $1 and s.kind = 'record' and s.dirty order by r.created_at nulls last`, [ws])).rows);
+    `select s.key, s.synced, r.*, o.before_row, o.after_row, o.generation from surface_local.sync_rows s left join public.records r on r.id = s.key left join surface_local.outbox o on o.workspace_id = s.workspace_id and o.record_id = s.key
+      where s.workspace_id = $1 and s.kind = 'record' and s.dirty order by o.sequence nulls first, r.created_at nulls last`, [ws])).rows);
   // parents and link targets first: records that others point at go up before them
   const order = sortForLinks(dirty, (r) => [r.parent_id, ...linkTargets(r.fields, types.localById.get(r.type_id))]);
   for (const r of order) {
@@ -409,6 +552,10 @@ async function pushRecords(ws: string, hub: Hub, client: Client, types: Types, r
     try {
       if (!r.id) { // gone locally (shouldn't happen: deletes are soft)
         await markClean(ws, "record", id, r.synced, null);
+        continue;
+      }
+      if (r.before_row && base != null) {
+        await pushPatch(ws, hub, client, types, r, rep);
         continue;
       }
       if (r.deleted_at) {
@@ -447,12 +594,19 @@ async function pushRecords(ws: string, hub: Hub, client: Client, types: Types, r
         res = await client.rpc("push_record", { ...args, p_base_rev: cur.rev });
       }
       if (res.error && /^conflict: /.test(res.error.message)) {
+        const h = must(await client.from("records").select("*").eq("id", id).single(), "read hub record");
+        if (equal(document(r, lt), document(h, types.hubById.get(h.type_id)))) {
+          await markClean(ws, "record", id, String(h.rev), r.rev); rep.pushed++; continue;
+        }
+      }
+      if (res.error && /^conflict: /.test(res.error.message)) {
         L.info("conflict on push: hub changed since last sync", { ws, id, title: r.title, baseRev: base });
         await conflictCopy(ws, client, types, r, rep);
         continue;
       }
       const saved = must(res, `push ${r.title}`);
-      await markClean(ws, "record", id, String(saved.rev), r.rev);
+      if (r.generation) await acknowledge(ws, types, r, saved);
+      else await markClean(ws, "record", id, String(saved.rev), r.rev);
       L.debug("pushed record", { ws, id, title: r.title, baseRev: base, hubRev: saved.rev, localRev: r.rev });
       rep.pushed++;
     } catch (e) {
@@ -463,6 +617,108 @@ async function pushRecords(ws: string, hub: Hub, client: Client, types: Types, r
   }
 }
 
+/** Translate a record into stable property names. Field ids differ between computers. */
+function document(r: Row, t: TypeRow | undefined): Row {
+  return { type: t?.key, title: r.title, body: r.body ?? "", folder: r.folder ?? null,
+    parent: r.parent_id ?? null, aliases: r.aliases ?? [], fields: byKey(r.fields ?? {}, t), deleted: !!r.deleted_at };
+}
+const equal = (a: unknown, b: unknown): boolean => {
+  if (a == null && b == null) return true;
+  if (Array.isArray(a) || Array.isArray(b)) return JSON.stringify(a) === JSON.stringify(b);
+  if (a && b && typeof a === "object" && typeof b === "object") {
+    const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+    return [...keys].every(k => equal((a as Row)[k], (b as Row)[k]));
+  }
+  return a === b;
+};
+
+/** Three-way property merge, protected by the hub's existing atomic revision check.
+ * Retry reads the hub again: a response lost after a successful write becomes a no-op,
+ * never a duplicate record. Same-property conflicts remain explicit, including body text. */
+async function pushPatch(ws: string, hub: Hub, client: Client, types: Types, r: Row, rep: SyncReport) {
+  const before = document(r.before_row, types.localById.get(r.before_row.type_id));
+  const after = document(r.after_row, types.localById.get(r.after_row.type_id));
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const h = must(await client.from("records").select("*").eq("workspace_id", hub.workspace).eq("id", r.id).maybeSingle(), "read hub record");
+    if (!h) throw new Error(`${r.title}: record was removed from the cloud; pending edits are kept locally`);
+    const current = document(h, types.hubById.get(h.type_id));
+    const merged: Row = { ...current, fields: { ...current.fields } };
+    let conflict = false;
+    // Deleting while someone edits keeps the edit. Editing a deleted record restores it.
+    if (after.deleted && !before.deleted && !equal({ ...before, deleted: false }, { ...current, deleted: false })) {
+      await acknowledge(ws, types, r, h); rep.conflicts.push(`${r.title}: deleted here but edited elsewhere; kept the edit`); return;
+    }
+    for (const k of ["type", "title", "body", "folder", "parent", "aliases", "deleted"]) {
+      if (equal(before[k], after[k])) continue;
+      if (!equal(current[k], before[k]) && !equal(current[k], after[k])) conflict = true;
+      merged[k] = after[k];
+    }
+    for (const k of new Set([...Object.keys(before.fields), ...Object.keys(after.fields)])) {
+      if (equal(before.fields[k], after.fields[k])) continue;
+      // Removed schema fields must never be resurrected by a pending record edit.
+      const target = types.hubByKey.get(merged.type);
+      if (!target?.fields.some(f => f.key === k)) continue;
+      if (!equal(current.fields[k], before.fields[k]) && !equal(current.fields[k], after.fields[k])) conflict = true;
+      if (after.fields[k] == null) delete merged.fields[k]; else merged.fields[k] = after.fields[k];
+    }
+    if (conflict && !equal(after, current)) {
+      // Preserve the latest local record, including edits made while this request was in flight.
+      const latest = await localAdmin(async tx => (await tx.query<any>("select *, id as key from public.records where id=$1", [r.id])).rows[0]);
+      await conflictCopy(ws, client, types, latest, rep);
+      return;
+    }
+    // A local edit always beats a remote delete.
+    if (current.deleted && !after.deleted) merged.deleted = false;
+    if (equal(merged, current)) { await acknowledge(ws, types, r, h); rep.pushed++; return; }
+    // A revision-filtered update also supports deletion/restoration without a separate unsafe write.
+    const ht = types.hubByKey.get(merged.type);
+    if (!ht) throw new Error(`no cloud type ${merged.type}`);
+    const proposed: Row = { type_id: ht.id, title: merged.title, body: merged.body, folder: merged.folder,
+      parent_id: merged.parent, aliases: merged.aliases, fields: byId(merged.fields, ht),
+      deleted_at: merged.deleted ? (h.deleted_at ?? r.deleted_at) : null };
+    if (!("aliases" in h)) {
+      if (merged.aliases.length) throw new Error("The cloud needs migration 0006_links_aliases.sql before aliases can sync. Your edits are saved locally.");
+      delete proposed.aliases;
+    }
+    const patch = Object.fromEntries(Object.entries(proposed).filter(([key,value]) => !equal(h[key],value)));
+    if (!Object.keys(patch).length) { await acknowledge(ws,types,r,h); rep.pushed++; return; }
+    const saved = must(await client.from("records").update(patch).eq("workspace_id", hub.workspace).eq("id", r.id).eq("rev", h.rev).select("*"), `patch ${r.title}`);
+    if (!saved.length) continue; // another writer won; recompute against its accepted version
+    await acknowledge(ws, types, r, saved[0]); rep.pushed++; return;
+  }
+  throw new Error(`${r.title}: cloud changed repeatedly; queued edit will retry`);
+}
+
+/** Accept a cloud result and replay edits made during the request over it atomically. */
+async function acknowledge(ws: string, types: Types, sent: Row, accepted: Row) {
+  const ht = types.hubById.get(accepted.type_id)!;
+  const lt = types.localByKey.get(ht.key)!;
+  await localAdmin(async tx => {
+    const pending = (await tx.query<any>("select * from surface_local.outbox where workspace_id=$1 and record_id=$2 for update", [ws, sent.id])).rows[0];
+    const base: Row = { ...accepted, workspace_id: ws, type_id: lt.id, aliases: accepted.aliases ?? sent.after_row.aliases ?? [], fields: byId(byKey(accepted.fields, ht), lt) };
+    let result: Row = { ...base, fields: { ...base.fields } };
+    if (pending && pending.generation !== sent.generation) {
+      const previous = sent.after_row;
+      const latest = pending.after_row;
+      for (const k of ["title", "body", "folder", "parent_id", "aliases", "deleted_at", "type_id"]) {
+        if (!equal(previous[k], latest[k])) result[k] = latest[k];
+      }
+      for (const k of new Set([...Object.keys(previous.fields), ...Object.keys(latest.fields)])) {
+        if (!equal(previous.fields[k], latest.fields[k])) {
+          if (latest.fields[k] == null) delete result.fields[k]; else result.fields[k] = latest.fields[k];
+        }
+      }
+    }
+    const row = (await tx.query<any>(`update public.records set type_id=$2,title=$3,body=$4,folder=$5,parent_id=$6,aliases=$7,fields=$8::jsonb,deleted_at=$9 where id=$1 returning *`,
+      [sent.id,result.type_id,result.title,result.body,result.folder,result.parent_id,result.aliases,JSON.stringify(result.fields),result.deleted_at])).rows[0]
+      ?? (await tx.query<any>("select * from public.records where id=$1", [sent.id])).rows[0];
+    const remains = pending && pending.generation !== sent.generation;
+    await tx.query("update surface_local.sync_rows set synced=$3,dirty=$4 where workspace_id=$1 and kind='record' and key=$2", [ws,sent.id,String(accepted.rev),!!remains]);
+    if (remains) await tx.query("update surface_local.outbox set before_row=$3::jsonb,after_row=$4::jsonb where workspace_id=$1 and record_id=$2", [ws,sent.id,JSON.stringify(base),JSON.stringify(row)]);
+    else await tx.query("delete from surface_local.outbox where workspace_id=$1 and record_id=$2", [ws,sent.id]);
+  }, { applying: true });
+}
+
 /** Mark a row synced, unless it changed again locally since we read it (then it stays dirty). */
 async function markClean(ws: string, kind: string, key: string, synced: string | null, localRev: number | null, keepDirty = false) {
   await localAdmin((tx) => tx.query(
@@ -471,6 +727,9 @@ async function markClean(ws: string, kind: string, key: string, synced: string |
             dirty = case when $5::int is null or exists (select 1 from public.records where id = $3 and rev = $5) then $6 else true end
       where workspace_id = $1 and kind = $2 and key = $3`,
     [ws, kind, key, synced, localRev, keepDirty]));
+  if (kind === "record" && !keepDirty) await localAdmin(async tx => {
+    await tx.query("delete from surface_local.outbox where workspace_id = $1 and record_id = $2 and (after_row->>'rev')::int = $3", [ws, key, localRev]);
+  });
 }
 
 /** Someone else changed the record: keep ours as a new record and take theirs. */
@@ -481,15 +740,19 @@ async function conflictCopy(ws: string, client: Client, types: Types, r: Row, re
   const stamp = new Date().toISOString().slice(0, 16).replace("T", " ");
   const copyTitle = `${r.title} (conflict ${stamp})`;
   await localAdmin(async (tx) => {
+    const latest = (await tx.query<any>("select * from public.records where id=$1",[r.key])).rows[0];
     const copy = (await tx.query<any>(
       `insert into public.records (workspace_id, type_id, title, fields, body, folder, parent_id, aliases)
-       values ($1, $2, $3, $4::jsonb, $5, $6, $7, '{}') returning id`,
-      [ws, r.type_id, copyTitle, JSON.stringify(r.fields), r.body, r.folder, r.parent_id])).rows[0];
-    await tx.query("insert into surface_local.sync_conflicts (workspace_id, record_id, copy_id, title) values ($1, $2, $3, $4)", [ws, r.key, copy.id, r.title]);
-    // the copy is a normal local change: mark it so it syncs up too
+       values ($1, $2, $3, $4::jsonb, $5, $6, $7, '{}') returning *`,
+      [ws, latest.type_id, copyTitle, JSON.stringify(latest.fields), latest.body, latest.folder, latest.parent_id])).rows[0];
+    await tx.query("insert into surface_local.sync_conflicts (workspace_id, record_id, copy_id, title) values ($1, $2, $3, $4)", [ws, r.key, copy.id, latest.title]);
     await tx.query("insert into surface_local.sync_rows (workspace_id, kind, key, dirty) values ($1, 'record', $2, true) on conflict do nothing", [ws, copy.id]);
-  });
-  await applyRecord(ws, h, lt!, ht);
+    await tx.query("insert into surface_local.outbox(workspace_id,record_id,after_row) values($1,$2,$3::jsonb)",[ws,copy.id,JSON.stringify(copy)]);
+    await tx.query("update public.records set type_id=$2,title=$3,fields=$4::jsonb,body=$5,folder=$6,parent_id=$7,deleted_at=$8,aliases=coalesce($9::text[],aliases) where id=$1",
+      [r.key,lt!.id,h.title,JSON.stringify(byId(byKey(h.fields,ht),lt)),h.body,h.folder,h.parent_id,h.deleted_at,h.aliases ?? null]);
+    await tx.query("update surface_local.sync_rows set synced=$3,dirty=false where workspace_id=$1 and kind='record' and key=$2",[ws,r.key,String(h.rev)]);
+    await tx.query("delete from surface_local.outbox where workspace_id=$1 and record_id=$2",[ws,r.key]);
+  }, { applying: true });
   rep.conflicts.push(`${r.title}: changed elsewhere too; your version is "${copyTitle}"`);
 }
 
@@ -498,6 +761,10 @@ async function applyRecord(ws: string, h: Row, lt: TypeRow, ht: TypeRow | undefi
   if (strip) fields = Object.fromEntries(Object.entries(fields).filter(([k]) => lt.fields.find((f) => f.id === k)?.kind !== "link"));
   await localAdmin(async (tx) => {
     const exists = (await tx.query<any>("select 1 from public.records where id = $1", [h.id])).rows.length > 0;
+    // A user can edit after the pull's initial scan but before this transaction.
+    // Never overwrite that edit or mark its outbox clean.
+    const pending = (await tx.query<any>("select dirty from surface_local.sync_rows where workspace_id=$1 and kind='record' and key=$2",[ws,h.id])).rows[0];
+    if (pending?.dirty) return;
     const parent = strip ? null : h.parent_id;
     // a hub without migration 0006 sends no aliases: keep the local ones rather than clearing them
     if (exists) {

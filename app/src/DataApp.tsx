@@ -102,7 +102,7 @@ export function DataApp() {
   const switchWorkspace = async (id: string) => {
     if (!canLeaveSheet()) return;
     setSwitching(true); setRecordId(null); sheetDirty.current = false;
-    try { await api.switchWorkspace(id); await reload(); navigate(""); setTick(t => t + 1); }
+    try { const next = await api.switchWorkspace(id); location.assign(next.url ? next.url + "data/" : location.pathname); }
     catch (e) { setError(message(e)); }
     finally { setSwitching(false); }
   };
