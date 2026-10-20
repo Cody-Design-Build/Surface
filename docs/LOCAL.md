@@ -80,6 +80,40 @@ Open (TODO.md): the sync layer's protocol (change log, ordering, field-level mer
 **In use (Oct 18):** cdb-os on this Linux machine runs on the local store, syncing with the cloud workspace `1nd7c49fg6tk`. Checkout `~/Surface-cdb-os` (local workspace `1ndahjxwpw00`); the old cloud checkout is kept at `~/Surface-cdb-os-cloud-backup`. Joining copied 585 rows and wrote nothing to the cloud. Live check: an app edit reached the cloud, a cloud edit came back, a delete went up.
 - Attachments don't sync.
 
+## 1c. Decided (Oct 19): one server per computer; each workspace has one home
+
+**Decided, not built.** Replaces the "copies negotiate" part of §1b. Why: on Oct 19, deleting a field rewrote two records on this computer and in the cloud seconds apart; sync compared revision numbers, saw both sides move, and made two conflict copies of records that were byte-for-byte identical. Separately, two servers (writing app on 4317 from one folder, data view on 4318 from another) showed different workspaces and routed cdb-os sync through the EcoSynthesis server.
+
+**Each workspace has exactly one home:**
+
+| | **Local workspace** | **Cloud workspace** |
+|---|---|---|
+| Truth | This computer's database | The cloud |
+| This computer holds | The database | A cache of it plus an outbox |
+| Use | Solo, no account, trying Surface, private scratch | Teams, or one person on several computers |
+
+Creating a workspace offers three choices: **New local**, **New cloud** (set up and join), **Join existing** (code or invite, as `surface join` today). A local workspace can **Move to cloud**: a one-time upload, after which it's a cloud workspace. The app shows Local or Cloud on every workspace.
+
+**Fix 1: one Surface server per computer.**
+
+1. One `surface serve` owns the local database and syncs every cloud workspace. No second server; `surface data` stops starting one.
+2. The workspace is in the link (for example `/w/cdb-os/` and `/w/cdb-os/data/`), so several workspaces are open in different tabs from the same server. The server no longer depends on the folder it was started in.
+3. `surface data` (and `surface open`) open the browser on the running server, starting it if needed.
+4. Installed as a background service: systemd user unit (Linux), launchd agent (macOS), a logon task (Windows). It survives terminal and agent sessions ending.
+5. Test runs use their own config and data directories (as the test suites already do), never a second server on the real database.
+
+**Fix 2: cloud workspaces sync small changes, the cloud decides.**
+
+1. A local edit applies to the cache right away and is written to an **outbox** as field-level changes ("set `trades` on Tile Fever to [Tile]", "replace paragraph 3 of the body").
+2. The outbox sends changes in order. The cloud applies each to its current version, assigns the revision, and returns the record, which replaces the cached one.
+3. Different fields never clash. The same field changed by two people: last write wins, no conflict copy; the overwritten value stays in the record's history with "changed by X · undo".
+4. Same result on both sides is not a change (would have prevented the Oct 19 conflicts on its own).
+5. Type and field changes (add, rename, delete field) run once, on the cloud; computers receive the rewritten records by normal pull.
+6. Offline: changes wait in the outbox. The outbox is the only thing a computer holds that the cloud doesn't; otherwise the cache can be deleted and downloaded again.
+7. Local workspaces have no outbox and are unchanged.
+
+**Order:** Fix 1 (server), then workspace homes in the app (three create choices, Move to cloud, Local/Cloud label), then Fix 2 (sync). Hub-to-hub sync between two Surface servers (§1b `--hub`) is kept only if it falls out cheaply; the cloud is the supported hub.
+
 ## 2. The database engine
 
 **Leaning: PGlite** (Postgres compiled to WebAssembly, run inside Node), pending the spike in §8.
