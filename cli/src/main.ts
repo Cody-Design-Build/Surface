@@ -4,6 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import readline from "node:readline";
+import { apps } from "../../surfaces.mts";
 import { checkLayout, findCheckout, saveCheckout, type Checkout, type Layout } from "./config.ts";
 import { clearSession, dbError, requireUser, sb, UserError } from "./client.ts";
 import {
@@ -165,6 +166,10 @@ async function refreshCheckout(co: Checkout | null) {
 type Cmd = (a: Args) => Promise<void>;
 
 const commands: Record<string, Cmd> = {
+  async apps(a) {
+    if (a.flags.json) return console.log(JSON.stringify(apps, null, 2));
+    table([["ID", "APP", "PATH"], ...apps.map(app => [app.id, app.name, app.path])]);
+  },
   async update(a) {
     const { update, configureUpdates } = await import("./update.ts");
     if (a._[0] === "auto") return configureUpdates(a._[1] ?? "check");
@@ -1491,7 +1496,7 @@ const commands: Record<string, Cmd> = {
       else target = { record: (await findRecord(co.config.workspace, ref, co)).id };
     }
     const { openSurface } = await import("./open.ts");
-    const r = await openSurface(co, target, { port: Number(flag(a, "port") ?? 4317), tab: !!a.flags.tab, print: !!a.flags.print });
+    const r = await openSurface(co, target, { port: Number(flag(a, "port") ?? 4317), tab: !!a.flags.tab, print: !!a.flags.print, app: flag(a, "app") });
     if (r.started) console.log(dim(`Started surface serve in the background (log: ~/.config/surface-cli/serve.log).`));
     console.log(r.how === "printed" ? r.url : `Opened in ${r.how}.`);
   },
@@ -1629,6 +1634,8 @@ Folders (where files live, in the folder layout)
   folder rename <folder> <new>        move everything under a folder
 
 App
+  apps [--json]                       list the apps included in this installation
+  open [--app <id>] [--print]        open an app in this workspace (default: writing)
   serve [--port 4317] [--open]        run the Surface app for this checkout on http://127.0.0.1
   data [--port 4317] [--print]        open the data surface on the existing server
 

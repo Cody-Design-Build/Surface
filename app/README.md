@@ -6,6 +6,16 @@ The dedicated Surface app: workspace and personal sidebars, a live-preview Markd
 
 Both entry points now share one server: `/w/<workspace-id>/` for writing and `/w/<workspace-id>/data/` for tables. Each tab's API calls, event stream and attachments stay bound to that workspace. `surface data` opens the existing server; it does not launch another process. `surface service install` runs the server at login.
 
+The top-left app name opens a switcher in both apps. Switching keeps the current workspace; open a link in a new tab to keep both apps open. Data's unsaved record edits prompt before leaving.
+
+### Adding an app
+
+1. Create an HTML entry in `app/` (for example `projects.html`) and its implementation. Use `AppSwitcher` from `src/AppSwitcher.tsx` in its header and `workspaceUrl` from `src/api.ts` for workspace-scoped API requests.
+2. Add one entry to the repository's `surfaces.mts` registry: a unique `id`, `name`, `description`, `icon`, `path` (for example `/projects/`), and `entry` (`projects.html`). Paths are `/` or a single directory; HTML entries live directly in `app/`.
+3. Build and verify it, then commit and publish the changes to the update branch. Teammates run `surface update` (or use their configured automatic updates). The updater builds every registered app and restarts the existing server. Refresh open tabs to see the new switcher entry.
+
+The same registry drives the switcher, Vite build entries, server routes and `surface apps --json`. Open any registered app with `surface open --app <id>`. Registering an app doesn't create its implementation or publish an update.
+
 ```sh
 npm install
 npm run build

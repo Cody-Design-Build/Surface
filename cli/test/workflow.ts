@@ -253,6 +253,15 @@ try {
   const invalid=await request("/w/not-a-workspace/api/state"); assert.equal(invalid.status,404);
   ok("one HTTP server isolates workspaces and tab switches, with auth on every workspace");
   const dataPage=await request(`/w/${ws}/data/`); assert.equal(dataPage.status,200); assert.match(dataPage.text,/data-/);
+  for (const app of (await import("../../surfaces.mts")).apps) {
+    const page=await request(`/w/${ws}${app.path}`);
+    assert.equal(page.status,200); assert.match(page.text,/<!doctype html>/i);
+    const direct=await request(`/${app.entry}`);
+    assert.equal(direct.status,302); assert.equal((direct.headers as Record<string,string>).location,`/w/${ws}${app.path}`);
+    const signedIn=await request(`${app.path}?token=${token}`,"GET",undefined,{cookie:""});
+    assert.equal(signedIn.status,302); assert.equal((signedIn.headers as Record<string,string>).location,`/w/${ws}${app.path}`);
+    assert.equal((await request(`/w/${ws}${app.path}`,"GET",undefined,{cookie:""})).status,401);
+  }
   const health=await request("/api/_health","GET",undefined,{"x-surface-token":token}); assert.equal(health.status,200); assert.equal(health.data().pending,0);
   await assert.rejects(serve(findCheckout(privateRoot)!,{port:4318,watch:false,listen:false}),/Another Surface/);
   ok("writing and data share the server, and a second server is refused");

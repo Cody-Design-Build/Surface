@@ -7,6 +7,7 @@ import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { apps } from "../../surfaces.mts";
 import { CONFIG_DIR, type Checkout } from "./config.ts";
 
 const RUNNING_FILE = path.join(CONFIG_DIR, "serve.json");
@@ -105,7 +106,10 @@ export function openWindow(url: string, opts: { tab?: boolean } = {}): string {
 }
 
 /** Build the URL for a target (view key or record id) and open it. */
-export async function openSurface(co: Checkout, target: { view?: string; record?: string } | null, opts: { port: number; tab?: boolean; print?: boolean; data?: boolean }) {
+export async function openSurface(co: Checkout, target: { view?: string; record?: string } | null, opts: { port: number; tab?: boolean; print?: boolean; data?: boolean; app?: string }) {
+  const app = opts.app ? apps.find(app => app.id === opts.app) : opts.data ? apps.find(app => app.id === "data")! : apps.find(app => app.path === "/")!;
+  if (!app) throw new Error(`Unknown app "${opts.app}". Available: ${apps.map(app => app.id).join(", ")}`);
+  if (target && app.path !== "/") throw new Error("Record and view links open in the writing app. Use --app without a record or view.");
   let r = await running();
   let started = false;
   if (!r) {
@@ -124,7 +128,7 @@ export async function openSurface(co: Checkout, target: { view?: string; record?
     await call(r.port, token, "POST", "/api/workspace/switch", { id: co.config.workspace });
   const hash = target?.view ? `#/v/${encodeURIComponent(target.view)}` : target?.record ? `#/r/${target.record}` : "";
   const route = r.protocol === 2 ? `/w/${co.config.workspace}/` : "/";
-  const url = `http://127.0.0.1:${r.port}${route}${opts.data ? "data/" : ""}?token=${token}${hash}`;
+  const url = `http://127.0.0.1:${r.port}${route}${app.path.slice(1)}?token=${token}${hash}`;
   if (opts.print) return { url, how: "printed", started };
   return { url, how: openWindow(url, { tab: opts.tab }), started };
 }

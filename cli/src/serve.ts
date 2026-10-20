@@ -6,6 +6,7 @@ import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import os from "node:os";
+import { appAtPath } from "../../surfaces.mts";
 import { CONFIG_DIR, findCheckout, knownCheckouts, rememberCheckout, saveCheckout, type Checkout } from "./config.ts";
 import { storeKind, dbError, requireUser, sb } from "./client.ts";
 import { deleteView, fetchInvites, fetchMembers, fetchViews, myInvites, pushRecord, saveView, type RecordRow, type TypeRow, type ViewRow } from "./db.ts";
@@ -775,7 +776,8 @@ export async function serve(initial: Checkout, opts: { port: number; host?: stri
       return res.end("The app isn't built yet. Run `npm install && npm run build` in the app/ folder.");
     }
     let rel = decodeURIComponent(url.pathname).replace(/^\/+/, "");
-    if (rel === "data" || rel === "data/") rel = "data.html";
+    const app = appAtPath(url.pathname);
+    if (app) rel = app.entry;
     let file = path.join(APP_DIR, rel);
     if (!file.startsWith(APP_DIR) || !rel || !fs.existsSync(file) || fs.statSync(file).isDirectory()) file = path.join(APP_DIR, "index.html");
     const ext = path.extname(file);
@@ -851,7 +853,7 @@ export async function serve(initial: Checkout, opts: { port: number; host?: stri
         if (given !== token) throw new HttpError(403, "Wrong token");
         res.writeHead(302, {
           "set-cookie": `surface_token=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=31536000`,
-          location: url.pathname.startsWith("/w/") ? url.pathname : `/w/${initial.config.workspace}/${url.pathname.startsWith("/data") ? "data/" : ""}`,
+          location: url.pathname.startsWith("/w/") ? url.pathname : `/w/${initial.config.workspace}${appAtPath(url.pathname)?.path ?? "/"}`,
         });
         return res.end();
       }
@@ -872,8 +874,9 @@ export async function serve(initial: Checkout, opts: { port: number; host?: stri
         res.writeHead(401, { "content-type": "text/plain" });
         return res.end("Surface is running. Open the link printed by surface serve to connect this browser.");
       }
-      if (authed && !route && ["/", "/data", "/data/", "/data.html"].includes(url.pathname)) {
-        res.writeHead(302, { location: `/w/${initial.config.workspace}/${url.pathname.startsWith("/data") ? "data/" : ""}` });
+      const requestedApp = appAtPath(url.pathname);
+      if (authed && !route && requestedApp) {
+        res.writeHead(302, { location: `/w/${initial.config.workspace}${requestedApp.path}` });
         return res.end();
       }
       if (route) await context(ws); // validate workspace before serving its page

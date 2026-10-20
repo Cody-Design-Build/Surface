@@ -10,6 +10,7 @@ import { GroupPanel, SortPanel } from "./DataToolbar.tsx";
 import { parseGroup, parseSort } from "./Grid.tsx";
 import { ViewEditor } from "./ViewEditor.tsx";
 import { SyncBadge } from "./SyncBadge.tsx";
+import { AppSwitcher } from "./AppSwitcher.tsx";
 import { defaultsFrom, deleteRecord } from "./edits.ts";
 import { did, onUndo, redo, typingTarget, undo } from "./undo.ts";
 
@@ -109,7 +110,7 @@ export function DataApp() {
   if (!app) return <div className="data-boot"><div className="data-emblem">S</div><h1>Surface Data</h1><p>{error || "Opening your workspace…"}</p>{error && <button className="btn-soft" onClick={reload}>Try again</button>}</div>;
   return <div className="data-app">
     <header className="data-topbar">
-      <div className="data-brand"><span className="data-emblem">S</span><strong>Surface <span>Data</span></strong></div>
+      <AppSwitcher beforeNavigate={() => { if (!canLeaveSheet()) return false; sheetDirty.current = false; return true; }} />
       <span className="data-top-divider" />
       <label className="data-workspace"><Icon name="project" /><select aria-label="Workspace" value={app.workspace.id} disabled={switching} onChange={e => void switchWorkspace(e.target.value)}>
         {!workspaces.length && <option value={app.workspace.id}>{app.workspace.name}</option>}

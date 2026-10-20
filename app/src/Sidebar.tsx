@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { api, type AppState, type SidebarInfo, type TreeDef, type TreeItem, type TreeNode, type ViewInfo } from "./api.ts";
 import { Icon, typeIcon } from "./Icon.tsx";
 import { SyncBadge } from "./SyncBadge.tsx";
+import { AppSwitcher } from "./AppSwitcher.tsx";
 import { insert, isInside, itemAt, move, remove, update, type Where } from "./treeEdit.ts";
 
 // The sidebar organizes. Nothing here changes a record's fields.
@@ -523,6 +524,7 @@ export function Sidebar(props: Props) {
   return (
     <aside className="sidebar">
       <div className="side-top">
+        <AppSwitcher />
         <div className="ws">
           <WorkspaceMenu app={app} />
           <button className="icon-btn ws-btn" title="Share" onClick={props.openShare}>

@@ -1,8 +1,9 @@
 .data-app { height: 100%; display: flex; flex-direction: column; --accent: #287d86; --accent-soft: #287d8614; --accent-text: #21656c; background: var(--bg-raised); }
 .data-topbar { height: 44px; flex: none; display: flex; align-items: center; gap: 16px; padding: 0 14px; background: #245b63; color: #fff; }
-.data-brand { display: flex; align-items: center; gap: 10px; white-space: nowrap; }
-.data-brand strong { font-size: 15px; letter-spacing: -.4px; font-weight: 650; }
-.data-brand strong span { font-weight: 400; opacity: .75; margin-left: 3px; }
+.data-topbar .app-switcher-trigger { color: #fff; }
+.data-topbar .app-switcher-trigger:hover, .data-topbar .app-switcher-trigger[aria-expanded="true"] { background: #ffffff18; }
+.data-topbar .app-switcher-mark { background: #ffffff21; }
+.data-topbar .app-switcher-trigger:focus-visible { outline-color: #fff; }
 .data-emblem { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 6px; background: #ffffff21; color: #fff; font-size: 16px; font-weight: 750; }
 .data-top-divider { width: 1px; height: 20px; background: #ffffff30; }
 .data-workspace { display: flex; align-items: center; gap: 8px; }

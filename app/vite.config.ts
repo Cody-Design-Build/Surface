@@ -1,6 +1,7 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { fileURLToPath } from "node:url";
+import { apps } from "../surfaces.mts";
 
 // `npm run dev` proxies the API to a running `surface serve` (default port 4317).
 export default defineConfig({
@@ -11,9 +12,6 @@ export default defineConfig({
   },
   build: {
     outDir: "dist", emptyOutDir: true, chunkSizeWarningLimit: 2000,
-    rollupOptions: { input: {
-      app: fileURLToPath(new URL("./index.html", import.meta.url)),
-      data: fileURLToPath(new URL("./data.html", import.meta.url)),
-    } },
+    rollupOptions: { input: Object.fromEntries(apps.map(app => [app.id, fileURLToPath(new URL(`./${app.entry}`, import.meta.url))])) },
   },
 });
