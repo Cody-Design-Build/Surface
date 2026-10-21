@@ -41,11 +41,13 @@
 .data-options .sg-options { left: 0; top: 36px; z-index: 25; }
 .data-record-search { display: flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; padding: 7px 9px; border: 1px solid var(--line); border-radius: 5px; color: var(--text-muted); }
 .data-record-search input { background: transparent; border: 0; outline: none; min-width: 0; width: 135px; font-size: 12px; }
-.data-grid-area { padding: 0 24px; overflow: auto; flex: 1; min-width: 0; min-height: 0; }
-.data-grid-area .sg-wrap { margin: 0; height: 100%; min-height: 0; display: flex; flex-direction: column; }
-.data-grid-area .surface-grid { --rdg-background-color: var(--bg-raised); --rdg-header-background-color: var(--bg-side); border-radius: 5px; flex: 1; min-height: 0; block-size: auto !important; max-block-size: none !important; }
+/* One table surface: rows determine its height until the pane is full, then
+   only the grid scrolls. Short tables don't leave a large empty framed box. */
+.data-grid-area { overflow: hidden; display: flex; flex-direction: column; flex: 0 1 auto; min-width: 0; min-height: 0; }
+.data-grid-area .sg-wrap { margin: 0; min-height: 0; display: flex; flex-direction: column; }
+.data-grid-area .surface-grid { --rdg-background-color: var(--bg-raised); --rdg-header-background-color: var(--bg-side); border-inline: 0; border-radius: 0; flex: 0 1 auto; min-height: 0; max-block-size: none !important; }
 .data-grid-area .surface-grid [role="columnheader"] { color: var(--text-soft); font-weight: 550; }
-.data-footer { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; padding: 13px 24px; border-top: 1px solid var(--line); color: var(--text-muted); font-size: 11px; flex: none; }
+.data-footer { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; padding: 10px 20px; color: var(--text-muted); font-size: 11px; flex: none; }
 .data-footer span:first-child { color: var(--text-soft); font-weight: 550; }
 .data-footer button { display: flex; align-items: center; gap: 5px; }
 .data-footer button:nth-last-child(2) { margin-left: auto; }
@@ -79,7 +81,7 @@
 .data-boot h1 { font-size: 24px; font-weight: 600; }
 .data-boot p { color: var(--text-muted); }
 @media (max-width: 900px) { .data-scope { display: none; } }
-@media (max-width: 620px) { .data-nav:not(.is-collapsed) { padding-inline: 6px; } .data-nav-note, .data-table-search { display: none; } .data-table-heading { padding-inline: 10px; gap: 8px; } .data-edit-fields { font-size: 0; gap: 0; } .data-toolbar { padding: 10px; } .data-grid-area { padding: 0 10px; } .data-view-tabs { padding-inline: 10px; } .data-footer { padding-inline: 10px; gap: 10px; } .data-footer span:nth-child(2) { display: none; } }
+@media (max-width: 620px) { .data-nav:not(.is-collapsed) { padding-inline: 6px; } .data-nav-note, .data-table-search { display: none; } .data-table-heading { padding-inline: 10px; gap: 8px; } .data-edit-fields { font-size: 0; gap: 0; } .data-toolbar { padding: 10px; } .data-view-tabs { padding-inline: 10px; } .data-footer { padding-inline: 10px; gap: 10px; } .data-footer span:nth-child(2) { display: none; } }
 
 /* table folders: chevron in the gutter; folder and top-level table icons share one column;
    tables inside a folder put their icon under the folder name */

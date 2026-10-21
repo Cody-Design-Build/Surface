@@ -85,6 +85,7 @@ function alignment() {
 }
 async function aligned() { await until(async () => (await js(alignment)).length === 0, "aligned headers and rows"); }
 async function screenshot(name) {
+  await wd("execute/async", { script: "const done = arguments[0]; requestAnimationFrame(() => requestAnimationFrame(() => done()));", args: [] });
   fs.writeFileSync(new URL(`${name}.png`, output), Buffer.from(await wd("screenshot"), "base64"));
 }
 const pass = label => { console.log(`PASS ${++passes} ${label}`); };
@@ -115,6 +116,21 @@ try {
   assert((await js(() => document.querySelectorAll(".rdg-row").length)) < 150);
   await aligned();
   pass("production table loads with row virtualization");
+
+  await type('[aria-label="Search records"]', "Task 0301");
+  await until(() => js(() => document.querySelectorAll(".sg-title-text").length === 1 && document.querySelector(".sg-title-text").textContent === "Task 0301" && document.querySelector('[aria-label="Search records"]').value === "Task 0301"), "short table");
+  const layout = await js(() => {
+    const grid = document.querySelector(".surface-grid").getBoundingClientRect();
+    const main = document.querySelector(".data-main").getBoundingClientRect();
+    const footer = document.querySelector(".data-footer").getBoundingClientRect();
+    return { inset: grid.x - main.x, width: grid.width - main.width, height: grid.height, footerGap: footer.y - grid.bottom };
+  });
+  assert(Math.abs(layout.inset) <= 1 && Math.abs(layout.width) <= 1);
+  assert(layout.height <= 34 + 36 + 2);
+  assert(Math.abs(layout.footerGap) <= 1);
+  await screenshot("short-table");
+  await openData(); await readyGrid();
+  pass("short table uses the pane width and footer follows its last row");
 
   for (let i = 0; i < 32; i++) {
     await js(i => document.querySelector(".surface-grid").scrollTo((i * 173) % 700, (i * 1291) % 10500), i);

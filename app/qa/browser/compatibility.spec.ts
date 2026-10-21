@@ -41,6 +41,29 @@ async function alignment(page: Page) {
   });
 }
 
+test("short tables sit flush in the pane and end below the last row", async ({ page }, testInfo) => {
+  const response = await page.request.post("/api/views", { headers: { origin: "http://127.0.0.1:4394" }, data: {
+    name: `Short table ${testInfo.project.name}`, personal: true,
+    definition: { from: "task", sort: "title", limit: 8, layouts: [{ show: "table", columns: ["status", "owner", "cost"] }] },
+  } });
+  expect(response.ok()).toBe(true);
+  const { view } = await response.json();
+  await page.goto(`/data/#/table/task?view=${view.key}&personal=1`);
+  await expect(page.locator(".sg-title-text")).toHaveCount(8);
+  const main = await page.locator(".data-main").boundingBox();
+  const grid = await page.locator(".surface-grid").boundingBox();
+  expect(Math.abs(grid!.x - main!.x)).toBeLessThanOrEqual(1);
+  expect(Math.abs(grid!.width - main!.width)).toBeLessThanOrEqual(1);
+  const footer = await page.locator(".data-footer").boundingBox();
+  expect(Math.abs(footer!.y - (grid!.y + grid!.height))).toBeLessThanOrEqual(1);
+  // At desktop height all eight records fit; the grid must not stretch below
+  // them. On a phone they may scroll, but the pane still has only one scroller.
+  expect(grid!.height).toBeLessThanOrEqual(34 + 8 * 36 + 2);
+  expect(await page.locator(".data-grid-area").evaluate(el => el.scrollHeight - el.clientHeight)).toBeLessThanOrEqual(1);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
+  await page.screenshot({ path: testInfo.outputPath("short-table.png") });
+});
+
 test("rows stay aligned during rapid two-axis scrolling and resize", async ({ page, isMobile }, testInfo) => {
   await openData(page);
   // Close the table list to leave useful horizontal space on phones.

@@ -87,7 +87,7 @@ try {
     assert.equal(parseFloat(getComputedStyle(document.querySelector(selector)).minWidth),0,`${selector} must shrink around wide fields`);
   }
   assert.equal(getComputedStyle(document.querySelector(".data-app")).overflow,"hidden");
-  assert.equal(getComputedStyle(document.querySelector(".data-grid-area")).overflow,"auto");
+  assert.equal(getComputedStyle(document.querySelector(".data-grid-area")).overflow,"hidden");
   for (const selector of [".data-toolbar", ".data-toolbar-actions", ".data-table-heading", ".data-view-tabs"]) {
     assert.equal(getComputedStyle(document.querySelector(selector)).flexWrap,"wrap",`${selector} controls wrap inside the viewport`);
   }
