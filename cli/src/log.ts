@@ -88,6 +88,14 @@ export function hookProcess() {
   if (hooked) return;
   hooked = true;
   const L = logger("proc");
+  // A server can outlive the terminal or agent that launched it. Losing that
+  // output pipe must not bring down HTTP requests or the local database.
+  for (const stream of [process.stdout, process.stderr]) {
+    stream.on("error", (error: NodeJS.ErrnoException) => {
+      if (error.code === "EPIPE") L.warn("output pipe closed", { stream: stream === process.stdout ? "stdout" : "stderr" });
+      else throw error;
+    });
+  }
   process.on("uncaughtException", (e) => {
     L.error("uncaught exception", { err: e });
     console.error(e);

@@ -22,7 +22,8 @@
     "test:updates": "node --no-warnings test/updates.ts",
     "test:apps": "node --no-warnings test/apps.ts",
     "test:system": "node --no-warnings test/system.ts",
-    "test:restart": "node --no-warnings test/restart.ts"
+    "test:restart": "node --no-warnings test/restart.ts",
+    "test:logging": "bash test/logging.sh"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.10",
