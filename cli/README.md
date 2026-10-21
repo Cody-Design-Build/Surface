@@ -42,7 +42,9 @@ surface data                           # opens /w/<id>/data/ on that server
 surface data --print                   # print its address instead
 ```
 
-Updates refuse local code changes or divergent branches. They keep a stopped database/config backup under `~/.config/surface-cli/update-backups/`. A failed build or check leaves a clear error; inspect it before restarting. Updates do not apply cloud migrations. Linux and macOS services are supported; use WSL on Windows. Automatic updates are off until explicitly enabled.
+Installation refuses local code changes or divergent branches. It keeps a stopped database/config backup under `~/.config/surface-cli/update-backups/`. A failed build or check leaves a clear error; inspect it before restarting. Updates do not apply cloud migrations. Linux and macOS services are supported; use WSL on Windows. Automatic installation is off until explicitly enabled.
+
+The local server checks for updates on startup and every four hours, sharing a cache with all apps and the CLI. Interactive CLI commands show installed and available revisions when an update is known and start a background check when the cache expires. JSON and noninteractive commands stay quiet. Checks run separately, do not install or restart anything, and tolerate local code edits; offline checks retry after 15 minutes. Set `SURFACE_UPDATE_CHECK=0` to disable this discovery (manual checks still work; reinstall the service to persist the setting). Daily scheduling above is independent of discovery.
 
 The writing and data interfaces use the same port (4317 by default). A workspace is part of its URL, so tabs stay independent. Close any old data server on 4318 during the first upgrade.
 

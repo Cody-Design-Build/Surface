@@ -162,9 +162,16 @@ code { font-family: var(--font-mono); font-size: 0.9em; }
 .app-topbar-right { display: flex; align-items: center; gap: 12px; justify-self: end; flex: none; white-space: nowrap; }
 .app-operation { font-size: 12px; color: #d2e6e8; }
 .app-update { display: flex; align-items: center; gap: 8px; position: relative; flex: none; }
-.app-version { flex: none; font-size: 11.5px; font-variant-numeric: tabular-nums; color: #fff; white-space: nowrap; padding: 5px 7px; border-radius: 5px; background: #ffffff12; }
+.app-version { display: flex; flex-direction: column; gap: 2px; flex: none; font-size: 11.5px; font-variant-numeric: tabular-nums; color: #fff; white-space: nowrap; padding: 4px 7px; border-radius: 5px; background: #ffffff12; }
+.app-version small { font-size: 10px; color: #ffffffc0; }
+.app-update-status { display: flex; flex-direction: column; gap: 2px; min-width: 0; white-space: normal; font-size: 11px; line-height: 1.3; }
+.app-update-status > span::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 5px; background: #d3d3d3; }
+.app-update-status.current > span::before { background: #7bf1a8; }
+.app-update-status.available > span::before { background: #ff9595; }
+.app-update-status small { font-size: 10px; color: #ffffffc0; }
 .app-update-trigger { padding: 5px 9px; border-radius: 5px; border: 1px solid #ffffff40; font-size: 12px; }
 .app-update-trigger:hover { background: #ffffff18; }
+.app-update-trigger.has-update { background: #fff; color: var(--topbar-bg); font-weight: 600; }
 .app-update-menu { position: absolute; top: calc(100% + 10px); right: calc(-1 * var(--app-account-offset)); width: min(300px, calc(100vw - 28px)); padding: 14px; border: 1px solid var(--line); border-radius: 9px; background: var(--bg-raised); color: var(--text); box-shadow: var(--shadow); font-size: 12px; }
 .app-update-menu p { margin: 10px 0; line-height: 1.5; }
 .app-update-menu p[role="alert"] { color: var(--danger); }
@@ -196,7 +203,8 @@ code { font-family: var(--font-mono); font-size: 0.9em; }
 .sidebar-resize { position: absolute; z-index: 30; right: -3px; top: 0; bottom: 0; width: 6px; cursor: col-resize; touch-action: none; }
 .sidebar-resize:hover, .sidebar-resize:focus-visible, .sidebar-resize:active { background: var(--accent); opacity: .65; outline: none; }
 @media (max-width: 620px) { .app-topbar { --app-account-offset: 40px; gap: 8px; padding-right: 10px; } .app-topbar-right { gap: 8px; } .app-update { gap: 6px; } .app-name-column { padding-inline: 8px; } .app-operation { display: none; } }
-@media (max-width: 480px) { .app-topbar { --app-account-offset: 38px; grid-template-columns: var(--app-nav-width) minmax(0, 1fr); grid-template-rows: 48px 34px; height: 82px; gap: 0; } .app-topbar-right { grid-column: 2; grid-row: 1; gap: 6px; } .app-version { padding-inline: 4px; } .app-update { gap: 4px; } .app-view-type { grid-column: 1 / -1; grid-row: 2; width: 100%; height: 100%; padding: 0 8px; border-top: 1px solid #ffffff30; } }
+@media (min-width: 481px) and (max-width: 900px) { .app-topbar { --app-account-offset: 0px; grid-template-columns: var(--app-nav-width) minmax(0, 1fr) 32px; grid-template-rows: 44px 46px; height: 90px; column-gap: 8px; row-gap: 0; } .app-topbar-right { display: contents; } .app-account { grid-column: 3; grid-row: 1; } .app-update { grid-column: 1 / -1; grid-row: 2; justify-content: flex-end; padding: 4px 8px; border-top: 1px solid #ffffff30; } .app-operation { display: none; } }
+@media (max-width: 480px) { .app-topbar { --app-account-offset: 0px; grid-template-columns: var(--app-nav-width) minmax(0, 1fr); grid-template-rows: 48px 46px 34px; height: 128px; gap: 0; } .app-topbar-right { display: contents; } .app-account { grid-column: 2; grid-row: 1; justify-self: end; } .app-version { padding-inline: 4px; } .app-update { grid-column: 1 / -1; grid-row: 2; gap: 8px; justify-content: space-between; padding: 4px 8px; border-top: 1px solid #ffffff30; } .app-view-type { grid-column: 1 / -1; grid-row: 3; width: 100%; height: 100%; padding: 0 8px; border-top: 1px solid #ffffff30; } }
 .sidebar {
   position: relative;
   width: var(--app-nav-width);

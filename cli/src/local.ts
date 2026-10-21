@@ -12,6 +12,7 @@ import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
 import { CONFIG_DIR } from "./config.ts";
+import { repairOutboxSequence } from "./local-repair.ts";
 
 type PG = import("@electric-sql/pglite").PGlite;
 type Row = Record<string, unknown>;
@@ -216,6 +217,7 @@ async function ensure(): Promise<void> {
   await db.exec(SHIM);
   await migrate(db);
   await db.exec(SYNC);
+  await repairOutboxSequence(db);
   let u = (await db.query<{ id: string; email: string }>("select id::text, email from auth.users order by created_at limit 1")).rows[0];
   if (!u) {
     u = { id: crypto.randomUUID(), email: `${os.userInfo().username}@${os.hostname().split(".")[0] || "this-computer"}` };

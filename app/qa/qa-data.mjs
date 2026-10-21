@@ -53,6 +53,9 @@ const { createElement, act } = await import("react");
 const { createRoot } = await import("react-dom/client");
 const { DataApp } = await import("../src/DataApp.tsx");
 document.body.innerHTML = '<div id="root"></div>';
+const styles=document.createElement("style");
+styles.textContent=fs.readFileSync(new URL("../src/styles.css",import.meta.url),"utf8")+"\n"+fs.readFileSync(new URL("../src/data.css",import.meta.url),"utf8");
+document.head.append(styles);
 const root = createRoot(document.querySelector("#root"));
 const pause = ms => new Promise(r => setTimeout(r, ms));
 async function until(predicate, label) {
@@ -80,6 +83,15 @@ try {
   assert(!document.querySelector(".sidebar"));
   pass("independent shell lists every type without the writing sidebar");
   await until(() => document.querySelector(".data-grid-area"), "grid load");
+  for (const selector of [".data-app > .app-content", ".data-shell", ".data-main", ".data-table-content", ".data-grid-area"]) {
+    assert.equal(parseFloat(getComputedStyle(document.querySelector(selector)).minWidth),0,`${selector} must shrink around wide fields`);
+  }
+  assert.equal(getComputedStyle(document.querySelector(".data-app")).overflow,"hidden");
+  assert.equal(getComputedStyle(document.querySelector(".data-grid-area")).overflow,"auto");
+  for (const selector of [".data-toolbar", ".data-toolbar-actions", ".data-table-heading", ".data-view-tabs"]) {
+    assert.equal(getComputedStyle(document.querySelector(selector)).flexWrap,"wrap",`${selector} controls wrap inside the viewport`);
+  }
+  pass("only the fields area scrolls; navigation, heading and toolbar shrink and wrap within the viewport");
   assert.equal(document.querySelector(".data-table-heading h1").textContent, `Contacts ${suffix}`);
   assert(document.querySelector('.data-view-tabs button').textContent.includes("All records"));
   pass("a type with no saved views opens immediately as an editable table");
@@ -257,7 +269,7 @@ try {
   const noCookie = await nativeFetch(`${base}/api/state`);
   assert.equal(noCookie.status, 401);
   const auth = await nativeFetch(`${base}/data/?token=${token}`, { redirect: "manual" });
-  assert.equal(auth.status, 302); assert.equal(auth.headers.get("location"), "/data/");
+  assert.equal(auth.status, 302); assert.equal(auth.headers.get("location"), `/w/${initial.workspace.id}/data/`);
   pass("authentication protects the API and token login preserves the standalone entry point");
   console.log(`\n${passes} integration checks passed (in-memory DOM + local Postgres; not a visual browser test).`);
 } finally {

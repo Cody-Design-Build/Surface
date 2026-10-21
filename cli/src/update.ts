@@ -1,4 +1,4 @@
-// Explicit updates, read-only checks, and opt-in scheduled checks or idle updates.
+// Shared discovery, explicit updates, and opt-in scheduled idle installation.
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
@@ -11,7 +11,40 @@ import { running, startServer } from "./open.ts";
 
 const MAIN = path.join(ROOT,"cli","src","main.ts");
 const STATE = path.join(CONFIG_DIR,"update.json");
-const git = (...args: string[]) => runCommand("git",args,{cwd:ROOT,quiet:true}).stdout!.trim();
+const git = (...args: string[]) => runCommand("git",args,{cwd:ROOT,quiet:true,
+  ...(args[0] === "fetch" ? {timeout:60000,env:{GIT_TERMINAL_PROMPT:"0",GCM_INTERACTIVE:"never",GIT_SSH_COMMAND:`${process.env.GIT_SSH_COMMAND ?? "ssh"} -oBatchMode=yes -oConnectTimeout=15`}} : {})
+}).stdout!.trim();
+
+interface UpdateState {
+  current?: string; available?: string; availableVersion?: string | null; updateAvailable?: boolean;
+  checkedAt?: string; attemptedAt?: string;
+}
+export const UPDATE_CHECK_INTERVAL = 4 * 60 * 60 * 1000;
+const RETRY_INTERVAL = 15 * 60 * 1000;
+export function cachedUpdate(current: string | null) {
+  const state = readJson<UpdateState>(STATE,{});
+  return { available: !!current && state.current === current && !!state.updateAvailable,
+    availableCommit: state.current === current ? state.available ?? null : null,
+    availableVersion: state.current === current ? state.availableVersion ?? null : null,
+    checkedAt: state.current === current ? state.checkedAt ?? null : null };
+}
+
+/** Launch a separate, bounded check; app requests and CLI commands never wait for GitHub. */
+export async function maybeCheckForUpdates() {
+  const now = Date.now();
+  if (process.env.SURFACE_UPDATE_CHECK === "0") return;
+  const state = readJson<UpdateState>(STATE,{});
+  if (now - Date.parse(state.checkedAt ?? "") < UPDATE_CHECK_INTERVAL ||
+      now - Date.parse(state.attemptedAt ?? "") < RETRY_INTERVAL ||
+      updateJobStatus()?.state === "running" || fs.existsSync(path.join(CONFIG_DIR,"update.lock"))) return;
+  try { await startUpdateJob("check",true); }
+  catch { /* Discovery failures are visible in the menu, never fatal to normal work. */ }
+}
+
+export function updateNotification(current: string | null) {
+  const status = cachedUpdate(current);
+  return status.available ? `Surface update available — installed: ${current?.slice(0,7)}, available: ${status.availableCommit?.slice(0,7)}. Run surface update to install.` : null;
+}
 
 export interface UpdateJob {
   id: string; operation: "check" | "install"; state: "running" | "complete" | "error";
@@ -39,29 +72,51 @@ export function updateJobCommand(job: Pick<UpdateJob,"id"|"operation">, managed 
   return { command:args[0], args:args.slice(1) };
 }
 
-export async function startUpdateJob(operation: "check" | "install") {
-  if (updateJobStatus()?.state === "running") throw new UserError("An update is already running.");
+export function startUpdateJob(operation: "check" | "install"): Promise<UpdateJob>;
+export function startUpdateJob(operation: "check" | "install", automatic: boolean): Promise<UpdateJob | null>;
+export async function startUpdateJob(operation: "check" | "install", automatic = false): Promise<UpdateJob | null> {
   fs.mkdirSync(CONFIG_DIR,{recursive:true});
-  const job: UpdateJob = {id:crypto.randomBytes(12).toString("hex"),operation,state:"running",startedAt:new Date().toISOString()};
-  writeJson(JOB,job);
-  let log: number | undefined;
+  // Claim job creation across CLI processes and the local server before reading state.
+  const claim = path.join(CONFIG_DIR,"update-launch.lock");
+  try { fs.writeFileSync(claim,String(process.pid),{flag:"wx"}); }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    const pid = Number(fs.readFileSync(claim,"utf8"));
+    if (!Number.isInteger(pid) || pid <= 0) throw new UserError("Invalid update launch lock.");
+    try { process.kill(pid,0); throw new UserError("An update is already starting."); }
+    catch (e) { if ((e as NodeJS.ErrnoException).code !== "ESRCH") throw e; }
+    fs.rmSync(claim);
+    return startUpdateJob(operation,automatic);
+  }
   try {
-    log = fs.openSync(path.join(CONFIG_DIR,"update.log"),"a",0o600);
-    // A child of the managed server belongs to its service's kill group. Launch the
-    // updater as its own job so stopping the server cannot kill the update halfway.
-    const command = updateJobCommand(job);
-    const child = spawn(command.command,command.args,{cwd:ROOT,env:process.env,detached:true,stdio:["ignore",log,log]});
-    const failed = (error: string) => {
-      const saved = readJson<UpdateJob | null>(JOB,null);
-      if (saved?.id === job.id && saved.state === "running") writeJson(JOB,{...saved,state:"error",error});
-    };
-    child.once("error",error => failed(error.message));
-    child.once("exit",code => { if (code && code !== 0) failed("The updater could not start or finish. Check the update log and retry."); });
-    await new Promise<void>((resolve,reject) => { child.once("spawn",resolve); child.once("error",reject); });
-    child.unref();
-    return job;
-  } catch (error) { writeJson(JOB,{...job,state:"error",error:(error as Error).message}); throw error; }
-  finally { if (log !== undefined) fs.closeSync(log); }
+    if (updateJobStatus()?.state === "running") throw new UserError("An update is already running.");
+    if (automatic) {
+      const state = readJson<UpdateState>(STATE,{});
+      const now = Date.now();
+      if (now - Date.parse(state.checkedAt ?? "") < UPDATE_CHECK_INTERVAL || now - Date.parse(state.attemptedAt ?? "") < RETRY_INTERVAL) return null;
+    }
+    if (operation === "check") writeJson(STATE,{...readJson(STATE,{}),attemptedAt:new Date().toISOString()});
+    const job: UpdateJob = {id:crypto.randomBytes(12).toString("hex"),operation,state:"running",startedAt:new Date().toISOString()};
+    writeJson(JOB,job);
+    let log: number | undefined;
+    try {
+      log = fs.openSync(path.join(CONFIG_DIR,"update.log"),"a",0o600);
+      // A child of the managed server belongs to its service's kill group. Launch the
+      // updater as its own job so stopping the server cannot kill the update halfway.
+      const command = updateJobCommand(job);
+      const child = spawn(command.command,command.args,{cwd:ROOT,env:process.env,detached:true,stdio:["ignore",log,log]});
+      const failed = (error: string) => {
+        const saved = readJson<UpdateJob | null>(JOB,null);
+        if (saved?.id === job.id && saved.state === "running") writeJson(JOB,{...saved,state:"error",error});
+      };
+      child.once("error",error => failed(error.message));
+      child.once("exit",code => { if (code && code !== 0) failed("The updater could not start or finish. Check the update log and retry."); });
+      await new Promise<void>((resolve,reject) => { child.once("spawn",resolve); child.once("error",reject); });
+      child.unref();
+      return job;
+    } catch (error) { writeJson(JOB,{...job,state:"error",error:(error as Error).message}); throw error; }
+    finally { if (log !== undefined) fs.closeSync(log); }
+  } finally { fs.rmSync(claim,{force:true}); }
 }
 
 export async function runUpdateJob(id: string, operation: "check" | "install") {
@@ -126,7 +181,7 @@ export async function update(opts: { check?: boolean; background?: boolean } = {
   try {
     const branch = git("symbolic-ref","--quiet","--short","HEAD");
     if (!branch) throw new UserError("Surface is on a detached commit. Check out the intended release branch first.");
-    if (git("status","--porcelain")) throw new UserError("Surface has local code changes. Preserve or commit them before updating; nothing was changed.");
+    if (!opts.check && git("status","--porcelain")) throw new UserError("Surface has local code changes. Preserve or commit them before updating; nothing was changed.");
     const upstream = git("rev-parse","--abbrev-ref","@{upstream}");
     const remote = git("config",`branch.${branch}.remote`);
     git("fetch","--prune",remote);
@@ -134,7 +189,12 @@ export async function update(opts: { check?: boolean; background?: boolean } = {
     const to = git("rev-parse",upstream);
     const relation = runCommand("git",["merge-base","--is-ancestor",from,to],{quiet:true,allowFailure:true});
     if (relation.error || relation.status !== 0) throw new UserError("Local Surface commits have diverged from the update branch. No code was changed.");
-    writeJson(STATE,{...readJson(STATE,{}),checkedAt:new Date().toISOString(),current:from,available:to,updateAvailable:from !== to});
+    let availableVersion: string | null = null;
+    try {
+      const version = JSON.parse(git("show",`${to}:cli/package.json`)).version;
+      if (typeof version === "string") availableVersion = version;
+    } catch { /* The revision still identifies releases without package metadata. */ }
+    writeJson(STATE,{...readJson(STATE,{}),checkedAt:new Date().toISOString(),current:from,available:to,availableVersion,updateAvailable:from !== to});
     if (opts.check || from === to) { console.log(from === to ? `Surface is current (${from.slice(0,12)}).` : `Surface update available: ${from.slice(0,12)} → ${to.slice(0,12)}. Run surface update.`); return; }
     resume = await running();
     const co = resume?.root ?? knownCheckouts()[0]?.root;

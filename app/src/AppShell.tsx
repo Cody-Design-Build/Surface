@@ -128,6 +128,9 @@ function AppHeader({ appId, app, online, tick, openRecord, beforeNavigate, onNav
   };
   const job = system?.update.job;
   const changed = !!(system?.version.commit && initialCommit.current && system.version.commit !== initialCommit.current);
+  const updateStatus = changed ? "Reload to finish" : system?.update.available ? "Update available" : activeJob ? "Checking…" : systemUnavailable || job?.state === "error" ? "Check unavailable" : system?.update.checkedAt && system.update.availableCommit === system.version.commit ? "Up to date" : "Not checked";
+  const updateTone = changed || system?.update.available ? "available" : updateStatus === "Up to date" ? "current" : "unknown";
+  const availableVersion = system?.update.availableCommit ? `${system.update.availableVersion ? `v${system.update.availableVersion} · ` : ""}${system.update.availableCommit.slice(0, 7)}` : "unknown";
   return <header className="app-topbar">
     <div className="app-name-column"><label className="app-workspace"><select aria-label="Workspace" value={app.workspace.id} disabled={!system || systemUnavailable || switching || !!activeJob} onChange={event => void changeWorkspace(event.target.value)}>
       {!workspaces.some(workspace => workspace.id === app.workspace.id) && <option value={app.workspace.id}>{app.workspace.name}</option>}
@@ -137,14 +140,17 @@ function AppHeader({ appId, app, online, tick, openRecord, beforeNavigate, onNav
     <div className="app-topbar-right">
       {switching && <span className="app-operation" role="status">Opening workspace…</span>}
       <div className="app-update" ref={updateRef} onKeyDown={event => { if (event.key === "Escape") { setUpdateOpen(false); updateRef.current?.querySelector("button")?.focus(); } }}>
-        <span className="app-version" title={system ? `Installed version${system.version.commit ? ` · ${system.version.commit.slice(0, 7)}` : ""}` : "App build version"}>v{system?.version.number ?? packageInfo.version}</span>
-        <button className="app-update-trigger" aria-expanded={updateOpen} onClick={() => setUpdateOpen(value => !value)}>{activeJob ? "Updating…" : changed ? "Reload" : "Update"}</button>
+        <span className="app-version" title={system ? `Installed on ${system.machine}` : "App build version"}><small>{system ? "Installed" : "App build"}</small><span>v{system?.version.number ?? packageInfo.version}{system?.version.commit && ` · ${system.version.commit.slice(0, 7)}`}</span></span>
+        <span className={`app-update-status ${updateTone}`} role="status"><span>{updateStatus}</span><small>Available · {availableVersion}</small></span>
+        <button className={`app-update-trigger${system?.update.available || changed ? " has-update" : ""}`} aria-expanded={updateOpen} onClick={() => setUpdateOpen(value => !value)}>{activeJob ? job?.operation === "check" ? "Checking…" : "Updating…" : changed ? "Reload" : "Update"}</button>
         {updateOpen && <div className="app-update-menu" aria-label="App updates">
           <strong>Updates for all apps</strong>
-          <p className="app-build-info">v{system?.version.number ?? packageInfo.version}{system?.version.commit && ` · ${system.version.commit.slice(0, 7)}`}</p>
+          <p className="app-build-info">Installed: v{system?.version.number ?? packageInfo.version}{system?.version.commit && ` · ${system.version.commit.slice(0, 7)}`}</p>
+          <p className="app-build-info">Available: {availableVersion}</p>
+          {system?.update.checkedAt && <p>Last checked: {new Date(system.update.checkedAt).toLocaleString()}</p>}
           {!system && systemUnavailable && <p>Reconnect or restart the local server to use update controls.</p>}
           {changed ? <><p>The update is installed. Reload to use it.</p><button className="btn-soft" onClick={() => { if (!beforeNavigate || beforeNavigate()) location.reload(); }}>Reload app</button></> : <>
-            <p>{activeJob ? job?.operation === "check" ? "Checking for updates…" : "Installing and restarting apps…" : system?.update.available ? "An update is available." : job?.state === "complete" ? "All apps are up to date." : "Check for the latest version."}</p>
+            <p>{activeJob ? job?.operation === "check" ? "Checking for updates…" : "Installing and restarting apps…" : system?.update.available ? "An update is available." : system?.update.checkedAt ? "No update was found at the last check." : "Check for the latest version."}</p>
             {job?.state === "error" && <p role="alert">{job.error}</p>}
             <button className="btn-soft" disabled={requesting || !!activeJob || !system} onClick={() => void startUpdate("check")}>Check for updates</button>
             {system?.update.available && <><p>Installing restarts all apps on this computer. Save any open edits first.</p>{updatesBlocked && <p>{updatesBlocked}</p>}<button className="btn-soft" disabled={requesting || !!activeJob || !!updatesBlocked} onClick={() => void startUpdate("install")}>Install and restart apps</button></>}

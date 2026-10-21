@@ -115,6 +115,8 @@ Existing dirty records from before this upgrade use the previous conservative wh
 
 `surface update` checks for local code changes, fetches the tracked branch, requires a fast-forward, stops the existing server, backs up the stopped database/config, installs locked dependencies, builds the app, checks it and restarts the existing server. It does not change cloud configuration or push migrations to a cloud project. `surface update --check` only checks. Daily checks or idle installation can be enabled explicitly with `surface update auto check|install`; `auto off` disables them. Automatic installation waits while app tabs are connected or edits are pending. See `CLOUD.md` for deployment details.
 
+Update discovery runs separately from installation: the server checks on startup and every four hours, and interactive CLI commands trigger checks when the shared cache expires. The web top bar shows installed and available versions with red/green status; the CLI prints a cached notice with `surface update` instructions. Discovery never installs updates and can be disabled with `SURFACE_UPDATE_CHECK=0`. Failed checks retry after 15 minutes; a manual check is always available.
+
 ## 2. The database engine
 
 **Built: PGlite** (Postgres compiled to WebAssembly, run inside Node). The spike in §8 and the local-store tests established it.

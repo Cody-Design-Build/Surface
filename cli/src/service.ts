@@ -13,7 +13,7 @@ const unit = (s: string) => '"' + s.replace(/\\/g, "\\\\").replace(/"/g, '\\"').
 /** Persist operational settings only, never passwords, access tokens or hub tokens. */
 export function serviceEnvironment(): Record<string,string> {
   const variables: Record<string,string> = { SURFACE_CONFIG_DIR: CONFIG_DIR, PATH: path.dirname(process.execPath) + path.delimiter + (process.env.PATH ?? "") };
-  for (const key of ["SURFACE_DATA_DIR", "SURFACE_STORE", "XDG_DATA_HOME", "XDG_STATE_HOME", "SURFACE_LOG", "SURFACE_LOG_FILE", "SURFACE_SYNC", "SURFACE_SYNC_MS", "SURFACE_SYNC_FULL_MS"])
+  for (const key of ["SURFACE_DATA_DIR", "SURFACE_STORE", "XDG_DATA_HOME", "XDG_STATE_HOME", "SURFACE_LOG", "SURFACE_LOG_FILE", "SURFACE_SYNC", "SURFACE_SYNC_MS", "SURFACE_SYNC_FULL_MS", "SURFACE_UPDATE_CHECK"])
     if (process.env[key]) variables[key] = process.env[key]!;
   return variables;
 }
@@ -37,8 +37,8 @@ export function serviceDefinition(port = 4317, platform = process.platform, home
   }
   throw new UserError("Background services currently support macOS and Linux. On Windows, use Surface through WSL.");
 }
-export function runCommand(cmd: string, args: string[], opts: { cwd?: string; quiet?: boolean; allowFailure?: boolean } = {}) {
-  const r = spawnSync(cmd,args,{ cwd: opts.cwd ?? ROOT, encoding:"utf8", env: { ...process.env, PATH: path.dirname(process.execPath) + path.delimiter + (process.env.PATH ?? "") }, stdio: opts.quiet ? "pipe" : "inherit" });
+export function runCommand(cmd: string, args: string[], opts: { cwd?: string; quiet?: boolean; allowFailure?: boolean; timeout?: number; env?: NodeJS.ProcessEnv } = {}) {
+  const r = spawnSync(cmd,args,{ cwd: opts.cwd ?? ROOT, encoding:"utf8", timeout:opts.timeout, env: { ...process.env, ...opts.env, PATH: path.dirname(process.execPath) + path.delimiter + (process.env.PATH ?? "") }, stdio: opts.quiet ? "pipe" : "inherit" });
   if ((r.error || r.status !== 0) && !opts.allowFailure) throw new UserError(`${cmd} ${args.join(" ")} failed: ${r.error?.message ?? r.stderr ?? `exit ${r.status}`}`);
   return r;
 }

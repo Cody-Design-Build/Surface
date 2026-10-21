@@ -8,6 +8,7 @@ import path from "node:path";
 import os from "node:os";
 import { appAtPath } from "../../surfaces.mts";
 import { installedVersion, systemInfo } from "./system.ts";
+import { maybeCheckForUpdates } from "./update.ts";
 import { CONFIG_DIR, findCheckout, knownCheckouts, rememberCheckout, saveCheckout, type Checkout } from "./config.ts";
 import { storeKind, dbError, requireUser, sb } from "./client.ts";
 import { deleteView, fetchInvites, fetchMembers, fetchViews, myInvites, pushRecord, saveView, type RecordRow, type TypeRow, type ViewRow } from "./db.ts";
@@ -939,8 +940,14 @@ export async function serve(initial: Checkout, opts: { port: number; host?: stri
   console.log(`Surface is running for all workspaces on this computer.`);
   console.log(`Open: ${link}`);
   console.log(`Log: ${logFile() ?? "off"}`);
+  // The checker runs in a separate process and shares its cache with every app and CLI.
+  const checkUpdates = () => void maybeCheckForUpdates().catch(e => L.debug("update discovery unavailable", { err:e }));
+  if (opts.listen !== false) checkUpdates();
+  const updateTimer = opts.listen !== false ? setInterval(checkUpdates,15 * 60 * 1000) : null;
+  updateTimer?.unref();
   server.on("close", () => {
     stopping = true; release(); clearInterval(discoveryTimer); syncLoop?.stop();
+    if (updateTimer) clearInterval(updateTimer);
     for (const p of contexts.values()) void p.then(c => c.close());
   });
   return { server, link };

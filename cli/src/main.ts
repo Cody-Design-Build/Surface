@@ -1713,6 +1713,16 @@ async function main() {
   if (!fn) throw new UserError(`Unknown command "${cmd}". Run \`surface help\`.`);
   const args = parseArgs(rest);
   if (args.flags.help) return void console.log(HELP);
+  if (process.stderr.isTTY && !args.flags.json && !["update","serve","data","log"].includes(cmd)) {
+    // Only cached status is read here; GitHub is checked by a detached worker.
+    try {
+      const { maybeCheckForUpdates, updateNotification } = await import("./update.ts");
+      const { installedVersion } = await import("./system.ts");
+      const notice = updateNotification(installedVersion().commit);
+      if (notice) console.error(yellow(notice));
+      await maybeCheckForUpdates();
+    } catch { /* Update discovery must not break the requested command. */ }
+  }
   const { hookProcess, setRole, logger } = await import("./log.ts");
   hookProcess();
   setRole(cmd === "serve" || cmd === "data" ? `${cmd}:${flag(args, "port") ?? (4317)}` : `cli ${cmd}`);

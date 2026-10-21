@@ -4,7 +4,7 @@ import path from "node:path";
 import os from "node:os";
 import { CONFIG_DIR, cloudConfig, readJson } from "./config.ts";
 import { ROOT } from "./service.ts";
-import { updateJobStatus } from "./update.ts";
+import { cachedUpdate, updateJobStatus } from "./update.ts";
 
 export function signedInAccount() {
   const config = cloudConfig();
@@ -42,6 +42,5 @@ export function installedVersion() {
 }
 
 export function systemInfo(version = installedVersion()) {
-  const update = readJson<{updateAvailable?: boolean; checkedAt?: string}>(path.join(CONFIG_DIR, "update.json"), {});
-  return { machine: os.hostname(), account: signedInAccount(), version, update: { available: !!update.updateAvailable, checkedAt: update.checkedAt ?? null, job: updateJobStatus() } };
+  return { machine: os.hostname(), account: signedInAccount(), version, update: { ...cachedUpdate(version.commit), job: updateJobStatus() } };
 }

@@ -25,6 +25,7 @@ childProcess.spawnSync=((cmd:string,args:string[])=>{
     if(args[0]==="status") stdout=dirty ? " M cli/src/main.ts" : "";
     if(args[0]==="rev-parse") stdout=args[1]==="--abbrev-ref" ? "origin/main" : args[1]==="HEAD" ? current : target;
     if(args[0]==="config") stdout="origin";
+    if(args[0]==="show") stdout=JSON.stringify({version:"0.2.0"});
     if(args[0]==="fetch" && fetchFails) return {status:1,stdout:"",stderr:"offline",error:undefined};
     if(args[0]==="merge-base" && diverged) return {status:1,stdout:"",stderr:"",error:undefined};
     if(args[0]==="merge") current=target;
@@ -32,7 +33,7 @@ childProcess.spawnSync=((cmd:string,args:string[])=>{
   return {status:0,stdout,stderr:"",error:undefined};
 }) as typeof childProcess.spawnSync;
 syncBuiltinESMExports();
-const {update,updateSchedule,startUpdateJob,runUpdateJob,updateJobStatus,updateJobCommand}=await import("../src/update.ts");
+const {update,updateSchedule,startUpdateJob,runUpdateJob,updateJobStatus,updateJobCommand,maybeCheckForUpdates,cachedUpdate,updateNotification}=await import("../src/update.ts");
 const {serviceDefinition}=await import("../src/service.ts");
 let count=0;const ok=(s:string)=>console.log(`ok ${++count} ${s}`);
 try {
@@ -41,11 +42,17 @@ try {
   assert.equal(calls.some(c=>c.args[0]==="fetch"),false);
   assert.equal(fs.existsSync(path.join(process.env.SURFACE_CONFIG_DIR!,"update.lock")),false);
   ok("local code changes stop an update before fetch, stop, or merge");
-  dirty=false;calls.length=0;
+  calls.length=0;
   await update({check:true});
   assert.equal(current,"a".repeat(40));assert.equal(calls.some(c=>c.args[0]==="merge"),false);
   assert.equal(JSON.parse(fs.readFileSync(path.join(process.env.SURFACE_CONFIG_DIR!,"update.json"),"utf8")).updateAvailable,true);
-  ok("check-only records availability without installing or restarting");
+  assert.equal(cachedUpdate(current).availableCommit,target);
+  assert.equal(cachedUpdate(current).availableVersion,"0.2.0");
+  assert.match(updateNotification(current)!,/installed: aaaaaaa, available: bbbbbbb/);
+  assert.equal(updateNotification(target),null,"manual upgrades invalidate cached update notices");
+  assert.equal(cachedUpdate(target).checkedAt,null);
+  dirty=false;
+  ok("check-only discovers versions even with local edits, without installing or restarting; stale notices are ignored");
   diverged=true;await assert.rejects(update(),/diverged/);diverged=false;
   fetchFails=true;await assert.rejects(update(),/offline/);fetchFails=false;
   assert.equal(current,"a".repeat(40));
@@ -107,8 +114,33 @@ try {
     const launch=updateJobCommand(job,true,"darwin");assert.equal(launch.command,"launchctl");
     assert.ok(launch.args.includes("submit"));assert.ok(launch.args.includes("/usr/bin/env"));assert.ok(launch.args.includes(`SURFACE_CONFIG_DIR=${cfg}`));
     const detached=updateJobCommand(job,false);assert.equal(detached.command,process.execPath);assert.ok(detached.args.some(arg=>arg.endsWith("update-worker.ts")));
+    spawnFails=false;
+    const stateFile=path.join(cfg,"update.json");
+    const reset=()=>{
+      fs.rmSync(path.join(cfg,"update-job.json"),{force:true});
+      fs.writeFileSync(stateFile,JSON.stringify({checkedAt:new Date(Date.now()-5*60*60*1000).toISOString()}));
+      calls.length=0;
+    };
+    reset();
+    await Promise.all([maybeCheckForUpdates(),maybeCheckForUpdates()]);
+    assert.equal(calls.filter(c=>c.cmd!=="git").length,1,"simultaneous discovery launches just one worker");
+    assert.equal(updateJobStatus()?.operation,"check","discovery never requests installation");
+    fs.rmSync(path.join(cfg,"update-job.json"));calls.length=0;
+    await maybeCheckForUpdates();assert.equal(calls.length,0,"recent attempts suppress retries");
+    reset();
+    fs.writeFileSync(stateFile,JSON.stringify({checkedAt:new Date().toISOString()}));
+    await maybeCheckForUpdates();assert.equal(calls.length,0,"fresh results skip network checks");
+    reset();
+    process.env.SURFACE_UPDATE_CHECK="0";
+    await maybeCheckForUpdates();assert.equal(calls.length,0);
+    delete process.env.SURFACE_UPDATE_CHECK;
+    fs.writeFileSync(path.join(cfg,"update.lock"),String(process.pid));
+    await maybeCheckForUpdates();assert.equal(calls.length,0,"active installations suppress discovery");
+    fs.rmSync(path.join(cfg,"update.lock"));
+    spawnFails=true;
+    await maybeCheckForUpdates();assert.equal(updateJobStatus()?.state,"error","discovery failures are nonfatal and inspectable");
   } finally {childProcess.spawn=originalSpawn;syncBuiltinESMExports();}
-  ok("app update jobs report success, launch failures and rejected installs, with separate managed updater commands");
+  ok("shared discovery caches and deduplicates checks, retries failures later, respects opt-out and never installs");
   console.log(`all ${count} update checks passed`);
 } finally {
   childProcess.spawnSync=original;syncBuiltinESMExports();
