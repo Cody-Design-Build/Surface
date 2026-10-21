@@ -83,7 +83,7 @@ export function updateSchedule(mode: "check" | "install" | "off", platform = pro
   if (platform === "linux") {
     const dir = path.join(home,".config","systemd","user");
     return { files: [
-      { file: path.join(dir,"surface-update.service"), body: `[Unit]\nDescription=Surface ${mode === "install" ? "idle update" : "update check"}\n[Service]\nType=oneshot\nWorkingDirectory=${quote(ROOT)}\n${Object.entries(variables).map(([key,value])=>`Environment=${quote(key+"="+value)}`).join("\n")}\nExecStart=${args.map(quote).join(" ")}\n` },
+      { file: path.join(dir,"surface-update.service"), body: `[Unit]\nDescription=Surface ${mode === "install" ? "idle update" : "update check"}\n[Service]\nType=oneshot\nWorkingDirectory=${ROOT.replace(/%/g, "%%")}\n${Object.entries(variables).map(([key,value])=>`Environment=${quote(key+"="+value)}`).join("\n")}\nExecStart=${args.map(quote).join(" ")}\n` },
       { file: path.join(dir,"surface-update.timer"), body: `[Unit]\nDescription=Check Surface updates daily\n[Timer]\nOnCalendar=daily\nRandomizedDelaySec=1h\nPersistent=true\n[Install]\nWantedBy=timers.target\n` }
     ], commands: mode === "off" ? [["systemctl","--user","disable","--now","surface-update.timer"]] : [["systemctl","--user","daemon-reload"],["systemctl","--user","enable","--now","surface-update.timer"]] };
   }

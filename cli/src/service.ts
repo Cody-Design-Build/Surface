@@ -32,7 +32,7 @@ export function serviceDefinition(port = 4317, platform = process.platform, home
   }
   if (platform === "linux") {
     const file = path.join(home, ".config", "systemd", "user", "surface.service");
-    const body = `[Unit]\nDescription=Surface (all workspaces)\n\n[Service]\nWorkingDirectory=${unit(CONFIG_DIR)}\nExecStart=${args.map(unit).join(" ")}\n${Object.entries(variables).map(([k,v]) => `Environment=${unit(k + "=" + v)}`).join("\n")}\nRestart=on-failure\nTimeoutStopSec=30\n\n[Install]\nWantedBy=default.target\n`;
+    const body = `[Unit]\nDescription=Surface (all workspaces)\n\n[Service]\nWorkingDirectory=${CONFIG_DIR.replace(/%/g, "%%")}\nExecStart=${args.map(unit).join(" ")}\n${Object.entries(variables).map(([k,v]) => `Environment=${unit(k + "=" + v)}`).join("\n")}\nRestart=on-failure\nTimeoutStopSec=30\n\n[Install]\nWantedBy=default.target\n`;
     return { file, body, commands: { install: [["systemctl","--user","daemon-reload"],["systemctl","--user","enable","--now","surface.service"]], start: [["systemctl","--user","start","surface.service"]], stop: [["systemctl","--user","stop","surface.service"]], restart: [["systemctl","--user","restart","surface.service"]], status: [["systemctl","--user","status","surface.service","--no-pager"]] } };
   }
   throw new UserError("Background services currently support macOS and Linux. On Windows, use Surface through WSL.");

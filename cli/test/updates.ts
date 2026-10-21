@@ -74,7 +74,7 @@ try {
   } finally { globalThis.fetch=realFetch;fs.rmSync(path.join(cfg,"serve.json")); }
   ok("automatic installation waits for connected app tabs and pending changes");
   const linux=serviceDefinition(4317,"linux",tmp);
-  assert.match(linux.body,/all workspaces/);assert.doesNotMatch(linux.body,/WorkingDirectory=.*workspace/);
+  assert.match(linux.body,/all workspaces/);assert.ok(linux.body.includes(`WorkingDirectory=${process.env.SURFACE_CONFIG_DIR}\n`),"WorkingDirectory is a raw path, not a quoted command argument");assert.doesNotMatch(linux.body,/WorkingDirectory=.*workspace/);
   assert.match(linux.body,/SURFACE_DATA_DIR=/);
   const mac=serviceDefinition(4317,"darwin",tmp); assert.match(mac.body,/<key>KeepAlive<\/key><true\/>/);
   const checks=updateSchedule("check","linux",tmp);assert.match(checks.files[0].body,/--check/);
