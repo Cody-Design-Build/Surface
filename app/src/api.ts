@@ -167,7 +167,12 @@ async function call<T>(method: string, url: string, body?: unknown): Promise<T> 
     body: body ? JSON.stringify(body) : undefined,
     credentials: "same-origin",
   });
-  const data = await res.json().catch(() => ({}));
+  let data;
+  try { data = await res.json(); }
+  catch {
+    throw new ApiError(res.ok ? 502 : res.status, "Surface could not load app data. Restart the local Surface server, then reload this page.");
+  }
+  if (!data || typeof data !== "object") throw new ApiError(502, "Surface returned invalid app data. Restart the local Surface server, then reload this page.");
   if (!res.ok) throw new ApiError(res.status, data.error ?? res.statusText, data.errors);
   return data as T;
 }
@@ -176,6 +181,7 @@ export const api = {
   system: () => call<SystemInfo>("GET", "/api/system"),
   updateSystem: (operation: "check" | "install") => call<{job: NonNullable<SystemInfo["update"]["job"]>}>("POST", "/api/system/update", {operation}),
   state: () => call<AppState>("GET", "/api/state"),
+  workspaceState: (id: string) => call<AppState>("GET", `/w/${encodeURIComponent(id)}/api/state`),
   record: (id: string) => call<{ record: RecordFull; backlinks: Backlink[] }>("GET", `/api/record/${id}`),
   save: (id: string, patch: { baseRev?: number; title?: string; body?: string; fields?: Record<string, unknown>; parent?: string | null; aliases?: string[] }) =>
     call<{ record: RecordFull; notices: string[] }>("PUT", `/api/record/${id}`, patch),

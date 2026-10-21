@@ -256,6 +256,18 @@ try {
   const invalid=await request("/w/not-a-workspace/api/state"); assert.equal(invalid.status,404);
   ok("one HTTP server isolates workspaces and tab switches, with auth on every workspace");
   const dataPage=await request(`/w/${ws}/data/`); assert.equal(dataPage.status,200); assert.match(dataPage.text,/data-/);
+  // Switching, refreshing and returning through history must all work as direct
+  // requests. No route may depend on the server's last selected workspace.
+  for (const [workspace,view] of [[ws,"data/"],[privateWs,""],[privateWs,"data/"],[ws,"data/"],[ws,""]]) {
+    const route=`/w/${workspace}/${view}`;
+    for (let refresh=0;refresh<2;refresh++) {
+      const page=await request(route);
+      assert.equal(page.status,200);
+      assert.match(page.text,new RegExp(`<title>${view ? "Data View" : "Vault"}</title>`));
+      const state=await request(`/w/${workspace}/api/state`);
+      assert.equal(state.status,200);assert.equal(state.data().workspace.id,workspace);
+    }
+  }
   for (const app of (await import("../../surfaces.mts")).apps) {
     const page=await request(`/w/${ws}${app.path}`);
     assert.equal(page.status,200); assert.match(page.text,/<!doctype html>/i);

@@ -6,15 +6,15 @@
 
 **Vault** and **Data View** share one server: `/w/<workspace-id>/` for Vault and `/w/<workspace-id>/data/` for Data View. Each tab's API calls, event stream and attachments stay bound to that workspace. `surface data` opens the existing server; it does not launch another process. `surface service install` runs the server at login.
 
-The top-left app name opens a switcher in both apps. Switching keeps the current workspace; open a link in a new tab to keep both apps open. Data View's unsaved record edits prompt before leaving.
+The top-left control selects the workspace. The adjacent View type menu shows views available in that workspace: Vault for a Markdown checkout, and Data View when the workspace has defined types (each type has an All records table). Installed surfaces without a workspace view are omitted. Switching view type keeps the workspace; switching workspace preserves the view type when available and otherwise opens an available one. Open a link in a new tab to keep both views open. Data View's unsaved record edits prompt before leaving.
 
-Both apps use `AppShell` for the same top bar: app switcher, workspace, sync, version, updates and the Surface account signed in on this computer. The account's signup user ID is displayed independently of the local database's internal identity; this does not create another user or change assignment fields. No account credentials are sent to the browser. The Update menu checks and installs through the CLI updater, with backups and a restart of all local apps. Updates refuse uncommitted code changes. Each tab offers Reload after installation so another tab's draft isn't discarded automatically.
+Both apps use `AppShell` for the same top bar: workspace, view type, sync, version, updates and the Surface account signed in on this computer. The account's signup user ID is displayed independently of the local database's internal identity; this does not create another user or change assignment fields. No account credentials are sent to the browser. The Update menu checks and installs through the CLI updater, with backups and a restart of all local apps. Updates refuse uncommitted code changes. Each tab offers Reload after installation so another tab's draft isn't discarded automatically.
 
 The top right keeps the version, Update button and account icon visible. Click the user icon for account details, sync status, and Appearance: System/Light/Dark theme and four accent colors. Appearance is saved in this browser on this computer and shared by every app and workspace on the same server. The app build version remains visible if an older server cannot yet provide its version or account information.
 
-If the interface has been rebuilt while an older server is still running, run `surface restart --open` in the desktop's normal terminal. This restarts the installed code without pulling Git changes, keeps the same workspace and port, verifies the account/update API, and opens its link. It handles both a background service and the older unmanaged server; it verifies an unmanaged PID before stopping it. Save open edits before restarting. The web Update button can manage subsequent published updates once this server is running.
+If the interface has been rebuilt while an older server is still running, run `surface restart --open` in the desktop's normal terminal. This restarts the installed code without pulling Git changes, keeps the same workspace and port, verifies the account/update API, and opens its link. If the server has stopped, run the command from a workspace folder to start it again. It handles both a background service and the older unmanaged server; it verifies an unmanaged PID before stopping it. Save open edits before restarting. The web Update button can manage subsequent published updates once this server is running.
 
-Drag the sidebar's right edge to resize it, or focus the divider and use the arrow keys. Double-click resets its width. The size is saved on this machine and shared between apps and tabs. The app-name column uses the same width, so app names never push the workspace selector around.
+Drag the sidebar's right edge to resize it, or focus the divider and use the arrow keys. Double-click resets its width. The size is saved on this machine and shared between apps and tabs. The workspace column uses the same width, keeping workspace identity aligned with the sidebar.
 
 ### Adding an app
 
@@ -22,7 +22,7 @@ Drag the sidebar's right edge to resize it, or focus the divider and use the arr
 2. Add one entry to the repository's `surfaces.mts` registry: a unique `id`, `name`, `description`, `path` (for example `/projects/`), and `entry` (`projects.html`). Paths are `/` or a single directory; HTML entries live directly in `app/`.
 3. Build and verify it, then commit and publish the changes to the update branch. Teammates run `surface update` (or use their configured automatic updates). The updater builds every registered app and restarts the existing server. Refresh open tabs to see the new switcher entry.
 
-The same registry drives the switcher, Vite build entries, server routes and `surface apps --json`. Open any registered app with `surface open --app <id>`. Registering an app doesn't create its implementation or publish an update.
+The same registry drives the switcher, Vite build entries, server routes and `surface apps --json`. Open any registered app with `surface open --app <id>`. Registering an app doesn't create its implementation or publish an update. Add its workspace availability rule to `src/viewTypes.ts` before exposing it in the View type menu.
 
 ```sh
 npm install
@@ -57,3 +57,5 @@ Hot reload (`npm run dev`) is not wired yet: the server's token cookie and Origi
 ## QA
 
 `qa/qa-views.mjs` (24 checks: sidebars, pin, reorder, board drag, cell edit, undo, Move to…, view editor, settings, share, calendar) `qa/qa-embeds.mjs` (14 checks: live view in a page, Markdown table render and click-to-edit, image paste, types and fields) and `qa/qa-drag.mjs` (editor block handles) drive Chrome with puppeteer-core against a running `surface serve` on port 4317. Run them from a folder with `puppeteer-core` installed; they write screenshots to `shots/`. `qa-views.mjs` expects the demo workspace (jobs, tasks, selections, budget lines and the views in `.surface/views/`).
+
+Workspace and view navigation requires the current server code. An older server may serve the latest HTML while lacking workspace routes. The header disables switching until the server API is reachable; HTML returned by an API route produces a recoverable load error instead of a blank interface. `surface restart --open` loads the installed server code without a Git update.

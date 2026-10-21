@@ -2,6 +2,8 @@
 
 The current design in one place. Last consolidated: Oct 16, 2026.
 
+**Navigation decision (Oct 21):** The top-left control identifies and selects the workspace. The adjacent menu selects the view type. Only views that exist for the current workspace or dataset appear; installing a surface alone does not add it to every workspace's menu.
+
 **Architecture update (Oct 19, implemented):** `LOCAL.md` §1c is authoritative for local execution and sync. One server per computer serves every workspace; the app uses its local database online and offline. Shared changes wait in a durable outbox and are accepted by the cloud. Disjoint property edits coexist; competing edits preserve a conflict copy. Shared schema changes run on the cloud before pulling. The web interface remains local; hosted mode is deferred. Older passages below describing local-only use as dropped or every revision mismatch as a conflict are historical.
 
 > **Current direction (Oct 14, decided): a headless foundation with many surfaces.**

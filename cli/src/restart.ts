@@ -7,29 +7,44 @@ import { openSurface, running, startServer } from "./open.ts";
 import { ROOT, runCommand, serviceAction, serviceInstalled } from "./service.ts";
 
 export async function restartLocal() {
-  const server = await running();
-  if (!server) throw new UserError("No reachable Surface server from this terminal. Run surface serve from your workspace in the desktop's normal terminal.");
-  const checkout = findCheckout(server.root);
-  if (!checkout) throw new UserError(`No checkout at ${server.root}; the server was left running.`);
+  let server = await running();
   const managed = serviceInstalled();
-  if (managed) serviceAction("restart");
-  else {
-    const record = readJson<{pid?:number;port?:number}>(path.join(CONFIG_DIR,"serve.json"),{});
-    const pid = record.pid;
-    if (!Number.isSafeInteger(pid) || pid! <= 0 || pid === process.pid || record.port !== server.port) throw new UserError("Cannot verify the server PID; it was left running.");
-    const inspected = runCommand("ps",["-p",String(pid),"-o","command="],{quiet:true,allowFailure:true});
-    const command = inspected.stdout?.trim() ?? "";
-    if (inspected.status !== 0 || !command.includes(path.join(ROOT,"cli/src/main.ts")) || !/(?:^|\s)serve(?:\s|$)/.test(command)) throw new UserError("Cannot verify that the recorded process is this Surface server. Stop it in its original terminal, then run surface serve.");
-    process.kill(pid!,"SIGTERM");
-    const deadline = Date.now()+30000;
-    while (true) {
-      let alive = true;
-      try { process.kill(pid!,0); } catch (error) { if ((error as NodeJS.ErrnoException).code === "ESRCH") alive = false; else throw error; }
-      if (!alive) break;
-      if (Date.now()>deadline) throw new UserError("The old server did not stop cleanly. Check it before starting another one.");
-      await new Promise(resolve=>setTimeout(resolve,200));
+  let checkout;
+  if (!server) {
+    const record = readJson<{pid?:number;port?:number;root?:string}>(path.join(CONFIG_DIR,"serve.json"),{});
+    if (record.pid) {
+      let stopped = false;
+      try { process.kill(record.pid,0); } catch (error) { stopped = (error as NodeJS.ErrnoException).code === "ESRCH"; }
+      if (!stopped) throw new UserError("No reachable Surface server from this terminal, but its recorded process may still be running. Use the desktop's normal terminal to restart it.");
     }
-    await startServer(checkout,server.port);
+    checkout = findCheckout() ?? (record.root ? findCheckout(record.root) : null);
+    if (!checkout) throw new UserError("Run surface restart from your workspace folder to start Surface again.");
+    const port = record.port ?? 4317;
+    if (managed) serviceAction("restart");
+    else await startServer(checkout,port);
+    server = {root:checkout.root,port};
+  } else {
+    checkout = findCheckout(server.root);
+    if (!checkout) throw new UserError(`No checkout at ${server.root}; the server was left running.`);
+    if (managed) serviceAction("restart");
+    else {
+      const record = readJson<{pid?:number;port?:number}>(path.join(CONFIG_DIR,"serve.json"),{});
+      const pid = record.pid;
+      if (!Number.isSafeInteger(pid) || pid! <= 0 || pid === process.pid || record.port !== server.port) throw new UserError("Cannot verify the server PID; it was left running.");
+      const inspected = runCommand("ps",["-p",String(pid),"-o","command="],{quiet:true,allowFailure:true});
+      const command = inspected.stdout?.trim() ?? "";
+      if (inspected.status !== 0 || !command.includes(path.join(ROOT,"cli/src/main.ts")) || !/(?:^|\s)serve(?:\s|$)/.test(command)) throw new UserError("Cannot verify that the recorded process is this Surface server. Stop it in its original terminal, then run surface serve.");
+      process.kill(pid!,"SIGTERM");
+      const deadline = Date.now()+30000;
+      while (true) {
+        let alive = true;
+        try { process.kill(pid!,0); } catch (error) { if ((error as NodeJS.ErrnoException).code === "ESRCH") alive = false; else throw error; }
+        if (!alive) break;
+        if (Date.now()>deadline) throw new UserError("The old server did not stop cleanly. Check it before starting another one.");
+        await new Promise(resolve=>setTimeout(resolve,200));
+      }
+      await startServer(checkout,server.port);
+    }
   }
   const token = fs.readFileSync(path.join(CONFIG_DIR,"serve-token"),"utf8").trim();
   const deadline = Date.now()+15000;

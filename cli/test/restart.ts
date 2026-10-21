@@ -16,7 +16,7 @@ const oldPid=34567,newPid=34568;
 const oldRecord=()=>fs.writeFileSync(discovery,JSON.stringify({pid:oldPid,port:4317,root:workspace}));oldRecord();
 fs.writeFileSync(path.join(process.env.SURFACE_CONFIG_DIR,"serve-token"),"test-token");
 const {ROOT,serviceDefinition}=await import("../src/service.ts");
-const original={spawn:childProcess.spawn,spawnSync:childProcess.spawnSync,kill:process.kill,fetch:globalThis.fetch,exists:fs.existsSync};
+const original={spawn:childProcess.spawn,spawnSync:childProcess.spawnSync,kill:process.kill,fetch:globalThis.fetch,exists:fs.existsSync,cwd:process.cwd()};
 let alive=true,valid=true,systemChecks=0;const stopped:number[]=[];const started:{args:string[];cwd:string}[]=[];
 const serviceFile=serviceDefinition().file;
 fs.existsSync=((file:fs.PathLike)=>String(file)===serviceFile ? false : original.exists(file)) as typeof fs.existsSync;
@@ -36,10 +36,11 @@ childProcess.spawn=((command:string,args:string[],options:{cwd:string})=>{
   return child;
 }) as typeof childProcess.spawn;
 syncBuiltinESMExports();
-globalThis.fetch=async input=>{
+const healthyFetch: typeof fetch=async input=>{
   const url=String(input);if(url.endsWith("/api/system")){systemChecks++;return new Response(JSON.stringify({version:{number:"0.1.0"},account:{id:"signup-user",email:"person@example.com"}}));}
   assert(url.endsWith("/api/state"));return new Response(JSON.stringify({workspace:{id:"abc123"}}));
 };
+globalThis.fetch=healthyFetch;
 try {
   const {restartLocal}=await import("../src/restart.ts");
   const result=await restartLocal();
@@ -50,7 +51,14 @@ try {
   await assert.rejects(restartLocal(),/Cannot verify/);assert.equal(stopped.length,1);assert.equal(started.length,1);
   globalThis.fetch=async()=>{throw new Error("isolated network");};
   await assert.rejects(restartLocal(),/No reachable Surface server/);assert.equal(stopped.length,1);
+  fs.rmSync(discovery);
+  process.chdir(workspace);
+  globalThis.fetch=healthyFetch;
+  const recovered=await restartLocal();
+  assert.equal(started.length,2,"restart also starts a server that has crashed");
+  assert.equal(stopped.length,1,"recovery never kills an unverified process");
+  assert.match(recovered.url,/4317\/w\/abc123\//);
   console.log("Restart: verified legacy PID, preserved workspace and port, ready account/update API, unrelated-process refusal and unreachable-server handling passed.");
 } finally {
-  process.kill=original.kill;childProcess.spawn=original.spawn;childProcess.spawnSync=original.spawnSync;globalThis.fetch=original.fetch;fs.existsSync=original.exists;syncBuiltinESMExports();fs.rmSync(tmp,{recursive:true,force:true});
+  process.chdir(original.cwd);process.kill=original.kill;childProcess.spawn=original.spawn;childProcess.spawnSync=original.spawnSync;globalThis.fetch=original.fetch;fs.existsSync=original.exists;syncBuiltinESMExports();fs.rmSync(tmp,{recursive:true,force:true});
 }

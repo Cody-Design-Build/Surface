@@ -1,8 +1,8 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { appAtPath, apps, appUrl } from "../../surfaces.mts";
+import { appAtPath, apps, appUrl, type SurfaceApp } from "../../surfaces.mts";
 import { Icon } from "./Icon.tsx";
 
-export function AppSwitcher({ appId, beforeNavigate }: { appId?: string; beforeNavigate?: () => boolean }) {
+export function AppSwitcher({ appId, availableViews, workspaceId, disabled = false, beforeNavigate }: { appId?: string; availableViews: readonly SurfaceApp[]; workspaceId?: string; disabled?: boolean; beforeNavigate?: () => boolean }) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -32,14 +32,14 @@ export function AppSwitcher({ appId, beforeNavigate }: { appId?: string; beforeN
       links[next]?.focus();
     }
   }}>
-    <button ref={trigger} className="app-switcher-trigger" aria-label={`Switch app, ${current.name}`} aria-expanded={open} aria-controls={menuId} onClick={() => setOpen(value => !value)} onKeyDown={event => {
+    <button ref={trigger} className="app-switcher-trigger" disabled={disabled} aria-label={`View type, ${current.name}`} aria-expanded={open && !disabled} aria-controls={menuId} onClick={() => setOpen(value => !value)} onKeyDown={event => {
       if (!open && event.key === "ArrowDown") { event.preventDefault(); setOpen(true); }
     }}>
       <strong>{current.name}</strong><Icon name="chevron" size={13} />
     </button>
-    {open && <nav id={menuId} className="app-switcher-menu" aria-label="Apps">
-      <div className="app-switcher-heading">Your apps</div>
-      {apps.map(app => <a key={app.id} href={appUrl(app, location.pathname)} aria-current={app.id === current.id ? "page" : undefined} onClick={event => {
+    {open && !disabled && <nav id={menuId} className="app-switcher-menu" aria-label="View types">
+      <div className="app-switcher-heading">View type</div>
+      {availableViews.map(app => <a key={app.id} href={appUrl(app, workspaceId ? `/w/${workspaceId}/` : location.pathname)} aria-current={app.id === current.id ? "page" : undefined} onClick={event => {
         // Keep native new-tab behavior without touching the current tab's edits.
         if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
         if (app.id === current.id) { event.preventDefault(); setOpen(false); trigger.current?.focus(); return; }

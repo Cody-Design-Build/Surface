@@ -1,9 +1,10 @@
 import { createContext, useContext, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { api, type AppState, type SystemInfo } from "./api.ts";
-import { appAtPath, apps, appUrl } from "../../surfaces.mts";
+import { appUrl } from "../../surfaces.mts";
 import { AppSwitcher } from "./AppSwitcher.tsx";
 import { SyncBadge } from "./SyncBadge.tsx";
 import { AccountMenu } from "./AccountMenu.tsx";
+import { workspaceViewTypes } from "./viewTypes.ts";
 import packageInfo from "../../cli/package.json" with { type: "json" };
 
 const SidebarSize = createContext<{ width: number; maxWidth: number; setWidth: (width: number) => void } | null>(null);
@@ -104,11 +105,15 @@ function AppHeader({ appId, app, online, tick, openRecord, beforeNavigate, onNav
     return () => document.removeEventListener("pointerdown", close);
   }, [updateOpen]);
   const changeWorkspace = async (id: string) => {
+    if (!system || systemUnavailable || switching) return;
     if (id === app.workspace.id || (beforeNavigate && !beforeNavigate())) return;
     setSwitching(true); onSwitching?.(true); setError("");
     try {
       const next = await api.switchWorkspace(id);
-      location.assign(next.url ? appUrl(apps.find(app => app.id === appId) ?? appAtPath(location.pathname) ?? apps[0], next.url) : location.pathname);
+      const target = await api.workspaceState(id);
+      const available = workspaceViewTypes(target);
+      const view = available.find(view => view.id === appId) ?? available[0];
+      location.assign(next.url && view ? appUrl(view, next.url) : next.url || location.pathname);
     } catch (err) { onNavigationError?.(); setError(String((err as Error).message)); setSwitching(false); onSwitching?.(false); }
   };
   const startUpdate = async (operation: "check" | "install") => {
@@ -124,11 +129,11 @@ function AppHeader({ appId, app, online, tick, openRecord, beforeNavigate, onNav
   const job = system?.update.job;
   const changed = !!(system?.version.commit && initialCommit.current && system.version.commit !== initialCommit.current);
   return <header className="app-topbar">
-    <div className="app-name-column"><AppSwitcher appId={appId} beforeNavigate={beforeNavigate} /></div>
-    <label className="app-workspace"><select aria-label="Workspace" value={app.workspace.id} disabled={switching || !!activeJob} onChange={event => void changeWorkspace(event.target.value)}>
+    <div className="app-name-column"><label className="app-workspace"><select aria-label="Workspace" value={app.workspace.id} disabled={!system || systemUnavailable || switching || !!activeJob} onChange={event => void changeWorkspace(event.target.value)}>
       {!workspaces.some(workspace => workspace.id === app.workspace.id) && <option value={app.workspace.id}>{app.workspace.name}</option>}
       {workspaces.map(workspace => <option key={workspace.id} value={workspace.id}>{workspace.name}</option>)}
-    </select></label>
+    </select></label></div>
+    <div className="app-view-type"><AppSwitcher key={app.workspace.id} appId={appId} workspaceId={app.workspace.id} disabled={!system || systemUnavailable || switching || !!activeJob} availableViews={workspaceViewTypes(app)} beforeNavigate={beforeNavigate} /></div>
     <div className="app-topbar-right">
       {switching && <span className="app-operation" role="status">Opening workspace…</span>}
       <div className="app-update" ref={updateRef} onKeyDown={event => { if (event.key === "Escape") { setUpdateOpen(false); updateRef.current?.querySelector("button")?.focus(); } }}>
@@ -150,6 +155,6 @@ function AppHeader({ appId, app, online, tick, openRecord, beforeNavigate, onNav
         <SyncBadge tick={tick} onOpenRecord={openRecord} serverOnline={online} />
       </AccountMenu>
     </div>
-    {error && <div className="app-header-error" role="alert">{error}<button aria-label="Dismiss error" onClick={() => setError("")}>×</button></div>}
+    {(error || systemUnavailable) && <div className="app-header-error" role="alert">{error || "Workspace and view switching need a reachable, current Surface server. Restart Surface, then reload this page."}{error && <button aria-label="Dismiss error" onClick={() => setError("")}>×</button>}</div>}
   </header>;
 }

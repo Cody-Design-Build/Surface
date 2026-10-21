@@ -10,13 +10,14 @@ const { act, createElement } = await import("react");
 const { createRoot } = await import("react-dom/client");
 const { AppSwitcher } = await import("../src/AppSwitcher.tsx");
 const { apps } = await import("../../surfaces.mts");
+const { workspaceViewTypes } = await import("../src/viewTypes.ts");
 const host = document.createElement("div"); document.body.append(host);
 const root = createRoot(host);
 let allowed = false, guarded = 0, navigation;
 document.addEventListener("click", event => {
   if (event.target.closest?.("a")) { navigation = !event.defaultPrevented; event.preventDefault(); }
 });
-const render = async () => act(() => root.render(createElement(AppSwitcher, { beforeNavigate: () => { guarded++; return allowed; } })));
+const render = async () => act(() => root.render(createElement(AppSwitcher, { availableViews: apps, beforeNavigate: () => { guarded++; return allowed; } })));
 const click = async (element, init = {}) => act(() => element.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, ...init })));
 const key = async (element, key) => act(() => element.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true })));
 const trigger = () => host.querySelector("button");
@@ -55,11 +56,29 @@ try {
   assert.match(links().at(-1).textContent, /Projects/);
   apps.pop();
   window.location.href = "http://localhost/";
-  await act(() => root.render(createElement(AppSwitcher, {appId:"data"})));
+  await act(() => root.render(createElement(AppSwitcher, {appId:"data", availableViews:apps})));
   assert.match(trigger().textContent,/Data View/,"standalone Data View identifies itself at the root URL");
   if (!links().length) await click(trigger());
   assert.equal(links()[0].getAttribute("href"),"/index.html","Vault bypasses a legacy Data View default page");
   assert.equal(links()[1].getAttribute("href"),"/data.html");
   await click(links()[0]);assert.equal(navigation,true,"Vault is a distinct navigation even from a Data View server's root");
+  const vaultOnly = workspaceViewTypes({root:"/workspace",types:[]});
+  assert.deepEqual(vaultOnly.map(view=>view.id),["writing"]);
+  const dataOnly = workspaceViewTypes({root:"",types:[{key:"contact"}]});
+  assert.deepEqual(dataOnly.map(view=>view.id),["data"]);
+  await act(()=>root.render(createElement(AppSwitcher,{appId:"writing",availableViews:vaultOnly})));
+  await click(trigger());
+  assert.equal(links().length,1,"unavailable view types are omitted");
+  assert.equal(links()[0].getAttribute("href"),"/index.html");
+  await act(()=>root.render(createElement(AppSwitcher,{appId:"data",availableViews:dataOnly})));
+  assert.equal(links().length,1,"availability follows the current workspace");
+  assert.equal(links()[0].getAttribute("href"),"/data.html");
+  apps.push(future);
+  assert(!workspaceViewTypes({root:"/workspace",types:[{key:"contact"}]}).some(view=>view.id==="projects"),"installing a surface does not make it available in a workspace");
+  apps.pop();
+  await act(()=>root.render(createElement(AppSwitcher,{appId:"data",availableViews:apps,workspaceId:"abc123"})));
+  if(!links().length)await click(trigger());
+  assert.equal(links()[0].getAttribute("href"),"/w/abc123/","view switching binds the workspace even from a legacy root URL");
+  assert.equal(links()[1].getAttribute("href"),"/w/abc123/data/");
   console.log("App switcher: workspace links, current app, keyboard, dismissal, edit guard, new tabs and future apps passed.");
 } finally { await act(() => root.unmount()); await window.happyDOM.close(); }
