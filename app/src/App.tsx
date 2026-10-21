@@ -9,6 +9,7 @@ import { Switcher } from "./Switcher.tsx";
 import { did, onUndo, redo, typingTarget, undo } from "./undo.ts";
 import { ViewEditor } from "./ViewEditor.tsx";
 import { ViewPage } from "./ViewPage.tsx";
+import { AppShell } from "./AppShell.tsx";
 
 function readRoute(): Route {
   const h = decodeURIComponent(location.hash.slice(1));
@@ -260,13 +261,13 @@ export function App() {
         : route?.kind === "view"
           ? route.label ?? app.views.find((v) => v.key === route.key)?.name
           : group?.node.label;
-    document.title = t ? `${t} — Surface` : app.workspace.name;
+    document.title = `${t || app.workspace.name} — Vault`;
   }, [app, route, group]);
 
   if (error && !app) {
     return (
       <div className="fatal">
-        <h2>Surface</h2>
+        <h2>Vault</h2>
         <p>{error}</p>
         <button onClick={reload}>Try again</button>
       </div>
@@ -277,6 +278,7 @@ export function App() {
   const statusText = status.s === "saving" ? "Saving…" : status.s === "conflict" ? "Conflict" : status.s === "error" ? status.msg ?? "Error" : "Saved";
 
   return (
+    <AppShell appId="writing" app={app} online={online} tick={remote.tick} openRecord={openRecord} updatesBlocked={status.s === "saving" ? "Wait for your edits to finish saving." : status.s === "error" || status.s === "conflict" ? "Resolve unsaved edits before updating." : undefined}>
     <div className={`shell ${sidebar ? "" : "side-closed"}`}>
       <Sidebar
         app={app}
@@ -418,5 +420,6 @@ export function App() {
         </div>
       ) : null}
     </div>
+    </AppShell>
   );
 }

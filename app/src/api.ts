@@ -147,6 +147,13 @@ export class ApiError extends Error {
   }
 }
 
+export interface SystemInfo {
+  machine: string;
+  account: { id: string; email: string; name: string | null } | null;
+  version: { number: string; commit: string | null };
+  update: { available: boolean; checkedAt: string | null; job: { id: string; operation: "check" | "install"; state: "running" | "complete" | "error"; error?: string } | null };
+}
+
 /** Keep every request and event stream bound to this tab's workspace. */
 export function workspaceUrl(url: string): string {
   const prefix = /^\/w\/[^/]+/.exec(location.pathname)?.[0] ?? "";
@@ -166,6 +173,8 @@ async function call<T>(method: string, url: string, body?: unknown): Promise<T> 
 }
 
 export const api = {
+  system: () => call<SystemInfo>("GET", "/api/system"),
+  updateSystem: (operation: "check" | "install") => call<{job: NonNullable<SystemInfo["update"]["job"]>}>("POST", "/api/system/update", {operation}),
   state: () => call<AppState>("GET", "/api/state"),
   record: (id: string) => call<{ record: RecordFull; backlinks: Backlink[] }>("GET", `/api/record/${id}`),
   save: (id: string, patch: { baseRev?: number; title?: string; body?: string; fields?: Record<string, unknown>; parent?: string | null; aliases?: string[] }) =>

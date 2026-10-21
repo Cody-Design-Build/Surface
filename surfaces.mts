@@ -4,7 +4,6 @@ export interface SurfaceApp {
   id: string;
   name: string;
   description: string;
-  icon: string;
   path: string;
   entry: string;
 }
@@ -23,8 +22,8 @@ export function defineApps(apps: SurfaceApp[]): readonly SurfaceApp[] {
 }
 
 export const apps = defineApps([
-  { id: "writing", name: "Surface", description: "Documents and writing", icon: "page", path: "/", entry: "index.html" },
-  { id: "data", name: "Surface Data", description: "Tables, records and views", icon: "table", path: "/data/", entry: "data.html" },
+  { id: "writing", name: "Vault", description: "Documents and writing", path: "/", entry: "index.html" },
+  { id: "data", name: "Data View", description: "Tables, records and views", path: "/data/", entry: "data.html" },
 ]);
 
 /** Recognize public and workspace-scoped routes, including direct HTML links. */
@@ -36,5 +35,7 @@ export function appAtPath(pathname: string, registry = apps): SurfaceApp | undef
 /** Switch apps in this tab's workspace; authentication stays in the cookie. */
 export function appUrl(app: SurfaceApp, pathname: string): string {
   const workspace = /^\/w\/[a-z0-9]+(?=\/|$)/.exec(pathname)?.[0] ?? "";
-  return workspace + app.path;
+  // Older standalone Data View servers serve Data View at `/` as well. Explicit
+  // HTML links select the right app on those servers and ordinary static hosts.
+  return workspace ? workspace + app.path : `/${app.entry}`;
 }

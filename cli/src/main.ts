@@ -175,6 +175,13 @@ const commands: Record<string, Cmd> = {
     if (a._[0] === "auto") return configureUpdates(a._[1] ?? "check");
     await update({ check: !!a.flags.check, background: !!a.flags.background });
   },
+  async restart(a) {
+    const { restartLocal } = await import("./restart.ts");
+    const result = await restartLocal();
+    console.log("Restarted Surface. Account and update controls are available.");
+    if (a.flags.open) (await import("./open.ts")).openWindow(result.url);
+    console.log(`Open: ${result.url}`);
+  },
   async service(a) {
     const action = a._[0] ?? "status";
     if (!["install", "start", "stop", "restart", "status"].includes(action)) throw new UserError("Usage: surface service install|start|stop|restart|status");
@@ -1634,10 +1641,11 @@ Folders (where files live, in the folder layout)
   folder rename <folder> <new>        move everything under a folder
 
 App
+  restart [--open]                    restart the local server using installed code (no Git update)
   apps [--json]                       list the apps included in this installation
   open [--app <id>] [--print]        open an app in this workspace (default: writing)
   serve [--port 4317] [--open]        run the Surface app for this checkout on http://127.0.0.1
-  data [--port 4317] [--print]        open the data surface on the existing server
+  data [--port 4317] [--print]        open Data View on the existing server
 
 Sidebars (organization only: arranging never changes records)
   tree [--personal] [--paths] [--json] show the workspace sidebar, or your own

@@ -1,7 +1,7 @@
 {
-  "name": "Surface",
-  "short_name": "Surface",
-  "start_url": "/",
+  "name": "Vault",
+  "short_name": "Vault",
+  "start_url": "/index.html",
   "scope": "/",
   "display": "standalone",
   "background_color": "#f6f5f2",

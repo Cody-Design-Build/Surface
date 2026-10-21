@@ -2,6 +2,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import crypto from "node:crypto";
+import { spawn } from "node:child_process";
 import { CONFIG_DIR, knownCheckouts, readJson, writeJson } from "./config.ts";
 import { UserError } from "./client.ts";
 import { ROOT, runCommand, serviceAction, serviceInstalled, serviceEnvironment } from "./service.ts";
@@ -10,6 +12,69 @@ import { running, startServer } from "./open.ts";
 const MAIN = path.join(ROOT,"cli","src","main.ts");
 const STATE = path.join(CONFIG_DIR,"update.json");
 const git = (...args: string[]) => runCommand("git",args,{cwd:ROOT,quiet:true}).stdout!.trim();
+
+export interface UpdateJob {
+  id: string; operation: "check" | "install"; state: "running" | "complete" | "error";
+  startedAt: string; pid?: number; error?: string;
+}
+const JOB = path.join(CONFIG_DIR,"update-job.json");
+
+export function updateJobStatus(): UpdateJob | null {
+  const job = readJson<UpdateJob | null>(JOB,null);
+  if (job?.state === "running") {
+    let stopped = false;
+    if (job.pid) {
+      try { process.kill(job.pid,0); } catch (error) { stopped = (error as NodeJS.ErrnoException).code === "ESRCH"; }
+    } else stopped = Date.now() - Date.parse(job.startedAt) > 60000;
+    if (stopped) { job.state = "error"; job.error = "The update process stopped. Check the update log and retry."; writeJson(JOB,job); }
+  }
+  return job;
+}
+
+export function updateJobCommand(job: Pick<UpdateJob,"id"|"operation">, managed = serviceInstalled(), platform = process.platform) {
+  const args = [process.execPath,"--no-warnings",path.join(ROOT,"cli/src/update-worker.ts"),job.id,job.operation];
+  const log = path.join(CONFIG_DIR,"update.log");
+  if (managed && platform === "linux") return { command:"systemd-run", args:["--user","--collect","--quiet",`--unit=surface-update-${job.id}`,`--working-directory=${ROOT}`,`--property=StandardOutput=append:${log}`,`--property=StandardError=append:${log}`,...Object.entries(serviceEnvironment()).flatMap(([key,value])=>[`--setenv=${key}=${value}`]),"--",...args] };
+  if (managed && platform === "darwin") return { command:"launchctl", args:["submit","-l",`dev.surface.update-${job.id}`,"-o",log,"-e",log,"--","/usr/bin/env",...Object.entries(serviceEnvironment()).map(([key,value])=>`${key}=${value}`),...args] };
+  return { command:args[0], args:args.slice(1) };
+}
+
+export async function startUpdateJob(operation: "check" | "install") {
+  if (updateJobStatus()?.state === "running") throw new UserError("An update is already running.");
+  fs.mkdirSync(CONFIG_DIR,{recursive:true});
+  const job: UpdateJob = {id:crypto.randomBytes(12).toString("hex"),operation,state:"running",startedAt:new Date().toISOString()};
+  writeJson(JOB,job);
+  let log: number | undefined;
+  try {
+    log = fs.openSync(path.join(CONFIG_DIR,"update.log"),"a",0o600);
+    // A child of the managed server belongs to its service's kill group. Launch the
+    // updater as its own job so stopping the server cannot kill the update halfway.
+    const command = updateJobCommand(job);
+    const child = spawn(command.command,command.args,{cwd:ROOT,env:process.env,detached:true,stdio:["ignore",log,log]});
+    const failed = (error: string) => {
+      const saved = readJson<UpdateJob | null>(JOB,null);
+      if (saved?.id === job.id && saved.state === "running") writeJson(JOB,{...saved,state:"error",error});
+    };
+    child.once("error",error => failed(error.message));
+    child.once("exit",code => { if (code && code !== 0) failed("The updater could not start or finish. Check the update log and retry."); });
+    await new Promise<void>((resolve,reject) => { child.once("spawn",resolve); child.once("error",reject); });
+    child.unref();
+    return job;
+  } catch (error) { writeJson(JOB,{...job,state:"error",error:(error as Error).message}); throw error; }
+  finally { if (log !== undefined) fs.closeSync(log); }
+}
+
+export async function runUpdateJob(id: string, operation: "check" | "install") {
+  const job = readJson<UpdateJob | null>(JOB,null);
+  if (!job || job.id !== id || job.state !== "running" || job.operation !== operation) throw new UserError("No matching update job.");
+  writeJson(JOB,{...job,pid:process.pid});
+  // Let the HTTP response reach the app before an installation stops its server.
+  await new Promise(resolve => setTimeout(resolve,500));
+  try {
+    await update({check:operation === "check"});
+    writeJson(JOB,{...job,state:"complete"});
+  } catch (error) { writeJson(JOB,{...job,state:"error",error:(error as Error).message}); throw error; }
+}
 
 export function updateSchedule(mode: "check" | "install" | "off", platform = process.platform, home = os.homedir()) {
   const args = [process.execPath,"--no-warnings",MAIN,"update",mode === "install" ? "--background" : "--check"];

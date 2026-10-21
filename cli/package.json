@@ -20,7 +20,9 @@
     "test:links": "node --no-warnings test/links.ts",
     "test:workflow": "node --no-warnings test/workflow.ts",
     "test:updates": "node --no-warnings test/updates.ts",
-    "test:apps": "node --no-warnings test/apps.ts"
+    "test:apps": "node --no-warnings test/apps.ts",
+    "test:system": "node --no-warnings test/system.ts",
+    "test:restart": "node --no-warnings test/restart.ts"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.10",

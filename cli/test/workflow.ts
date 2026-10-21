@@ -4,6 +4,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { Readable, Writable } from "node:stream";
+import childProcess from "node:child_process";
+import { EventEmitter } from "node:events";
+import { syncBuiltinESMExports } from "node:module";
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "surface-workflow-"));
 Object.assign(process.env, { SURFACE_STORE:"local", SURFACE_CONFIG_DIR:path.join(tmp,"config"), SURFACE_DATA_DIR:path.join(tmp,"hub"), SURFACE_LOG_FILE:"off", SURFACE_SYNC:"off" });
@@ -256,12 +259,27 @@ try {
   for (const app of (await import("../../surfaces.mts")).apps) {
     const page=await request(`/w/${ws}${app.path}`);
     assert.equal(page.status,200); assert.match(page.text,/<!doctype html>/i);
+    assert.ok(page.text.includes(`<title>${app.name}</title>`),`route opens ${app.name}, not another app's HTML`);
     const direct=await request(`/${app.entry}`);
     assert.equal(direct.status,302); assert.equal((direct.headers as Record<string,string>).location,`/w/${ws}${app.path}`);
     const signedIn=await request(`${app.path}?token=${token}`,"GET",undefined,{cookie:""});
     assert.equal(signedIn.status,302); assert.equal((signedIn.headers as Record<string,string>).location,`/w/${ws}${app.path}`);
     assert.equal((await request(`/w/${ws}${app.path}`,"GET",undefined,{cookie:""})).status,401);
   }
+  const system=await request(`/w/${ws}/api/system`); assert.equal(system.status,200); assert.ok(system.data().version.number);
+  assert.equal((await request("/api/system","GET",undefined,{cookie:""})).status,401);
+  assert.equal((await request("/api/system/update","POST",{operation:"install"},{origin:"https://example.com"})).status,403);
+  assert.equal((await request("/api/system/update","POST",{operation:"arbitrary-command"})).status,400);
+  assert.equal((await request("/api/system/update","POST",{operation:"install"},{cookie:""})).status,401);
+  const realSpawn=childProcess.spawn;
+  childProcess.spawn=(()=>{const child=new EventEmitter() as EventEmitter & {unref:()=>void};child.unref=()=>{};queueMicrotask(()=>child.emit("spawn"));return child;}) as unknown as typeof childProcess.spawn;
+  syncBuiltinESMExports();
+  try {
+    const scheduled=await request(`/w/${ws}/api/system/update`,"POST",{operation:"check"});
+    assert.equal(scheduled.status,202);
+    const status=await request("/api/system");
+    assert.equal(status.data().update.job.id,scheduled.data().job.id);assert.equal(status.data().update.job.state,"running");
+  } finally {childProcess.spawn=realSpawn;syncBuiltinESMExports();fs.rmSync(path.join(tmp,"config","update-job.json"),{force:true});}
   const health=await request("/api/_health","GET",undefined,{"x-surface-token":token}); assert.equal(health.status,200); assert.equal(health.data().pending,0);
   await assert.rejects(serve(findCheckout(privateRoot)!,{port:4318,watch:false,listen:false}),/Another Surface/);
   ok("writing and data share the server, and a second server is refused");

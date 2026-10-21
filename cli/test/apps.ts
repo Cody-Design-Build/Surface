@@ -9,12 +9,12 @@ for (const app of apps) {
     assert.equal(appAtPath(`/w/abc123${pathname}`)?.id, app.id);
   }
   assert.equal(appUrl(app, "/w/abc123/data/"), `/w/abc123${app.path}`);
-  assert.equal(appUrl(app, "/data.html"), app.path);
+  assert.equal(appUrl(app, "/data.html"), `/${app.entry}`);
 }
 assert.equal(appAtPath("/api/state"), undefined);
 assert.equal(appAtPath("/database/"), undefined);
 assert.equal(appAtPath("/assets/data.js"), undefined);
-const future = { id: "projects", name: "Projects", description: "Job progress", icon: "project", path: "/projects/", entry: "projects.html" };
+const future = { id: "projects", name: "Projects", description: "Job progress", path: "/projects/", entry: "projects.html" };
 const expanded = defineApps([...apps, future]);
 assert.equal(appAtPath("/w/abc123/projects/", expanded), future);
 assert.equal(appAtPath("/projects.html", expanded), future);

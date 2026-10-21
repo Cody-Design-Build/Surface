@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc -p . && vite build",
     "qa:data": "node --import tsx qa/qa-data.mjs",
-    "qa:apps": "node --import tsx qa/qa-app-switcher.mjs"
+    "qa:apps": "node --import tsx qa/qa-app-switcher.mjs && node --import tsx qa/qa-app-shell.mjs"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.3",

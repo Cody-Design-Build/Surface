@@ -7,6 +7,7 @@ import http from "node:http";
 import path from "node:path";
 import os from "node:os";
 import { appAtPath } from "../../surfaces.mts";
+import { installedVersion, systemInfo } from "./system.ts";
 import { CONFIG_DIR, findCheckout, knownCheckouts, rememberCheckout, saveCheckout, type Checkout } from "./config.ts";
 import { storeKind, dbError, requireUser, sb } from "./client.ts";
 import { deleteView, fetchInvites, fetchMembers, fetchViews, myInvites, pushRecord, saveView, type RecordRow, type TypeRow, type ViewRow } from "./db.ts";
@@ -720,6 +721,7 @@ export async function serve(initial: Checkout, opts: { port: number; host?: stri
   const port = opts.port;
   const host = opts.host ?? "127.0.0.1";
   const contexts = new Map<string, Promise<Awaited<ReturnType<typeof workspaceHandler>>>>();
+  const version = installedVersion();
   let syncLoop: { kick: () => void; stop: () => void } | null = null;
   let discovering = false;
   let stopping = false;
@@ -868,6 +870,21 @@ export async function serve(initial: Checkout, opts: { port: number; host?: stri
       if (route) localUrl.pathname = route[2] || "/";
       if (localUrl.pathname.startsWith("/api/")) {
         if (!authed) throw new HttpError(401, "Open the link printed by surface serve to sign this browser in.");
+        if (localUrl.pathname === "/api/system" && req.method === "GET") {
+          res.writeHead(200,{"content-type":"application/json","cache-control":"no-store"});
+          return res.end(JSON.stringify(systemInfo(version)));
+        }
+        if (localUrl.pathname === "/api/system/update" && req.method === "POST") {
+          let body = "";
+          for await (const chunk of req) { body += chunk; if (body.length > 1024) throw new HttpError(413,"Request too large"); }
+          let operation: unknown;
+          try { operation = JSON.parse(body).operation; } catch { throw new HttpError(400,"Invalid update request"); }
+          if (operation !== "check" && operation !== "install") throw new HttpError(400,"Expected check or install");
+          const { startUpdateJob } = await import("./update.ts");
+          const job = await startUpdateJob(operation);
+          res.writeHead(202,{"content-type":"application/json","cache-control":"no-store"});
+          return res.end(JSON.stringify({job}));
+        }
         return await (await context(ws)).api(req, localUrl, res);
       }
       if (!authed && !/\.(js|css|svg|png|webmanifest|woff2|ico)$/.test(url.pathname)) {

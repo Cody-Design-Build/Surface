@@ -24,7 +24,7 @@ const links = () => [...host.querySelectorAll("nav a")];
 try {
   await render();
   assert.equal(trigger().getAttribute("aria-expanded"), "false");
-  assert.match(trigger().textContent, /Surface Data/);
+  assert.match(trigger().textContent, /Data View/);
   await click(trigger());
   assert.equal(links().length, apps.length);
   assert.equal(links()[0].getAttribute("href"), "/w/abc123/");
@@ -48,11 +48,18 @@ try {
   await render(); await click(trigger());
   assert.equal(links()[0].getAttribute("aria-current"), "page");
   assert.equal(links()[1].getAttribute("href"), "/w/xyz789/data/");
-  const future = { id: "projects", name: "Projects", description: "Job progress", icon: "project", path: "/projects/", entry: "projects.html" };
+  const future = { id: "projects", name: "Projects", description: "Job progress", path: "/projects/", entry: "projects.html" };
   apps.push(future);
   await render();
   assert.equal(links().at(-1).getAttribute("href"), "/w/xyz789/projects/");
   assert.match(links().at(-1).textContent, /Projects/);
   apps.pop();
+  window.location.href = "http://localhost/";
+  await act(() => root.render(createElement(AppSwitcher, {appId:"data"})));
+  assert.match(trigger().textContent,/Data View/,"standalone Data View identifies itself at the root URL");
+  if (!links().length) await click(trigger());
+  assert.equal(links()[0].getAttribute("href"),"/index.html","Vault bypasses a legacy Data View default page");
+  assert.equal(links()[1].getAttribute("href"),"/data.html");
+  await click(links()[0]);assert.equal(navigation,true,"Vault is a distinct navigation even from a Data View server's root");
   console.log("App switcher: workspace links, current app, keyboard, dismissal, edit guard, new tabs and future apps passed.");
 } finally { await act(() => root.unmount()); await window.happyDOM.close(); }

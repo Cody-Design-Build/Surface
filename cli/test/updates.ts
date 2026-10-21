@@ -4,6 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import childProcess from "node:child_process";
+import { EventEmitter } from "node:events";
 import { syncBuiltinESMExports } from "node:module";
 
 const tmp=fs.mkdtempSync(path.join(os.tmpdir(),"surface-update-test-"));
@@ -31,7 +32,7 @@ childProcess.spawnSync=((cmd:string,args:string[])=>{
   return {status:0,stdout,stderr:"",error:undefined};
 }) as typeof childProcess.spawnSync;
 syncBuiltinESMExports();
-const {update,updateSchedule}=await import("../src/update.ts");
+const {update,updateSchedule,startUpdateJob,runUpdateJob,updateJobStatus,updateJobCommand}=await import("../src/update.ts");
 const {serviceDefinition}=await import("../src/service.ts");
 let count=0;const ok=(s:string)=>console.log(`ok ${++count} ${s}`);
 try {
@@ -80,6 +81,34 @@ try {
   const automatic=updateSchedule("install","darwin",tmp);assert.match(automatic.files[0].body,/--background/);
   assert.ok(updateSchedule("off","linux",tmp).commands[0].includes("disable"));
   ok("service and scheduler definitions preserve directories and distinguish checks from idle installs");
+  const originalSpawn=childProcess.spawn;
+  let spawnFails=false;
+  childProcess.spawn=((cmd:string,args:string[])=>{
+    calls.push({cmd,args});
+    const child=new EventEmitter() as EventEmitter & {unref:()=>void};child.unref=()=>{};
+    queueMicrotask(()=>spawnFails ? child.emit("error",new Error("updater launch failed")) : child.emit("spawn"));
+    return child;
+  }) as typeof childProcess.spawn;
+  syncBuiltinESMExports();
+  try {
+    const job=await startUpdateJob("check");
+    assert.equal(updateJobStatus()?.state,"running");
+    await assert.rejects(startUpdateJob("install"),/already running/);
+    await runUpdateJob(job.id,"check");assert.equal(updateJobStatus()?.state,"complete");
+    dirty=true;
+    const install=await startUpdateJob("install");
+    await assert.rejects(runUpdateJob(install.id,"install"),/local code changes/);
+    assert.equal(updateJobStatus()?.state,"error");assert.match(updateJobStatus()?.error ?? "",/local code changes/);
+    dirty=false;spawnFails=true;
+    await assert.rejects(startUpdateJob("check"),/launch failed/);assert.equal(updateJobStatus()?.state,"error");
+    const unit=updateJobCommand(job,true,"linux");assert.equal(unit.command,"systemd-run");
+    assert.ok(unit.args.includes("--user"));assert.ok(unit.args.some(arg=>arg.includes("SURFACE_CONFIG_DIR=")));
+    assert.ok(unit.args.some(arg=>arg.includes("StandardOutput=append:")));
+    const launch=updateJobCommand(job,true,"darwin");assert.equal(launch.command,"launchctl");
+    assert.ok(launch.args.includes("submit"));assert.ok(launch.args.includes("/usr/bin/env"));assert.ok(launch.args.includes(`SURFACE_CONFIG_DIR=${cfg}`));
+    const detached=updateJobCommand(job,false);assert.equal(detached.command,process.execPath);assert.ok(detached.args.some(arg=>arg.endsWith("update-worker.ts")));
+  } finally {childProcess.spawn=originalSpawn;syncBuiltinESMExports();}
+  ok("app update jobs report success, launch failures and rejected installs, with separate managed updater commands");
   console.log(`all ${count} update checks passed`);
 } finally {
   childProcess.spawnSync=original;syncBuiltinESMExports();

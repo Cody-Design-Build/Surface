@@ -109,7 +109,7 @@ export function openWindow(url: string, opts: { tab?: boolean } = {}): string {
 export async function openSurface(co: Checkout, target: { view?: string; record?: string } | null, opts: { port: number; tab?: boolean; print?: boolean; data?: boolean; app?: string }) {
   const app = opts.app ? apps.find(app => app.id === opts.app) : opts.data ? apps.find(app => app.id === "data")! : apps.find(app => app.path === "/")!;
   if (!app) throw new Error(`Unknown app "${opts.app}". Available: ${apps.map(app => app.id).join(", ")}`);
-  if (target && app.path !== "/") throw new Error("Record and view links open in the writing app. Use --app without a record or view.");
+  if (target && app.path !== "/") throw new Error("Record and view links open in Vault. Use --app without a record or view.");
   let r = await running();
   let started = false;
   if (!r) {

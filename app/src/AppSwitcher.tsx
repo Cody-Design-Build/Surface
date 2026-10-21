@@ -2,12 +2,12 @@ import { useEffect, useId, useRef, useState } from "react";
 import { appAtPath, apps, appUrl } from "../../surfaces.mts";
 import { Icon } from "./Icon.tsx";
 
-export function AppSwitcher({ beforeNavigate }: { beforeNavigate?: () => boolean }) {
+export function AppSwitcher({ appId, beforeNavigate }: { appId?: string; beforeNavigate?: () => boolean }) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const menuId = useId();
-  const current = appAtPath(location.pathname) ?? apps[0];
+  const current = apps.find(app => app.id === appId) ?? appAtPath(location.pathname) ?? apps[0];
 
   useEffect(() => {
     if (!open) return;
@@ -35,7 +35,6 @@ export function AppSwitcher({ beforeNavigate }: { beforeNavigate?: () => boolean
     <button ref={trigger} className="app-switcher-trigger" aria-label={`Switch app, ${current.name}`} aria-expanded={open} aria-controls={menuId} onClick={() => setOpen(value => !value)} onKeyDown={event => {
       if (!open && event.key === "ArrowDown") { event.preventDefault(); setOpen(true); }
     }}>
-      <span className="app-switcher-mark" aria-hidden="true">S</span>
       <strong>{current.name}</strong><Icon name="chevron" size={13} />
     </button>
     {open && <nav id={menuId} className="app-switcher-menu" aria-label="Apps">
@@ -47,7 +46,6 @@ export function AppSwitcher({ beforeNavigate }: { beforeNavigate?: () => boolean
         if (beforeNavigate && !beforeNavigate()) { event.preventDefault(); return; }
         setOpen(false);
       }}>
-        <span className="app-switcher-icon"><Icon name={app.icon} size={19} /></span>
         <span className="app-switcher-label"><strong>{app.name}</strong><small>{app.description}</small></span>
         {app.id === current.id && <span className="app-switcher-current" aria-hidden="true">✓</span>}
       </a>)}

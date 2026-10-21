@@ -9,8 +9,7 @@ import { TableNav } from "./TableNav.tsx";
 import { GroupPanel, SortPanel } from "./DataToolbar.tsx";
 import { parseGroup, parseSort } from "./Grid.tsx";
 import { ViewEditor } from "./ViewEditor.tsx";
-import { SyncBadge } from "./SyncBadge.tsx";
-import { AppSwitcher } from "./AppSwitcher.tsx";
+import { AppShell, SidebarResizeHandle } from "./AppShell.tsx";
 import { defaultsFrom, deleteRecord } from "./edits.ts";
 import { did, onUndo, redo, typingTarget, undo } from "./undo.ts";
 
@@ -46,11 +45,13 @@ export function DataApp() {
     return () => document.removeEventListener("mousedown", close);
   }, [addMenu]);
   const [recordId, setRecordId] = useState<string | null>(null);
-  const [workspaces, setWorkspaces] = useState<Awaited<ReturnType<typeof api.workspaces>>["workspaces"]>([]);
   const [switching, setSwitching] = useState(false);
   const [navCollapsed, setNavCollapsed] = useState(() => localStorage.getItem("surface-data-nav") === "collapsed");
   const toggleNav = () => setNavCollapsed(c => { localStorage.setItem("surface-data-nav", c ? "open" : "collapsed"); return !c; });
   const sheetDirty = useRef(false);
+  const [sheetHasEdits, setSheetHasEdits] = useState(false);
+  const navigationDirty = useRef(false);
+  const setSheetDirty = (dirty: boolean) => { sheetDirty.current = dirty; setSheetHasEdits(dirty); };
   const reload = useCallback(async () => {
     try { setApp(await api.state()); setError(""); }
     catch (e) { setError(message(e)); }
@@ -62,19 +63,13 @@ export function DataApp() {
     const change = () => {
       if (location.hash === lastHash.current) return;
       if (sheetDirty.current && !window.confirm("Discard unsaved record edits?")) { history.replaceState(null, "", lastHash.current || location.pathname); return; }
-      sheetDirty.current = false; lastHash.current = location.hash;
+      setSheetDirty(false); lastHash.current = location.hash;
       setRoute(readRoute()); setRecordId(null);
     };
     window.addEventListener("hashchange", change);
     return () => window.removeEventListener("hashchange", change);
   }, []);
   useEffect(() => subscribe(() => { void reload(); setTick(t => t + 1); }, setOnline), [reload]);
-  useEffect(() => {
-    if (!app) return;
-    let active = true;
-    api.workspaces().then(r => { if (active) setWorkspaces(r.workspaces); }).catch(e => setToast(message(e)));
-    return () => { active = false; };
-  }, [app?.workspace.id]);
   useEffect(() => onUndo(e => {
     setToast(e.label);
     if (e.kind !== "done") { void reload(); setTick(t => t + 1); }
@@ -97,30 +92,17 @@ export function DataApp() {
   const views = app?.views.filter(v => v.definition.from === type?.key && !/\bthis\b/.test(v.definition.where ?? "") && (!v.definition.layouts?.length || v.definition.layouts.some(l => l.show === "table"))) ?? [];
   const changed = () => { void reload(); setTick(t => t + 1); };
   const canLeaveSheet = () => !sheetDirty.current || window.confirm("Discard unsaved record edits?");
-  const closeSheet = () => { if (canLeaveSheet()) { sheetDirty.current = false; setRecordId(null); } };
-  const openRecord = (id: string) => { if (canLeaveSheet()) { sheetDirty.current = false; setRecordId(id); } };
-  const go = (key: string, v?: ViewInfo) => { if (!canLeaveSheet()) return; sheetDirty.current = false; setRecordId(null); navigate(key, v); };
-  const switchWorkspace = async (id: string) => {
-    if (!canLeaveSheet()) return;
-    setSwitching(true); setRecordId(null); sheetDirty.current = false;
-    try { const next = await api.switchWorkspace(id); location.assign(next.url ? next.url + "data/" : location.pathname); }
-    catch (e) { setError(message(e)); }
-    finally { setSwitching(false); }
-  };
-  if (!app) return <div className="data-boot"><div className="data-emblem">S</div><h1>Surface Data</h1><p>{error || "Opening your workspace…"}</p>{error && <button className="btn-soft" onClick={reload}>Try again</button>}</div>;
-  return <div className="data-app">
-    <header className="data-topbar">
-      <AppSwitcher beforeNavigate={() => { if (!canLeaveSheet()) return false; sheetDirty.current = false; return true; }} />
-      <span className="data-top-divider" />
-      <label className="data-workspace"><Icon name="project" /><select aria-label="Workspace" value={app.workspace.id} disabled={switching} onChange={e => void switchWorkspace(e.target.value)}>
-        {!workspaces.length && <option value={app.workspace.id}>{app.workspace.name}</option>}
-        {workspaces.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
-      </select></label>
-      {switching ? <span className="data-connection">Opening workspace…</span> : <SyncBadge className="data-sync" tick={tick} onOpenRecord={openRecord} serverOnline={online} />}
-      <span className="data-account">{app.user.email}</span>
-    </header>
+  const closeSheet = () => { if (canLeaveSheet()) { setSheetDirty(false); setRecordId(null); } };
+  const openRecord = (id: string) => { if (canLeaveSheet()) { setSheetDirty(false); setRecordId(id); } };
+  const go = (key: string, v?: ViewInfo) => { if (!canLeaveSheet()) return; setSheetDirty(false); setRecordId(null); navigate(key, v); };
+  if (!app) return <div className="data-boot"><h1>Data View</h1><p>{error || "Opening your workspace…"}</p>{error && <button className="btn-soft" onClick={reload}>Try again</button>}</div>;
+  return <AppShell appId="data" className="data-app" app={app} online={online} tick={tick} openRecord={openRecord} onSwitching={setSwitching}
+    updatesBlocked={sheetHasEdits ? "Save or discard record edits before updating." : undefined}
+    onNavigationError={() => setSheetDirty(navigationDirty.current)}
+    beforeNavigate={() => { if (!canLeaveSheet()) return false; navigationDirty.current = sheetDirty.current; setSheetDirty(false); return true; }}>
     <div className="data-shell" aria-busy={switching}>
       <aside className={`data-nav ${navCollapsed ? "is-collapsed" : ""}`} aria-label="Tables">
+        {!navCollapsed && <SidebarResizeHandle />}
         <div className="data-nav-top">
           <label className="data-table-search"><Icon name="search" size={14} /><input aria-label="Find a table" placeholder="Find a table" value={typeSearch} onChange={e => setTypeSearch(e.target.value)} /></label>
           <button className="icon-btn data-nav-toggle" onClick={toggleNav} aria-label={navCollapsed ? "Expand tables list" : "Collapse tables list"} aria-expanded={!navCollapsed} title={navCollapsed ? "Expand tables list" : "Collapse tables list"}><Icon name="sidebar" size={15} /></button>
@@ -146,8 +128,8 @@ export function DataApp() {
     {schema && <TypesPanel app={app} noun="table" initial={type?.key} onClose={() => { setSchema(false); changed(); }} onToast={m => { setToast(m); changed(); }} />}
     {newTable && <NewTableDialog app={app} onClose={() => setNewTable(false)} onCreated={key => { setNewTable(false); setToast("Table created"); changed(); window.setTimeout(() => go(key), 300); }} />}
     {addField && type && <FieldDialog app={app} type={type} onClose={() => setAddField(false)} onSaved={f => { setAddField(false); setToast(`Added the field ${f.name}`); changed(); }} />}
-    {recordId && <RecordSheet key={`${app.workspace.id}:${recordId}`} id={recordId} app={app} onDirty={dirty => { sheetDirty.current = dirty; }} close={closeSheet} open={openRecord} changed={changed} toast={setToast} />}
-  </div>;
+    {recordId && <RecordSheet key={`${app.workspace.id}:${recordId}`} id={recordId} app={app} onDirty={setSheetDirty} close={closeSheet} open={openRecord} changed={changed} toast={setToast} />}
+  </AppShell>;
 }
 
 function DataTable({ app, type, initial, tick, changed, open, toast, onView }: { app: AppState; type: TypeInfo; initial?: ViewInfo; tick: number; changed: () => void; open: (id: string) => void; toast: (s: string) => void; onView: (v: ViewInfo) => void }) {
