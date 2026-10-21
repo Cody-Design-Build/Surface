@@ -46,7 +46,10 @@ export function DataApp() {
   }, [addMenu]);
   const [recordId, setRecordId] = useState<string | null>(null);
   const [switching, setSwitching] = useState(false);
-  const [navCollapsed, setNavCollapsed] = useState(() => localStorage.getItem("surface-data-nav") === "collapsed");
+  const [navCollapsed, setNavCollapsed] = useState(() => {
+    const saved = localStorage.getItem("surface-data-nav");
+    return saved ? saved === "collapsed" : window.matchMedia("(max-width: 620px)").matches;
+  });
   const toggleNav = () => setNavCollapsed(c => { localStorage.setItem("surface-data-nav", c ? "open" : "collapsed"); return !c; });
   const sheetDirty = useRef(false);
   const [sheetHasEdits, setSheetHasEdits] = useState(false);
@@ -234,7 +237,7 @@ function DataTable({ app, type, initial, tick, changed, open, toast, onView }: {
       </div>
     </div>
     {error && <div className="banner" role="alert">{error}<button className="btn-soft" onClick={load}>Reload records</button></div>}
-    {loading ? <div className="data-loading">Loading records…</div> : <div className="data-grid-area"><Grid app={app} type={type} layout={layout} sort={definition.sort} rows={visibleRows} readOnly={!canWrite || saving} open={open} onLayout={patchLayout} onChanges={saveChanges} onDelete={removeRows} addRow={addRow} groupCommand={groupCommand} />{!rows.length && !error && <div className="data-empty">No records yet. {canWrite ? "Add a record to start using this table." : "This table is empty."}</div>}</div>}
+    {loading ? <div className="data-loading">Loading records…</div> : <div className="data-grid-area"><Grid app={app} type={type} layout={layout} sort={definition.sort} rows={visibleRows} readOnly={!canWrite || saving} open={open} onLayout={patchLayout} onChanges={saveChanges} onDelete={removeRows} groupCommand={groupCommand} />{!rows.length && !error && <div className="data-empty">No records yet. {canWrite ? "Add a record to start using this table." : "This table is empty."}</div>}</div>}
     <footer className="data-footer"><span>{visibleRows.length.toLocaleString()} {visibleRows.length === 1 ? "record" : "records"}{search ? ` of ${rows.length}` : ""}</span><span>{saving ? "Saving…" : !canWrite ? "Read only" : dirty ? "View settings have unsaved changes" : "Changes save to your workspace"}</span><button onClick={() => void undo()}><Icon name="undo" size={13} />Undo</button><button onClick={() => { changed(); void load(); }}><Icon name="refresh" size={13} />Refresh</button></footer>
     {editingView && <ViewEditor app={app} initial={editDefinition} onClose={() => setEditingView(false)} onSaved={() => {}} onApply={d => { setDefinition(cur => ({ ...cur, where: d.where, sort: d.sort })); setDirty(true); setEditingView(false); }} />}
     {saveDialog && <div className="overlay" onMouseDown={e => e.target === e.currentTarget && setSaveDialog(false)}><form className="panel data-save-panel" role="dialog" aria-modal="true" aria-label="Save table view" onSubmit={e => { e.preventDefault(); void saveView(true); }}><header className="panel-head"><h3>Save this table view</h3><button type="button" aria-label="Close" onClick={() => setSaveDialog(false)}><Icon name="close" /></button></header><div className="data-save-body"><label>View name<input autoFocus required value={viewName} placeholder="For example, Active contacts" onChange={e => setViewName(e.target.value)} /></label><label>Who can see this view?<select value={personal ? "personal" : "shared"} onChange={e => setPersonal(e.target.value === "personal")}><option value="personal">Only me</option>{app.role !== "viewer" && <option value="shared">Everyone in this workspace</option>}</select></label><p>Your columns, widths, sorting, grouping and filters are saved together.</p>{error && <p role="alert">{error}</p>}<button className="btn-primary" disabled={saving}>Save view</button></div></form></div>}

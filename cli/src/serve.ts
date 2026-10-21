@@ -773,12 +773,22 @@ export async function serve(initial: Checkout, opts: { port: number; host?: stri
   await discover();
   const discoveryTimer = setInterval(() => void discover().catch(e => L.warn("workspace discovery failed", { err: e })), 2500);
   discoveryTimer.unref();
-  function staticFile(url: URL, res: http.ServerResponse) {
+  function staticFile(url: URL, res: http.ServerResponse, requestedPath = url.pathname) {
     if (!fs.existsSync(APP_DIR)) {
       res.writeHead(500, { "content-type": "text/plain" });
       return res.end("The app isn't built yet. Run `npm install && npm run build` in the app/ folder.");
     }
     let rel = decodeURIComponent(url.pathname).replace(/^\/+/, "");
+    // Each installed app returns to the workspace it was installed from. A
+    // relative manifest URL keeps this true for /w/<id>/ and /w/<id>/data/.
+    if (url.pathname === "/manifest.webmanifest" || url.pathname === "/data/manifest.webmanifest") {
+      const data = url.pathname.startsWith("/data/") || url.searchParams.get("app") === "data";
+      const prefix = /^\/w\/[a-z0-9]+/.exec(requestedPath)?.[0] ?? "";
+      const start = `${prefix}${data ? "/data/" : "/"}`;
+      const manifest = JSON.parse(fs.readFileSync(path.join(APP_DIR, "manifest.webmanifest"), "utf8"));
+      res.writeHead(200, { "content-type": MIME[".webmanifest"], "cache-control": "no-cache" });
+      return res.end(JSON.stringify({ ...manifest, name: data ? "Data View" : "Vault", short_name: data ? "Data View" : "Vault", id: start, start_url: start, scope: start }));
+    }
     const app = appAtPath(url.pathname);
     if (app) rel = app.entry;
     let file = path.join(APP_DIR, rel);
@@ -786,7 +796,7 @@ export async function serve(initial: Checkout, opts: { port: number; host?: stri
     const ext = path.extname(file);
     res.writeHead(200, {
       "content-type": MIME[ext] ?? "application/octet-stream",
-      "cache-control": ext === ".html" ? "no-store" : "public, max-age=31536000, immutable",
+      "cache-control": ext === ".html" ? "no-store" : rel.startsWith("assets/") ? "public, max-age=31536000, immutable" : "no-cache",
     });
     fs.createReadStream(file).pipe(res);
   }
@@ -898,7 +908,7 @@ export async function serve(initial: Checkout, opts: { port: number; host?: stri
         return res.end();
       }
       if (route) await context(ws); // validate workspace before serving its page
-      return staticFile(localUrl, res);
+      return staticFile(localUrl, res, url.pathname);
     } catch (e) {
       const err = e instanceof HttpError ? e : new HttpError(500, (e as Error).message);
       if (!(e instanceof HttpError)) {

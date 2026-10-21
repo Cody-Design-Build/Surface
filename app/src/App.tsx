@@ -51,7 +51,10 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [route, setRoute] = useState<Route>(readRoute());
   const [switcher, setSwitcher] = useState(false);
-  const [sidebar, setSidebar] = useState(() => localStorage.getItem("surface.sidebar") !== "closed");
+  const [sidebar, setSidebar] = useState(() => {
+    const saved = localStorage.getItem("surface.sidebar");
+    return saved ? saved !== "closed" : !window.matchMedia("(max-width: 760px)").matches;
+  });
   const [online, setOnline] = useState(true);
   const [status, setStatus] = useState<{ s: SaveStatus; msg?: string }>({ s: "saved" });
   const [remote, setRemote] = useState<{ tick: number; ids: string[] }>({ tick: 0, ids: [] });

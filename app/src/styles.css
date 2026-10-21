@@ -117,6 +117,8 @@
 
 * { box-sizing: border-box; }
 html, body, #root { height: 100%; margin: 0; }
+/* Follow Safari's changing browser chrome in tabs and standalone web apps. */
+html { height: 100dvh; }
 body {
   font-family: var(--font-ui);
   font-size: 14px;
@@ -979,6 +981,11 @@ select.ve-input { padding-right: 4px; }
 /* ---------------------------------------------------------------- editable grid (React Data Grid) */
 .sg-wrap { position: relative; margin-top: 2px; }
 .surface-grid {
+  /* RDG already virtualizes rows. Avoid a second deferred-paint boundary around
+     sticky cells: WebKit can leave stale grid contents after async scrolling. */
+  content-visibility: visible;
+  contain: layout style;
+  overscroll-behavior: contain;
   --rdg-color: var(--text-soft);
   --rdg-background-color: var(--bg);
   --rdg-header-background-color: var(--bg);
@@ -994,7 +1001,7 @@ select.ve-input { padding-right: 4px; }
   font-family: var(--font-ui);
   border: 1px solid var(--line);
   border-radius: 8px;
-  color-scheme: light dark;
+  color-scheme: inherit;
 }
 .surface-grid [role="columnheader"] { font-weight: 500; font-size: 12px; color: var(--text-muted); border-block-end: 1px solid var(--line-strong); }
 .surface-grid [role="columnheader"]:hover { color: var(--text-soft); }

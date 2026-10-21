@@ -61,3 +61,30 @@ Hot reload (`npm run dev`) is not wired yet: the server's token cookie and Origi
 `qa/qa-views.mjs` (24 checks: sidebars, pin, reorder, board drag, cell edit, undo, Move to…, view editor, settings, share, calendar) `qa/qa-embeds.mjs` (14 checks: live view in a page, Markdown table render and click-to-edit, image paste, types and fields) and `qa/qa-drag.mjs` (editor block handles) drive Chrome with puppeteer-core against a running `surface serve` on port 4317. Run them from a folder with `puppeteer-core` installed; they write screenshots to `shots/`. `qa-views.mjs` expects the demo workspace (jobs, tasks, selections, budget lines and the views in `.surface/views/`).
 
 Workspace and view navigation requires the current server code. An older server may serve the latest HTML while lacking workspace routes. The header disables switching until the server API is reachable; HTML returned by an API route produces a recoverable load error instead of a blank interface. `surface restart --open` loads the installed server code without a Git update.
+
+### Safari compatibility and installable apps
+
+The build targets Safari 17 and newer (including iOS/iPadOS), Chrome 120+, and Firefox 121+. React Data Grid also needs iterator `map` and `toArray` at runtime; the grid imports those two core-js polyfills because transpiling JavaScript syntax does not supply missing browser APIs. Targeting a browser is not certification on every OS release.
+
+The shared grid keeps row/column virtualization, but overrides RDG's `content-visibility: auto` and paint containment. This avoids an extra deferred rendering boundary around sticky columns in WebKit. It is a mitigation for stale painting during scrolling, not a claim that the reported intermittent Safari compositor bug has been reproduced on every device. WebKit tracks a related [stale content-visibility layout issue](https://bugs.webkit.org/show_bug.cgi?id=321501).
+
+Tables narrower than 600px temporarily unfreeze columns in the grid's column model so horizontal scrolling, virtual columns, and keyboard navigation agree; the saved view keeps its desktop frozen settings. New mobile sessions start with the navigation collapsed. Existing navigation preferences still apply. The root uses the dynamic viewport height, and grid controls inherit the selected theme's color scheme.
+
+Both entry points have a manifest and PNG Apple touch/installation icons. The production server supplies app/workspace-specific manifest IDs, start URLs, and scopes, so an installed Data View opens that same workspace's Data View. Manifests and other unversioned public files revalidate; hashed build assets remain immutable. Restart the local server to load manifest route changes.
+
+Run the production browser suite from `app/`:
+
+```sh
+npx playwright install webkit chromium
+npm run qa:browsers
+```
+
+It uses installed Chrome plus Playwright WebKit desktop, iPhone, and iPad profiles. Port 4394 must be free. It creates a disposable local Postgres workspace with 320 records, exercises the built app against the real HTTP API, and never uses business data. Coverage includes rapid two-axis/wheel scrolling, header/cell alignment, frozen columns, grouping, selection, sorting, row heights, hidden fields, search, record and grid edits, dates, Markdown autosave, saved views, appearance persistence, viewport bounds, manifests/icons, and the missing iterator-helper runtime case. Failure traces and screenshots go in `test-results/`. WebKit device profiles emulate viewports/touch; they are not physical iOS devices or the installed Safari app.
+
+Before claiming Safari release parity, repeat inertial trackpad/touch scrolling, browser zoom, on-screen keyboard entry, native clipboard operations, and Add to Dock/Home Screen launch/relaunch in actual Safari on macOS and a physical iPhone/iPad. Safari WebDriver requires Settings → Developer → Allow remote automation.
+
+On macOS, `npm run qa:safari` additionally runs the installed Safari browser through its bundled WebDriver. Enable Safari Settings → Advanced → Show features for web developers, then Developer → Allow remote automation. This suite needs ports 4394 and 4445 free and creates its own disposable database. It checks 32 two-axis scroll reversals, virtualization, selection/sorting/grouping/search, row height, keyboard opening of records, persisted record edits, Markdown autosave, saved views, theme persistence, resizing, and app/workspace-specific manifests. Screenshots and results go in `test-results/native-safari/`.
+
+October 21, 2026 verification: all 24 browser checks passed across installed Chrome and the three WebKit profiles; app build, existing `qa:apps` checks, and CLI TypeScript checking passed. After remote automation was enabled, all seven installed Safari 26.6.2 check groups passed, including 32 two-axis scroll reversals with header/cell geometry checks. A native UI smoke test also kept rows aligned through repeated scrolling reversals. The original intermittent stagger was not reproduced conclusively; the containment change remains a targeted mitigation pending normal-use confirmation. Physical iOS keyboard, inertial gestures, native clipboard and installation/relaunch are still unverified.
+
+Phone deployment remains a separate architectural step: the current server binds to the local computer's loopback address with local token authentication. A phone cannot use the Mac's `127.0.0.1`; hosted/reachable HTTPS and an appropriate authentication flow are still needed. No service worker or browser-side offline data store is implemented. Installation metadata does not make this local-server UI an offline mobile app; desktop offline use still requires the local server/database to be running.

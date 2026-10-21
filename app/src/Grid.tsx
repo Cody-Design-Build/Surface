@@ -4,7 +4,11 @@
 // `group`, `rows` (height) and the view's `sort` all live in the view definition, so an agent
 // editing .surface/views/<key>.yaml gets the same grid. Edits go through the normal save path
 // (validation, revisions, undo); several at once (paste, fill) are reported together.
-import { useEffect, useMemo, useRef, useState } from "react";
+// RDG uses iterator helpers that are absent in Safari 17. Syntax transpilation
+// alone cannot supply these runtime methods.
+import "core-js/actual/iterator/map.js";
+import "core-js/actual/iterator/to-array.js";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { DataGrid, TreeDataGrid, SelectColumn, type Column, type RenderEditCellProps, type RowsChangeData, type SortColumn } from "react-data-grid";
 import "react-data-grid/lib/styles.css";
@@ -31,7 +35,7 @@ interface Props {
   onLayout: (p: LayoutPatch) => void;
   onChanges: (changes: Change[]) => void;
   onDelete: (ids: string[]) => void;
-  addRow: () => void;
+  addRow?: () => void;
   /** a new object collapses or expands every group */
   groupCommand?: { action: "collapse" | "expand" };
 }
@@ -205,6 +209,19 @@ const GROUP_PREFIX = "__group:";
 const isGroupRow = (r: unknown) => !!r && typeof r === "object" && "childRows" in (r as object) && "groupKey" in (r as object);
 
 export function Grid({ app, type, layout, sort, rows, readOnly, embedded, open, onLayout, onChanges, onDelete, addRow, groupCommand }: Props) {
+  const wrapper = useRef<HTMLDivElement>(null);
+  const [narrow, setNarrow] = useState(false);
+  useLayoutEffect(() => {
+    const element = wrapper.current;
+    if (!element) return;
+    // Update the grid's own column model, including virtualization and keyboard
+    // scroll padding, rather than merely undoing sticky positioning with CSS.
+    const measure = () => setNarrow(element.clientWidth <= 600);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
   const fieldOf = (key: string) => type.fields.find((f) => f.key === key);
   const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set());
   const [collapsed, setCollapsed] = useState<ReadonlySet<unknown>>(() => new Set());
@@ -222,11 +239,11 @@ export function Grid({ app, type, layout, sort, rows, readOnly, embedded, open, 
 
   const columns = useMemo<Column<RecordFull>[]>(() => {
     const w = layout.widths ?? {};
-    const frozen = layout.frozen ?? 0;
+    const frozen = narrow ? 0 : layout.frozen ?? 0;
     const title: Column<RecordFull> = {
       key: "title",
       name: "Title",
-      frozen: true,
+      frozen: !narrow,
       resizable: true,
       sortable: true,
       width: w.title ?? 260,
@@ -309,8 +326,8 @@ export function Grid({ app, type, layout, sort, rows, readOnly, embedded, open, 
       key: GROUP_PREFIX + k, name: "", width: 0, minWidth: 0, maxWidth: 0, resizable: false, sortable: false, editable: false,
       cellClass: "sg-groupcol", headerCellClass: "sg-groupcol", renderCell: () => null, renderGroupCell: () => null,
     }));
-    return readOnly ? [...groupCols, title, ...cols] : [SelectColumn, ...groupCols, title, ...cols];
-  }, [fields, layout.widths, layout.frozen, groupKeys, readOnly, app, open, onChanges]); // eslint-disable-line react-hooks/exhaustive-deps
+    return readOnly ? [...groupCols, title, ...cols] : [{ ...SelectColumn, frozen: !narrow }, ...groupCols, title, ...cols];
+  }, [fields, layout.widths, layout.frozen, groupKeys, readOnly, narrow, app, open, onChanges]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const sorted = useMemo(() => sortRows(app, type, rows, sortColumns), [app, type, rows, sortColumns]);
 
@@ -449,7 +466,7 @@ export function Grid({ app, type, layout, sort, rows, readOnly, embedded, open, 
 
   const removing = [...selected].filter((id) => rowsById.has(id));
   return (
-    <div className="sg-wrap">
+    <div className="sg-wrap" ref={wrapper}>
       {removing.length ? (
         <div className="sg-selection">
           <span>{removing.length} selected</span>
@@ -475,7 +492,7 @@ export function Grid({ app, type, layout, sort, rows, readOnly, embedded, open, 
       ) : (
         <DataGrid {...common} rows={sorted} style={style} />
       )}
-      {!readOnly ? (
+      {!readOnly && addRow ? (
         <button className="row-add" onClick={() => addRow()}>
           <Icon name="plus" size={13} /> New {type.name.toLowerCase()}
         </button>
