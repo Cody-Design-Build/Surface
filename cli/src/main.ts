@@ -8,7 +8,7 @@ import { apps } from "../../surfaces.mts";
 import { checkLayout, findCheckout, saveCheckout, type Checkout, type Layout } from "./config.ts";
 import { clearSession, dbError, requireUser, sb, UserError } from "./client.ts";
 import {
-  deleteView, fetchInvites, fetchMembers, fetchRecord, fetchRecords, fetchTypes, fetchViews, fieldByKey, KINDS, myInvites, pushRecord, saveView, typeByKey,
+  deleteView, fetchInvites, fetchMembers, fetchRecord, fetchRecords, fetchTypes, fetchViews, fieldByKey, KINDS, materializeInverseLinks, myInvites, pushRecord, requireInverseSchema, saveView, typeByKey,
   type FieldDef, type Kind, type RecordRow, type TypeRow,
 } from "./db.ts";
 import { localEdits, localViewEdits, makeResolver, pull, push, snapshot, status, prepare, type FileResult } from "./checkout.ts";
@@ -17,11 +17,12 @@ import { asTreeDef, defaultTree, drawTree, isTreeDef, resolveTree, validateDataV
 import { cliValue, normalize } from "./normalize.ts";
 import { basename, parse, render } from "./markdown.ts";
 import { writeAgentFiles } from "./skills.ts";
+import { migrateCloud } from "./cloud-migrations.ts";
 
 // ---------------------------------------------------------------------------
 // Arguments
 // ---------------------------------------------------------------------------
-const BOOL = new Set(["force", "dry-run", "new", "json", "multiple", "single", "required", "optional", "deleted", "yes", "help", "all", "paths", "open", "personal", "no-watch", "service", "cloud", "local", "rebuild", "skip-app", "tab", "print", "mail", "follow", "check", "background", "no-service"]);
+const BOOL = new Set(["force", "dry-run", "new", "json", "multiple", "single", "required", "optional", "deleted", "yes", "help", "all", "paths", "open", "personal", "no-watch", "service", "cloud", "local", "rebuild", "skip-app", "tab", "print", "mail", "follow", "check", "no-service"]);
 
 interface Args {
   _: string[];
@@ -147,10 +148,10 @@ async function findRecord(ws: string, ref: string, co: Checkout | null, opts: { 
   throw new UserError(`No record "${ref}".`);
 }
 
-/** Field values keyed by key, as the database stores them (ids for links). */
-function fieldsByKey(r: RecordRow, t: TypeRow): Record<string, unknown> {
+/** Values keyed by key; write paths omit inverse projections unless explicitly assigned. */
+function fieldsByKey(r: RecordRow, t: TypeRow, computed = false): Record<string, unknown> {
   const out: Record<string, unknown> = {};
-  for (const f of t.fields) if (r.fields[f.id] !== undefined) out[f.key] = r.fields[f.id];
+  for (const f of t.fields) if ((computed || !f.inverse) && r.fields[f.id] !== undefined) out[f.key] = r.fields[f.id];
   return out;
 }
 
@@ -171,14 +172,14 @@ const commands: Record<string, Cmd> = {
     table([["ID", "APP", "PATH"], ...apps.map(app => [app.id, app.name, app.path])]);
   },
   async update(a) {
-    const { update, configureUpdates } = await import("./update.ts");
-    if (a._[0] === "auto") return configureUpdates(a._[1] ?? "check");
-    await update({ check: !!a.flags.check, background: !!a.flags.background });
+    if (a._.length || Object.keys(a.flags).some(key => key !== "check")) throw new UserError("Usage: surface update [--check]. Updates are CLI-only; scheduling is no longer supported.");
+    const { update } = await import("./update.ts");
+    await update({ check: !!a.flags.check });
   },
   async restart(a) {
     const { restartLocal } = await import("./restart.ts");
     const result = await restartLocal();
-    console.log("Restarted Surface. Account and update controls are available.");
+    console.log("Restarted Surface. Account and release status are available.");
     if (a.flags.open) (await import("./open.ts")).openWindow(result.url);
     console.log(`Open: ${result.url}`);
   },
@@ -438,6 +439,7 @@ const commands: Record<string, Cmd> = {
     for (const r of snap.records) {
       const t = snap.typeMap.get(r.type_id)!;
       for (const f of t.fields) {
+        if (f.inverse) continue;
         const v = r.fields[f.id];
         if (v === undefined || v === null) {
           if (f.required) stale.push(`${r.title}: ${f.key} is required but empty`);
@@ -497,6 +499,7 @@ const commands: Record<string, Cmd> = {
       if (t.id !== p.type.id) console.log(`  type: ${red(t.key)} → ${green(p.type.key)}`);
       const was = fieldsByKey(cur, t);
       for (const f of p.type.fields) {
+        if (f.inverse) continue;
         const a1 = JSON.stringify(was[f.key] ?? null), b1 = JSON.stringify(p.fields[f.key] ?? null);
         if (a1 !== b1) console.log(`  ${f.key}: ${red(a1)} → ${green(b1)}`);
       }
@@ -591,7 +594,7 @@ const commands: Record<string, Cmd> = {
     const t = typeByKey(types, typeKey ?? "");
     let fields: FieldDef[] = t.fields.map((f) => ({ ...f }));
     if (sub === "add") {
-      if (!key) throw new UserError("Usage: surface field add <type> <key> --kind <kind> [--options a,b] [--target type] [--multiple] [--required] [--name Label]");
+      if (!key) throw new UserError("Usage: surface field add <type> <key> --kind <kind> [--options a,b] [--target type] [--multiple] [--inverse forward-field] [--required] [--name Label]");
       const kind = (flag(a, "kind") ?? "text") as Kind;
       if (!KINDS.includes(kind)) throw new UserError(`--kind must be one of: ${KINDS.join(", ")}`);
       const f: Record<string, unknown> = { key, kind };
@@ -607,6 +610,7 @@ const commands: Record<string, Cmd> = {
         f.multiple = !!a.flags.multiple;
       }
       if (a.flags.required) f.required = true;
+      if (flag(a, "inverse") !== undefined) setInverseField(f as unknown as FieldDef, t, types, flag(a, "inverse")!);
       fields.push(f as unknown as FieldDef);
     } else if (sub === "rm" || sub === "remove") {
       const f = fieldByKey(t, key ?? "");
@@ -629,11 +633,14 @@ const commands: Record<string, Cmd> = {
       if (a.flags.multiple) f.multiple = true;
       if (a.flags.single) f.multiple = false;
       if (flag(a, "target")) f.target = typeByKey(types, flag(a, "target")!).id;
+      if (flag(a, "inverse") !== undefined) setInverseField(f, t, types, flag(a, "inverse")!);
+      if (f.kind !== "link") { delete f.target; delete f.multiple; delete f.inverse; }
     } else throw new UserError("Usage: surface field [add|edit|rm] <type> <key> …");
+    if (fields.some((f) => f.inverse)) await requireInverseSchema();
     const { error } = await sb().from("types").update({ fields }).eq("id", t.id);
     if (error) throw dbError(error);
     console.log(green(`${sub === "add" ? "Added" : sub === "edit" ? "Updated" : "Removed"} field "${key}" on "${t.key}".`));
-    if (sub === "rm" || sub === "remove") console.log(dim("Its values were removed from every record (they stay in history)."));
+    if ((sub === "rm" || sub === "remove") && !fieldByKey(t, key ?? "").inverse) console.log(dim("Its values were removed from every record (they stay in history)."));
     if (sub === "edit" && (a.flags["remove-option"] || flag(a, "kind"))) console.log(dim("Existing values that no longer fit are left as they are; `surface check` lists them."));
     await refreshCheckout(co);
   },
@@ -704,12 +711,16 @@ const commands: Record<string, Cmd> = {
     await requireUser();
     const ws = await workspaceId(a);
     const co = findCheckout();
-    const r = await findRecord(ws, a._.join(" "), co, { includeDeleted: true });
+    const stored = await findRecord(ws, a._.join(" "), co, { includeDeleted: true });
     const types = await fetchTypes(ws);
+    const all = await fetchRecords(ws);
+    const r = materializeInverseLinks([stored], types, all)[0];
     const t = types.find((x) => x.id === r.type_id)!;
-    if (a.flags.json) return console.log(JSON.stringify({ ...r, type: t.key, fields: fieldsByKey(r, t) }, null, 2));
-    const titles = new Map((await fetchRecords(ws)).map((x) => [x.id, x.title]));
+    if (a.flags.json) return console.log(JSON.stringify({ ...r, type: t.key, fields: fieldsByKey(r, t, true) }, null, 2));
+    const titles = new Map(all.map((x) => [x.id, x.title]));
     if (r.deleted_at) console.log(red(`(deleted ${r.deleted_at})`));
+    const inverse = t.fields.filter((f) => f.inverse);
+    if (inverse.length) table([["RELATIONSHIP", "LINKED RECORDS"], ...inverse.map((f) => [f.name, ((r.fields[f.id] ?? []) as string[]).map((id) => titles.get(id) ?? id).join(", ")])]);
     process.stdout.write(render(r, t, (id) => titles.get(id) ?? id));
   },
 
@@ -718,7 +729,7 @@ const commands: Record<string, Cmd> = {
     const ws = await workspaceId(a);
     const types = await fetchTypes(ws);
     const t = a._[0] ? typeByKey(types, a._[0]) : null;
-    const all = await fetchRecords(ws, { includeDeleted: !!a.flags.deleted });
+    const all = materializeInverseLinks(await fetchRecords(ws, { includeDeleted: !!a.flags.deleted }), types);
     let rows = all.filter((r) => !t || r.type_id === t.id);
     if (a.flags.deleted) rows = rows.filter((r) => r.deleted_at);
     const titles = new Map(all.map((r) => [r.id, r.title]));
@@ -734,7 +745,7 @@ const commands: Record<string, Cmd> = {
     if (a.flags.json) {
       return console.log(JSON.stringify(rows.map((r) => {
         const rt = typeOf.get(r.type_id)!;
-        return { id: r.id, type: rt.key, title: r.title, rev: r.rev, fields: fieldsByKey(r, rt), updated_at: r.updated_at };
+        return { id: r.id, type: rt.key, title: r.title, rev: r.rev, fields: fieldsByKey(r, rt, true), updated_at: r.updated_at };
       }), null, 2));
     }
     const cols = t ? t.fields.slice(0, 5) : [];
@@ -791,7 +802,7 @@ const commands: Record<string, Cmd> = {
     if (flag(a, "where") || flag(a, "type")) {
       const types = await fetchTypes(ws);
       const t = flag(a, "type") ? typeByKey(types, flag(a, "type")!) : null;
-      const all = await fetchRecords(ws);
+      const all = materializeInverseLinks(await fetchRecords(ws), types);
       const ctx: QueryCtx = { typeOf: new Map(types.map((x) => [x.id, x])), titles: new Map(all.map((r) => [r.id, r.title])) };
       const conds = parseWhere(flag(a, "where"));
       targets = all.filter((r) => (!t || r.type_id === t.id) && matches(r, conds, ctx));
@@ -892,7 +903,7 @@ const commands: Record<string, Cmd> = {
     }
     if (sub) throw new UserError("Usage: surface tree [init [--force] | check] [--personal] [--view key] [--json] [--paths]");
     if (!existing) throw new UserError(personal ? "No personal sidebar yet. Create one with `surface tree init --personal`." : `No "${key}" tree yet. Create a starting one with \`surface tree init\`.`);
-    const records = await fetchRecords(ws);
+    const records = materializeInverseLinks(await fetchRecords(ws), types);
     const nodes = resolveTree(asTreeDef(existing.definition), records, types, dataViews);
     if (a.flags.json) return console.log(JSON.stringify(nodes, null, 2));
     const pathOf = a.flags.paths && co ? (id: string) => co.state.records[id]?.path : undefined;
@@ -957,7 +968,7 @@ const commands: Record<string, Cmd> = {
       if (!v) throw new UserError(`No view "${key}". \`surface views\` lists them.`);
       if (isTreeDef(v.key, v.definition)) throw new UserError(`"${key}" is a sidebar: use \`surface tree${v.owner ? " --personal" : ""}\`.`);
       const d = v.definition as { from: string; where?: string; sort?: string };
-      const records = await fetchRecords(ws);
+      const records = materializeInverseLinks(await fetchRecords(ws), types);
       const t = typeByKey(types, d.from);
       const typeOf = new Map(types.map((x) => [x.id, x]));
       const titles = new Map(records.map((r) => [r.id, r.title]));
@@ -1311,6 +1322,20 @@ const commands: Record<string, Cmd> = {
       console.log(dim("  For a team: in Supabase, set up custom SMTP (Authentication → Emails); the built-in mailer sends only a few emails an hour."));
       return;
     }
+    if (sub === "migrate") {
+      const since = flag(a, "since");
+      if (a._.length !== 1 || Object.keys(a.flags).some((key) => key !== "since" && key !== "check") ||
+          !since || !/^[1-9]\d*$/.test(since) || (a.flags.check !== undefined && a.flags.check !== true))
+        throw new UserError("Usage: surface cloud migrate --since N [--check]\n  Administrator-only: set SUPABASE_ACCESS_TOKEN. --since explicitly declares every earlier migration already installed; use 1 only for a new project. --check is read-only. SQL export remains surface cloud schema.");
+      const result = await migrateCloud({ since: Number(since), check: a.flags.check === true });
+      console.log(`Cloud project: ${result.projectRef}`);
+      if (a.flags.check) {
+        console.log(result.planned.length ? `Planned migrations (read-only):\n${result.planned.map((name) => `  ${name}`).join("\n")}` : "Already current. No migrations planned (read-only).");
+      } else {
+        console.log(result.applied.length ? green(`Applied migrations:\n${result.applied.map((name) => `  ${name}`).join("\n")}`) : "Already current. No migrations applied.");
+      }
+      return;
+    }
     if (sub === "schema") {
       // --since 6: only migrations 0006 and later, to upgrade a project that already has the rest
       const since = flag(a, "since");
@@ -1343,7 +1368,7 @@ const commands: Record<string, Cmd> = {
       console.log(`Surface tables: ${error ? red(`not ready (${error.message}): run \`surface cloud schema\``) : green("ready")}`);
       return;
     }
-    throw new UserError("Usage: surface cloud [status | setup | connect <url> <key> | schema [--out file] | disconnect]");
+    throw new UserError("Usage: surface cloud [status | setup | connect <url> <key> | schema [--out file] | migrate --since N [--check] | disconnect]");
   },
 
   async join(a) {
@@ -1520,6 +1545,10 @@ function fieldDetails(f: FieldDef, types: TypeRow[]) {
   const bits: string[] = [];
   if (f.options) bits.push(f.options.join(", "));
   if (f.kind === "link") bits.push(`→ ${types.find((t) => t.id === f.target)?.key ?? "any"}${f.multiple ? " (several)" : ""}`);
+  if (f.inverse) {
+    const source = types.find((t) => t.id === f.target)?.fields.find((x) => x.id === f.inverse);
+    bits.push(`inverse of ${source?.key ?? f.inverse} (stored once; editable from either end)`);
+  }
   if (f.required) bits.push("required");
   if (f.name.toLowerCase() !== f.key.replace(/_/g, " ")) bits.push(`label "${f.name}"`);
   return bits.join("; ");
@@ -1529,10 +1558,19 @@ function fieldDetails(f: FieldDef, types: TypeRow[]) {
 function carryFields(r: RecordRow, from: TypeRow, to: TypeRow): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const f of from.fields) {
-    const g = to.fields.find((x) => x.key === f.key && x.kind === f.kind);
+    if (f.inverse) continue;
+    const g = to.fields.find((x) => !x.inverse && x.key === f.key && x.kind === f.kind);
     if (g && r.fields[f.id] !== undefined) out[g.key] = r.fields[f.id];
   }
   return out;
+}
+
+function setInverseField(f: FieldDef, owner: TypeRow, types: TypeRow[], key: string) {
+  if (f.kind !== "link" || !f.target || !f.multiple || f.required) throw new UserError("--inverse requires a link with --target and --multiple, without --required.");
+  const target = typeByKey(types, f.target);
+  const forward = target.fields.find((x) => x.key === key || x.id === key);
+  if (!forward || forward.kind !== "link" || forward.inverse || forward.target !== owner.id) throw new UserError(`--inverse must name a stored link on "${target.key}" targeting "${owner.key}".`);
+  f.inverse = forward.id;
 }
 
 async function applyAssignments(ws: string, co: Checkout | null, t: TypeRow, base: Record<string, unknown>, assigns: string[]) {
@@ -1622,10 +1660,11 @@ Types
   type add <key> [--name N] [--folder F]
   type show <key> | type edit <key> [--name --key --folder --icon --display document|fields]
   type rm <key> [--move-to <type> | --force]
-  field add <type> <key> --kind <kind> [--options a,b] [--target <type>] [--multiple] [--required] [--name Label]
-  field edit <type> <key> [--key --name --kind --options --add-option --remove-option --required --optional --multiple --single --target]
+  field add <type> <key> --kind <kind> [--options a,b] [--target <type>] [--multiple] [--inverse <forward-field-key|id>] [--required] [--name Label]
+  field edit <type> <key> [--key --name --kind --options --add-option --remove-option --required --optional --multiple --single --target --inverse]
   field rm <type> <key>
   kinds: ${KINDS.join(", ")}
+      inverse links require --target and --multiple; stored once, visible and editable from either end
 
 Records
   new <type> "Title" [field=value …] [--body text] [--folder A/B] [--parent <record>]
@@ -1665,6 +1704,9 @@ Cloud (optional: YOUR OWN Supabase project; Surface has no hosted service. Witho
   cloud setup                         guided: connect a project, create the tables, sign in, sync this workspace
   cloud connect <url> <publishable key> [--name label]   use your Supabase project (Dashboard → Project Settings → API)
   cloud schema [--out file]           the SQL that sets up Surface's tables in a new project (paste in the SQL editor)
+  cloud migrate --since N [--check]   administrator: apply bundled migrations from N onward (--check only plans)
+                                      requires SUPABASE_ACCESS_TOKEN; earlier migrations must already be installed
+                                      use --since 1 only for a new project; Management API is Beta
   cloud disconnect                    forget it; local workspaces keep working
   signup | login | logout             your account in that cloud
   join <invite code>                  a teammate's one step: connect, sign in or sign up, copy the workspace here
@@ -1696,9 +1738,8 @@ Sharing (needs the workspace in your cloud: surface sync enable)
   workspace invites | join [id]       invites for you; accept one
 
 Updates and background server
-  update                              update code, rebuild, back up data, restart the existing server
-  update --check                      check for an update without installing it
-  update auto check|install|off        opt in to daily checks or updates while idle; off disables
+  update                              install the latest stable Git release; prepare before restart
+  update --check                      check stable release tags without installing
   service install|start|stop|restart|status
                                       one background server for all workspaces
 
@@ -1714,13 +1755,12 @@ async function main() {
   const args = parseArgs(rest);
   if (args.flags.help) return void console.log(HELP);
   if (process.stderr.isTTY && !args.flags.json && !["update","serve","data","log"].includes(cmd)) {
-    // Only cached status is read here; GitHub is checked by a detached worker.
+    // A cached notice never launches an installer or a detached discovery worker.
     try {
-      const { maybeCheckForUpdates, updateNotification } = await import("./update.ts");
+      const { updateNotification } = await import("./update.ts");
       const { installedVersion } = await import("./system.ts");
       const notice = updateNotification(installedVersion().commit);
       if (notice) console.error(yellow(notice));
-      await maybeCheckForUpdates();
     } catch { /* Update discovery must not break the requested command. */ }
   }
   const { hookProcess, setRole, logger } = await import("./log.ts");

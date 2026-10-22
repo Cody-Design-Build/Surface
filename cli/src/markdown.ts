@@ -115,6 +115,7 @@ export function render(r: RecordRow, t: TypeRow, linkName: (id: string) => strin
   if (r.aliases?.length) fm.aliases = r.aliases;
   if (r.parent_id) fm.parent = `[[${linkName(r.parent_id)}]]`;
   for (const f of t.fields) {
+    if (f.inverse) continue; // inverse values exist only in read projections, never in files
     let v = r.fields[f.id];
     if (v === undefined) v = null;
     if (f.kind === "link" && v !== null) {

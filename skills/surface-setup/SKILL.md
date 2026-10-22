@@ -57,6 +57,8 @@ Done when the output ends "Surface is set up." and `surface doctor` prints "All 
 
 **Without MCP:** run `terminal(command="cd ~/Surface && surface cloud setup")` with them. It prompts for the project URL and publishable key (they create the project at supabase.com/dashboard and copy both from *Project Settings → API*), writes `surface-schema.sql` and prints the SQL-editor link for them to paste and Run, then signs up and syncs.
 
+**Administrator token already available:** once the intended hosted project is connected, `surface cloud migrate --since N --check` plans and `surface cloud migrate --since N` applies bundled SQL directly. It requires the operator's `SUPABASE_ACCESS_TOKEN` environment variable; ordinary Surface login, publishable keys and service-role keys cannot authorize it. Do not request, echo or save the token in chat/config/files. The operator can enter it through a hidden shell prompt as documented in `docs/CLOUD.md`. `N` declares all earlier migrations already installed: 1 only for a new project, 7 for an existing project known to have 0001–0006. Check the baseline rather than guessing. Migration files and ledger entries are immutable; no browser/startup/client-update automatic deployment. Without an authorized token, retain the SQL-editor/MCP path.
+
 Done when `surface cloud` shows the project, "Signed in: <email>", "Surface tables: ready", and `surface share` says "In your cloud".
 
 Then recommend, for teams: custom SMTP in *Authentication → Emails* (the built-in mailer sends a few emails an hour), and know that email confirmation is on by default. MCP can't change these; they do it in the dashboard.

@@ -1,6 +1,6 @@
 {
   "name": "surface-cli",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "Surface CLI: a types engine on Supabase, with Markdown checkouts",
@@ -13,11 +13,14 @@
   "scripts": {
     "test": "node --no-warnings test/e2e.ts",
     "test:cloud": "SURFACE_STORE=cloud node --no-warnings test/e2e.ts",
+    "test:cloud-migrations": "node --no-warnings test/cloud-migrations.ts",
+    "test:schema": "node --no-warnings test/schema-operations.ts",
     "test:watch": "node --no-warnings test/watch.ts",
     "test:sync": "node --no-warnings test/sync.ts",
     "test:sync:cloud": "SYNC_HUB=cloud node --no-warnings test/sync.ts",
     "test:team": "node --no-warnings test/team.ts",
     "test:links": "node --no-warnings test/links.ts",
+    "test:inverse": "node --no-warnings test/inverse.ts",
     "test:workflow": "node --no-warnings test/workflow.ts",
     "test:updates": "node --no-warnings test/updates.ts",
     "test:apps": "node --no-warnings test/apps.ts",

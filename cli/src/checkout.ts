@@ -363,6 +363,10 @@ export function prepare(co: Checkout, snap: Snapshot, rel: string, resolver: Res
       errors.push(`"${k}" isn't a field of ${type.key} (add it: surface field add ${type.key} ${k.toLowerCase().replace(/[\s-]+/g, "_")} --kind text)`);
       continue;
     }
+    if (def.inverse) {
+      errors.push(`${def.key}: computed inverse links aren't stored in Markdown; edit the forward field, CLI or app instead`);
+      continue;
+    }
     if (def.key !== k) notices.push(`field "${k}" → "${def.key}"`);
     const n = normalize(def, v, resolver);
     if (n.error) errors.push(`${def.key}: ${n.error}`);
@@ -372,7 +376,7 @@ export function prepare(co: Checkout, snap: Snapshot, rel: string, resolver: Res
     }
   }
   for (const def of type.fields) {
-    if (def.required && (fields[def.key] === null || fields[def.key] === undefined)) errors.push(`${def.key}: is required`);
+    if (!def.inverse && def.required && (fields[def.key] === null || fields[def.key] === undefined)) errors.push(`${def.key}: is required`);
   }
   let parent = "";
   if (fm.parent != null && String(fm.parent).trim() !== "") {
@@ -543,7 +547,7 @@ export async function relink(co: Checkout, opts: { dryRun?: boolean } = {}): Pro
     rep.fixed.push({ id: r.id, title: r.title, links });
     if (opts.dryRun) continue;
     const t = snap.typeMap.get(r.type_id)!;
-    const fields = Object.fromEntries(t.fields.map((f) => [f.key, r.fields[f.id] ?? null]));
+    const fields = Object.fromEntries(t.fields.filter((f) => !f.inverse).map((f) => [f.key, r.fields[f.id] ?? null]));
     const res = await pushRecord({ workspace: co.config.workspace, id: r.id, baseRev: r.rev, type: t.key, title: r.title, fields, body, folder: null });
     if (!res.ok) rep.fixed.pop();
   }
@@ -560,6 +564,7 @@ function sameContent(r: RecordRow, p: Prepared): boolean {
   if (p.folder !== null && (r.folder ?? "") !== p.folder) return false;
   if ((r.parent_id ?? "") !== p.parent) return false;
   for (const def of p.type.fields) {
+    if (def.inverse) continue;
     const a = r.fields[def.id] ?? null;
     const b = p.fields[def.key] ?? null;
     if (JSON.stringify(a) !== JSON.stringify(b)) return false;

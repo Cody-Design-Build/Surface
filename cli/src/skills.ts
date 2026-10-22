@@ -12,6 +12,7 @@ function describeField(f: TypeRow["fields"][number], types: TypeRow[]): string {
   if (f.kind === "link") {
     const t = types.find((t) => t.id === f.target);
     kind += ` → ${t ? t.key : "any type"}${f.multiple ? ", several" : ""}`;
+    if (f.inverse) kind += `, computed inverse of ${t?.fields.find(x => x.id === f.inverse)?.key ?? f.inverse}; edit with surface set, not Markdown`;
   }
   return `\`${f.key}\`: ${kind}${f.required ? ", required" : ""}`;
 }
@@ -119,6 +120,7 @@ export function writeAgentFiles(co: Checkout, types: TypeRow[]) {
         kind: f.kind,
         ...(f.options ? { options: f.options } : {}),
         ...(f.kind === "link" ? { target: types.find((x) => x.id === f.target)?.key ?? null, multiple: !!f.multiple } : {}),
+        ...(f.inverse ? { inverse: f.inverse } : {}),
         ...(f.required ? { required: true } : {}),
         id: f.id,
       })),

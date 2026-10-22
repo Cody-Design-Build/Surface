@@ -10,7 +10,7 @@ git clone https://github.com/Cody-Design-Build/Surface.git ~/Developer/Surface
 ~/Developer/Surface/install.sh
 ```
 
-`install.sh` gets Node 24 if yours is older than 23.6 (via fnm, nvm, mise, Homebrew or pacman if you have one; otherwise fnm into your home folder, no sudo), installs the CLI's packages, then runs `surface setup`, which does the rest:
+`install.sh` gets Node 24 if yours is older than 23.6 (via fnm, nvm, mise, Homebrew or pacman if you have one; otherwise fnm into your home folder, no sudo), resolves the newest stable Git tag from `origin`, and installs a separate release without pulling or resetting the bootstrap checkout. It then runs that release's `surface setup`, which does the rest:
 
 1. installs and builds the web UI;
 2. puts `surface` on your PATH (a link in `~/.local/bin`);
@@ -31,20 +31,49 @@ Flags: `--dir <folder>`, `--name <workspace>`, `--service`, `--port <n>`, `--reb
 ## Updates and one background server
 
 ```sh
-surface update --check                 # check the tracked Git branch
-surface update                         # update, build, verify and restart
-surface update auto check              # daily checks, explicitly enabled
-surface update auto install            # daily installation only while idle and synced
-surface update auto off                # disable scheduling
+surface update --check                 # read stable release tags from origin; cache status only
+surface update                         # prepare, activate, verify; restart only a running server
 surface service install                # one server at login, all workspaces
 surface service status                 # also: start, stop, restart
 surface data                           # opens /w/<id>/data/ on that server
 surface data --print                   # print its address instead
 ```
 
-Installation refuses local code changes or divergent branches. It keeps a stopped database/config backup under `~/.config/surface-cli/update-backups/`. A failed build or check leaves a clear error; inspect it before restarting. Updates do not apply cloud migrations. Linux and macOS services are supported; use WSL on Windows. Automatic installation is off until explicitly enabled.
+**CLI-only, published releases.** `surface update` and `surface update --check` use the highest numeric stable SemVer tag (`vMAJOR.MINOR.PATCH`, or `MAJOR.MINOR.PATCH`) advertised by `origin`. Annotated tags are peeled to their commit. Prereleases, build aliases and branch tips are never selected. A detached stable checkout works; no tracked branch is required. Tags are trusted code from your configured origin, not an additional signature-verification scheme. Dirty or divergent developer checkouts are refused for installation without reset, merge or deletion; checks remain available with local edits.
 
-The local server checks for updates on startup and every four hours, sharing a cache with all apps and the CLI. Interactive CLI commands show installed and available revisions when an update is known and start a background check when the cache expires. JSON and noninteractive commands stay quiet. Checks run separately, do not install or restart anything, and tolerate local code edits; offline checks retry after 15 minutes. Set `SURFACE_UPDATE_CHECK=0` to disable this discovery (manual checks still work; reinstall the service to persist the setting). Daily scheduling above is independent of discovery.
+**Prepare before downtime.** The new release is cloned independently into `~/.config/surface-cli/runtime/releases/`, verified against the advertised commit, and prepared with `npm ci` in both packages and the production app build while the old server stays up. Download/dependency/build failures leave the existing active path and server unchanged. Activation atomically replaces `runtime/current`; the linked CLI and managed service resolve that stable path, so the next update works from an activated detached release. The original checkout and previous releases remain intact. `SURFACE_CONFIG_DIR` relocates the runtime/cache/backups together.
+
+**Activation and recovery.** Only after preparation succeeds does installation disable/remove old Surface update timers or launch agents, stop an existing server, and back up the stopped local database plus JSON configuration under `update-backups/<timestamp>/` (private directory). It starts a server only if one was running, on the same port, and verifies the commit reported by the actual process. A failed activation/startup stops the attempted new process, restores the previous code path and managed-service definition, quarantines the attempted database as `failed-db` in the backup, restores the stopped local database snapshot, and restarts the previous server if appropriate. A stopped installation stays stopped.
+
+Local migrations can run when a release first opens the database. Code rollback alone does **not** make migrated data compatible: automatic failure recovery therefore restores the stopped database snapshot, not just code. Any changes accepted during failed startup after that snapshot may be absent from restored local data; `failed-db` is retained for inspection. Cloud schema migrations and effects already accepted by a cloud are separate and are never applied or rolled back by the installer. Do not restore an older local snapshot over newer work or manually downgrade a healthy release without checking schema compatibility.
+
+If automatic recovery cannot stop a process, obtain the database lock, or restore/start the previous release, the CLI reports the previous code path and backup and leaves evidence intact. Keep all Surface servers stopped. Inspect `update-backups/<timestamp>/release.json`, `db/`, `failed-db/` and the backed-up config; preserve the current database before recovering. Restore a compatible stopped database and the previous `runtime/current` symlink together, restore the prior service definition if needed, then run `surface serve` or `surface service start`. Backups and previous release directories are retained intentionally; remove them manually only after confirming a healthy release and the desired retention policy.
+
+**No automatic installers.** Browser release status is read-only: there are no install/check buttons, browser update endpoints, detached update jobs, automatic install flags or update schedules. Previously installed `surface-update.timer`/`surface-update.service` (Linux) or `dev.surface.update` launch agent (macOS) are disabled/unloaded and removed by explicit installation/setup cutover. `--check` only reads releases and updates the currency cache; it does not disable schedules or change the installation. Linux and macOS services are supported; use WSL on Windows.
+
+The local server performs bounded, passive in-process release discovery on startup and when the four-hour cache expires. Interactive CLI commands may show a cached notice but never launch a discovery worker or installer. JSON and noninteractive commands stay quiet. Failed passive checks retry after 15 minutes; a failed cloud or release check does not establish that the computer has no internet connection. `SURFACE_UPDATE_CHECK=0` disables passive discovery (manual `surface update --check` still works; reinstall the service to persist the setting).
+
+### Publishing and migrating releases
+
+Release maintainers update package versions and lockfiles consistently, commit the intended release (including migration/recovery notes), run the release checks, and publish an immutable stable tag to the installation's `origin`:
+
+```sh
+git tag -a v1.2.3 <release-commit> -m "Surface 1.2.3"
+git push origin refs/tags/v1.2.3
+```
+
+Pushing a branch or a prerelease tag alone does not offer an update. Do not move an already published tag or reuse a version for different code; the updater rejects conflicting same-version aliases and a tag that changes during preparation. Publish a new stable version to correct a release. Clients require their installed commit to be an ancestor of the target release; preserve release ancestry or provide a separately reviewed migration instead of force-resetting installations.
+
+For older branch-based/two-server installations, first preserve local code changes and stop both old servers (including any data server on 4318). Use a separate clean clone at the published stable tag that introduces this updater; do not `git pull` or reset a developer checkout. Run its `install.sh --dir "<existing workspace folder>"` with the same config/data environment, then use the newly linked `surface` command. Setup removes old update schedules and retains workspace folders, account configuration and sync mappings. Future updates use `surface update` only.
+
+### Isolated release smoke fixture
+
+```sh
+cd cli
+SURFACE_KEEP_UPDATE_FIXTURE=1 npm run test:updates
+```
+
+This executable integration fixture snapshots the current source into a temporary local Git publisher, publishes real annotated stable/prerelease tags and unreleased commits, installs the actual CLI/app with real `npm ci` and production builds, and runs a real server. It exercises dirty/divergent code preservation, read-only checks, preparation failure without stopping the server, atomic activation, actual-revision health checks, rollback after a release's startup failure, repeat updates from the active detached release, and stopped-server preservation. Git is local-only; npm may download dependencies into an isolated cache. Its temporary HOME/config/data/ports prevent touching an installed CLI, systemd service or launch agent. The optional environment variable keeps the fixture and logs for inspection; without it the fixture is removed. This does not exercise a real systemd/launchd session; verify managed-service restart behavior separately in an isolated OS account.
 
 The writing and data interfaces use the same port (4317 by default). A workspace is part of its URL, so tabs stay independent. Close any old data server on 4318 during the first upgrade.
 
@@ -74,6 +103,17 @@ surface serve --open
 
 It serves the app on http://127.0.0.1:4317. Open the link it prints once (it carries a sign-in token), then install the page as an app: Omarchy's Install Web App, Chrome's Install, or Safari's Add to Dock. `--port` changes the port; `--open` opens the browser. The server listens on 127.0.0.1 only and keeps the checkout current while it runs. Edits in other editors push on save while the server is running.
 
+## Cloud administrator migrations
+
+Normal Surface credentials remain limited to data access under row-level security. To deploy bundled schema changes, an administrator supplies `SUPABASE_ACCESS_TOKEN` separately and runs:
+
+```sh
+surface cloud migrate --since 7 --check   # read-only plan; earlier migrations already installed
+surface cloud migrate --since 7           # explicit, atomic administrator deployment
+```
+
+The required `--since` declares the existing baseline; use 1 only for a fresh project. The private cloud ledger records file names and SHA256 checksums. Matching migrations are skipped, altered/ahead/gapped histories are refused, and SQL failures roll back source and ledger changes together. A lost response is not automatically retried: inspect `--check` and explicitly rerun. No token is persisted, printed or sent to the browser; do not put it in arguments or project files. See [safe credential entry and deployment details](../docs/CLOUD.md#administrator-migrations-from-the-cli). The Supabase Management API SQL endpoint is currently Beta. `cloud schema` remains a manual SQL-export alternative; app updates/startup never deploy shared schema automatically.
+
 ## Build your types
 
 ```sh
@@ -88,16 +128,35 @@ surface types
 surface type show material
 ```
 
-Field kinds: `text`, `number`, `date`, `checkbox`, `select`, `multi_select`, `url`, `email`, `phone`, `link` (`--target <type>`, `--multiple`).
+Field kinds: `text`, `number`, `date`, `checkbox`, `select`, `multi_select`, `url`, `email`, `phone`, `link` (`--target <type>`, `--multiple`, optional `--inverse <forward-field-key-or-id>`).
 
 Change them any time:
 
-- `surface field edit <type> <key>`: `--key`, `--name`, `--add-option`, `--remove-option`, `--required`, …
+- `surface field edit <type> <key>`: `--key`, `--name`, `--add-option`, `--remove-option`, `--required`, `--target`, `--multiple`, `--inverse <forward-field-key-or-id>`, …
 - `surface field rm <type> <key>`
 - `surface type edit <key>`: `--key`, `--name`, `--folder`
 - `surface type rm <key>`: `--move-to <type>` or `--force`
 
 Fields have permanent internal IDs, so renaming a key never loses data.
+
+### Two-way relationships, stored once
+
+```sh
+surface field add contact organizations --kind link --target organization --multiple
+surface field add organization contacts --kind link --target contact --multiple --inverse organizations
+surface set "Anna" organizations="Cody Design Build"
+surface show "Cody Design Build" --json    # contacts includes Anna immediately
+surface set "Cody Design Build" contacts="Anna,Ben"
+```
+
+`--inverse` resolves a field key or permanent field ID on the target type. It must reference an ordinary stored link back to the owning type, in the same workspace. Inverse fields require `--multiple` and cannot be required. Schema JSON keeps `inverse` as that forward field's **ID**, so field and type renames preserve the relationship.
+
+The relationship lives only in `contact.organizations`; the reverse `organization.contacts` is computed from all live contacts on every read, including records outside a partial checkout. `show`, `query`, view filters and the API expose those reverse values, and the existing link controls edit either end. A reverse replacement atomically updates the corresponding stored source links. Omitted reverse keys leave the relationship alone; `contacts=` (API `null` or `[]`) explicitly clears it. API updates that supply an inverse key must include the record's `baseRev`; source membership changes invalidate that revision, preventing stale replacements.
+
+Markdown contains only stored fields: inverse fields are omitted, not duplicated or written as empty values. Edit the forward link in files, or either end through CLI/API/UI. Raw record snapshots, sync and history also contain only stored source fields; sync translates inverse field IDs as schema metadata. Removing the inverse field removes the presentation, not the stored forward links.
+
+Local databases apply migration **0007** when opened by the updated client. Before adding or syncing inverse-bearing schemas, an authorized administrator must run `surface cloud migrate --since 7` with `SUPABASE_ACCESS_TOKEN`, or apply `surface cloud schema --since 7` through the SQL editor. Client installation does not migrate the cloud. The schema-version capability check fails closed on an older or inaccessible hub, preserving local edits rather than silently discarding inverse metadata or duplicating reverse values.
+
 
 ## Work with records
 
@@ -219,6 +278,7 @@ Every pull writes `AGENTS.md`, `.agents/skills/surface/SKILL.md` (also copied to
 ```sh
 npm test            # the CLI against the local store (npm run test:cloud for the hosted one)
 npm run test:watch  # push on save
+npm run test:inverse  # pure inverse-link read projections and stored-only Markdown
 npm run test:sync   # three computers' databases syncing through a hub
 npm run test:sync:cloud  # the same, with the cloud as hub (uses your sign-in; temporary workspace)
 ```

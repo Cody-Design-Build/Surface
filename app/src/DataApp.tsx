@@ -52,9 +52,8 @@ export function DataApp() {
   });
   const toggleNav = () => setNavCollapsed(c => { localStorage.setItem("surface-data-nav", c ? "open" : "collapsed"); return !c; });
   const sheetDirty = useRef(false);
-  const [sheetHasEdits, setSheetHasEdits] = useState(false);
   const navigationDirty = useRef(false);
-  const setSheetDirty = (dirty: boolean) => { sheetDirty.current = dirty; setSheetHasEdits(dirty); };
+  const setSheetDirty = (dirty: boolean) => { sheetDirty.current = dirty; };
   const reload = useCallback(async () => {
     try { setApp(await api.state()); setError(""); }
     catch (e) { setError(message(e)); }
@@ -100,8 +99,8 @@ export function DataApp() {
   const go = (key: string, v?: ViewInfo) => { if (!canLeaveSheet()) return; setSheetDirty(false); setRecordId(null); navigate(key, v); };
   if (!app) return <div className="data-boot"><h1>Data View</h1><p>{error || "Opening your workspace…"}</p>{error && <button className="btn-soft" onClick={reload}>Try again</button>}</div>;
   return <AppShell appId="data" className="data-app" app={app} online={online} tick={tick} openRecord={openRecord} onSwitching={setSwitching}
-    updatesBlocked={sheetHasEdits ? "Save or discard record edits before updating." : undefined}
     onNavigationError={() => setSheetDirty(navigationDirty.current)}
+    beforeReload={() => !sheetDirty.current}
     beforeNavigate={() => { if (!canLeaveSheet()) return false; navigationDirty.current = sheetDirty.current; setSheetDirty(false); return true; }}>
     <div className="data-shell" aria-busy={switching}>
       <aside className={`data-nav ${navCollapsed ? "is-collapsed" : ""}`} aria-label="Tables">

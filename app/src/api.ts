@@ -9,6 +9,8 @@ export interface FieldDef {
   options?: string[];
   target?: string | null; // type key
   multiple?: boolean;
+  /** Target type's stored forward link field id; values are computed, editable links. */
+  inverse?: string;
   required?: boolean;
 }
 export interface TypeInfo {
@@ -152,7 +154,8 @@ export interface SystemInfo {
   account: { id: string; email: string; name: string | null } | null;
   version: { number: string; commit: string | null };
   runningVersion?: { number: string; commit: string | null };
-  update: { available: boolean; availableCommit?: string | null; availableVersion?: string | null; checkedAt: string | null; job: { id: string; operation: "check" | "install"; state: "running" | "complete" | "error"; error?: string } | null };
+  update: { available: boolean; availableCommit?: string | null; availableVersion?: string | null; checkedAt: string | null };
+  cloudConnectivity: { state: "online" | "unreachable" | "unknown" | "unconfigured"; target: string | null; checkedAt: string | null; checking: boolean };
 }
 
 /** Keep every request and event stream bound to this tab's workspace. */
@@ -180,7 +183,6 @@ async function call<T>(method: string, url: string, body?: unknown): Promise<T> 
 
 export const api = {
   system: () => call<SystemInfo>("GET", "/api/system"),
-  updateSystem: (operation: "check" | "install") => call<{job: NonNullable<SystemInfo["update"]["job"]>}>("POST", "/api/system/update", {operation}),
   state: () => call<AppState>("GET", "/api/state"),
   workspaceState: (id: string) => call<AppState>("GET", `/w/${encodeURIComponent(id)}/api/state`),
   record: (id: string) => call<{ record: RecordFull; backlinks: Backlink[] }>("GET", `/api/record/${id}`),
@@ -241,6 +243,11 @@ export interface SyncState {
   offline?: boolean;
   pending?: number;
   conflicts?: { id: number; record_id: string; copy_id: string; title: string; at: string }[];
+  state?: "local" | "cloud" | "never-synced" | "syncing" | "synced" | "pending" | "error" | "unreachable";
+  syncing?: boolean;
+  loopEnabled?: boolean;
+  errorKind?: "network" | "auth" | "sync" | null;
+  database?: { state: "ready" | "checking" | "error"; checkedAt: string | null; error: string | null; errorKind: "network" | "auth" | "database" | null };
 }
 export const syncApi = {
   status: () => call<SyncState>("GET", "/api/sync"),

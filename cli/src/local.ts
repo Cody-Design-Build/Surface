@@ -233,9 +233,11 @@ async function migrate(pg: PG) {
   const files = fs.readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith(".sql")).sort();
   for (const f of files) {
     if (done.has(f)) continue;
-    await pg.exec(fs.readFileSync(path.join(MIGRATIONS_DIR, f), "utf8"));
-    await pg.exec(GRANTS);
-    await pg.query("insert into surface_local.migrations (name) values ($1)", [f]);
+    await pg.transaction(async tx => {
+      await tx.exec(fs.readFileSync(path.join(MIGRATIONS_DIR, f), "utf8"));
+      await tx.exec(GRANTS);
+      await tx.query("insert into surface_local.migrations (name) values ($1)", [f]);
+    });
   }
 }
 

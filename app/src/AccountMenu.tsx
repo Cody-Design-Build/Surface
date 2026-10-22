@@ -1,10 +1,10 @@
-import { useEffect, useId, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type CSSProperties } from "react";
 import { type SystemInfo } from "./api.ts";
 import { ACCENTS, useAppearance, type Appearance } from "./appearance.ts";
 import { Icon } from "./Icon.tsx";
 
-export function AccountMenu({ system, unavailable, onRetry, children }: {
-  system: SystemInfo | null; unavailable: boolean; onRetry: () => void; children?: ReactNode;
+export function AccountMenu({ system, unavailable, onRetry }: {
+  system: SystemInfo | null; unavailable: boolean; onRetry: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [appearance, updateAppearance] = useAppearance();
@@ -44,12 +44,11 @@ export function AccountMenu({ system, unavailable, onRetry, children }: {
         <label className="app-setting-row"><span>Theme</span><select aria-label="Theme" value={appearance.theme} onChange={event => updateAppearance({theme:event.target.value as Appearance["theme"]})}>
           <option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option>
         </select></label>
-        <div className="app-setting-row"><span>Accent color</span><div className="app-accent-options" role="group" aria-label="Accent color">
-          {ACCENTS.map(accent => <button key={accent.id} className="app-accent-swatch" aria-label={accent.name} aria-pressed={appearance.accent === accent.id} title={accent.name} style={{"--swatch-color":accent.color} as CSSProperties} onClick={() => updateAppearance({accent:accent.id})}><span aria-hidden="true">{appearance.accent === accent.id ? "✓" : ""}</span></button>)}
+        <div className="app-setting-row"><span>Color theme</span><div className="app-accent-options" role="group" aria-label="Color theme">
+          {ACCENTS.map(accent => <button key={accent.id} className="app-accent-swatch" aria-label={accent.name} aria-pressed={appearance.accent === accent.id} title={accent.name} style={{"--swatch-color":accent.color, "--swatch-contrast":accent.contrast} as CSSProperties} onClick={() => updateAppearance({accent:accent.id})}><span aria-hidden="true">{appearance.accent === accent.id ? "✓" : ""}</span></button>)}
         </div></div>
-        <small>Saved on this computer for all apps.</small>
+        <small>Coordinated Radix colors for backgrounds, controls and text. Saved in this browser for all apps.</small>
       </fieldset>
-      {children && <div className="app-account-connection">{children}</div>}
     </section>}
   </div>;
 }

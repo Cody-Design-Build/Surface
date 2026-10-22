@@ -6,7 +6,7 @@
 #   ~/Developer/Surface/install.sh            # local: this computer's own database, no account
 #   ~/Developer/Surface/install.sh --service  # also start the web UI at login
 #
-# Any flags are passed to `surface setup` (see `surface help`). Safe to re-run; it also updates.
+# Any flags are passed to `surface setup`. Existing installations update only with `surface update`.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -20,10 +20,6 @@ node_ok() {
   [ "$maj" -gt "$NEED_MAJOR" ] || { [ "$maj" -eq "$NEED_MAJOR" ] && [ "$min" -ge "$NEED_MINOR" ]; }
 }
 
-if [ -d "$ROOT/.git" ] && [ "${SURFACE_NO_PULL:-}" != 1 ]; then
-  say "Updating the code…"
-  git -C "$ROOT" pull --ff-only --quiet || { say "Update failed; resolve the Git error before continuing."; exit 1; }
-fi
 
 if ! node_ok; then
   say "Surface needs Node $NEED_MAJOR.$NEED_MINOR or newer (found: $(node -v 2>/dev/null || echo none))."
@@ -49,7 +45,52 @@ if ! node_ok; then
 fi
 say "Node $(node -v)"
 
-say "Installing the CLI's packages…"
-(cd "$ROOT/cli" && npm install --no-fund --no-audit --loglevel=error)
+CONFIG="${SURFACE_CONFIG_DIR:-$HOME/.config/surface-cli}"
+ACTIVE="$CONFIG/runtime/current"
+if [ -f "$ACTIVE/cli/src/main.ts" ]; then
+  node --no-warnings "$ACTIVE/cli/src/main.ts" update
+  exec node --no-warnings "$ACTIVE/cli/src/main.ts" setup "$@"
+fi
 
-exec node --no-warnings "$ROOT/cli/src/main.ts" setup "$@"
+# A pre-stable-path installation must be stopped explicitly before bootstrap migration.
+node --input-type=module - "$CONFIG" <<'NODE'
+import fs from "node:fs";
+let pid;
+try { pid = JSON.parse(fs.readFileSync(process.argv[2] + "/serve.json","utf8")).pid; } catch {}
+if (Number.isInteger(pid) && pid > 0) {
+  let alive = true;
+  try { process.kill(pid,0); } catch (error) { if (error.code === "ESRCH") alive = false; }
+  if (alive) throw new Error("Stop the existing Surface server before migrating, or use its surface update command.");
+}
+NODE
+
+# Bootstrap dependencies only to reuse the CLI's exact stable-tag resolver.
+# The development checkout itself is never pulled, reset or checked out.
+say "Preparing release discovery…"
+(cd "$ROOT/cli" && npm ci --no-fund --no-audit --loglevel=error)
+read -r TAG COMMIT VERSION < <(node --no-warnings --input-type=module - "$ROOT" <<'NODE'
+import {execFileSync} from "node:child_process";
+import {pathToFileURL} from "node:url";
+const root = process.argv[2];
+const {latestRelease} = await import(pathToFileURL(root + "/cli/src/update.ts").href);
+const refs = execFileSync("git",["ls-remote","--tags","origin"],{cwd:root,encoding:"utf8",timeout:60000,env:{...process.env,GIT_TERMINAL_PROMPT:"0",GCM_INTERACTIVE:"never"}});
+const release = latestRelease(refs);
+console.log(release.tag,release.commit,release.version);
+NODE
+)
+[ -n "${TAG:-}" ] || { say "No stable release could be resolved from origin."; exit 1; }
+mkdir -p "$CONFIG/runtime/releases"
+RELEASE="$(mktemp -d "$CONFIG/runtime/releases/$VERSION-${COMMIT:0:12}-XXXXXX")"
+trap 'rm -rf "$RELEASE"' EXIT
+ORIGIN="$(git -C "$ROOT" remote get-url origin)"
+case "$ORIGIN" in /*|*:* ) ;; *) ORIGIN="$ROOT/$ORIGIN";; esac
+say "Installing published release $TAG…"
+git clone --no-checkout --no-hardlinks --no-tags -- "$ORIGIN" "$RELEASE"
+git -C "$RELEASE" fetch --no-tags origin "refs/tags/$TAG"
+git -C "$RELEASE" checkout --detach FETCH_HEAD
+[ "$(git -C "$RELEASE" rev-parse HEAD)" = "$COMMIT" ] || { say "Release tag moved; installation cancelled."; exit 1; }
+(cd "$RELEASE/cli" && npm ci --no-fund --no-audit --loglevel=error)
+# setup activates the stable path only after its packages and web build succeed.
+# Retain a failed setup once activated; its data or service may already refer to it.
+trap 'if [ ! -L "$ACTIVE" ] || [ "$(readlink "$ACTIVE")" != "$RELEASE" ]; then rm -rf "$RELEASE"; fi' EXIT
+node --no-warnings "$RELEASE/cli/src/main.ts" setup "$@"

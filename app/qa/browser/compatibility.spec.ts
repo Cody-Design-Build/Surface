@@ -205,3 +205,141 @@ test("tables and grouping load without native iterator helpers", async ({ page }
   await expect(page.locator(".rdg-group-row").first()).toBeVisible();
   await expect(page.locator(".sg-title-text").first()).toBeVisible();
 });
+
+test("CLI update reload waits for queued and in-flight Vault edits", async ({ page }, testInfo) => {
+  await page.addInitScript(() => {
+    const interval = window.setInterval.bind(window);
+    window.setInterval = (handler, delay, ...args) => interval(handler, delay === 15000 ? 100 : delay, ...args);
+  });
+  let installed = false, activated = false;
+  const system = await (await page.request.get("/api/system")).json();
+  const nextCommit = system.runningVersion.commit === "f".repeat(40) ? "e".repeat(40) : "f".repeat(40);
+  await page.route("**/api/system", route => route.fulfill({ json: {
+    ...system,
+    version: { ...system.version, commit: installed ? nextCommit : system.version.commit },
+    runningVersion: { ...system.runningVersion, commit: activated ? nextCommit : system.runningVersion.commit },
+  } }));
+  const id = fixture.records[2];
+  await page.goto(`/index.html#/r/${id}`);
+  await expect(page.locator(".cm-content")).toBeVisible();
+  installed = true;
+  await page.locator(".sync-chip").click();
+  await expect(page.getByRole("dialog", { name: "Surface status", exact: true })).toContainText("surface restart");
+  await expect(page.getByRole("button", { name: "Reload", exact: true })).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  const first = `Update first ${testInfo.project.name}`;
+  const second = `Update second ${testInfo.project.name}`;
+  const firstStarted = Promise.withResolvers<void>(), secondStarted = Promise.withResolvers<void>();
+  const firstSave = Promise.withResolvers<void>(), secondSave = Promise.withResolvers<void>();
+  await page.route(`**/api/record/${id}`, async route => {
+    if (route.request().method() !== "PUT") return route.continue();
+    const body = route.request().postDataJSON().body ?? "";
+    if (body.includes(second)) { secondStarted.resolve(); await secondSave.promise; }
+    else if (body.includes(first)) { firstStarted.resolve(); await firstSave.promise; }
+    await route.continue();
+  });
+  try {
+    await page.locator(".cm-content").click();
+    await page.keyboard.press("ControlOrMeta+End");
+    await page.keyboard.insertText(`\n${first}`);
+    await firstStarted.promise;
+    await page.keyboard.insertText(`\n${second}`);
+    activated = true;
+    await expect(page.getByRole("button", { name: "Reload", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Reload", exact: true }).click();
+    await expect(page.locator(".app-reload-blocked")).toBeVisible();
+    await expect(page.locator(".cm-content")).toContainText(second);
+    const firstResponse = page.waitForResponse(response => response.url().endsWith(`/api/record/${id}`) && response.request().method() === "PUT");
+    firstSave.resolve();
+    await firstResponse;
+    await page.evaluate(() => {
+      const frame = Promise.withResolvers<void>();
+      requestAnimationFrame(() => requestAnimationFrame(() => frame.resolve()));
+      return frame.promise;
+    });
+    // The first response must leave queued edits protected, before their debounce expires.
+    await page.getByRole("button", { name: "Reload", exact: true }).click();
+    await expect(page.locator(".cm-content")).toContainText(second);
+    await secondStarted.promise;
+    // The second request is also protected while its response is outstanding.
+    await page.getByRole("button", { name: "Reload", exact: true }).click();
+    await expect(page.locator(".cm-content")).toContainText(second);
+    const saved = await (await page.request.get(`/api/record/${id}`)).json();
+    expect(saved.record.body).toContain(first);
+    expect(saved.record.body).not.toContain(second);
+    await page.screenshot({ path: testInfo.outputPath("update-draft-protected.png") });
+    secondSave.resolve();
+    await expect.poll(async () => (await (await page.request.get(`/api/record/${id}`)).json()).record.body).toContain(second);
+    await expect(page.locator(".side-bottom .sync")).toHaveText("Saved");
+    await Promise.all([
+      page.waitForEvent("domcontentloaded"),
+      page.getByRole("button", { name: "Reload", exact: true }).click(),
+    ]);
+    await expect(page.locator(".cm-content")).toContainText(second);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
+  } finally { firstSave.resolve(); secondSave.resolve(); }
+});
+
+test("Contacts and Organizations edit the same relationship from either side", async ({ page }, testInfo) => {
+  const suffix = testInfo.project.name.replace(/[^a-z0-9]/gi, "_");
+  const contactType = `rel_contact_${suffix}`, organizationType = `rel_org_${suffix}`;
+  const request = async (method: "POST" | "PUT" | "GET", path: string, data?: unknown) => {
+    const response = await page.request.fetch(path, { method, headers: { origin: "http://127.0.0.1:4394" }, data });
+    expect(response.ok(), await response.text()).toBe(true);
+    return response.json();
+  };
+  await request("POST", "/api/types", { key: organizationType, name: "Relationship Organizations" });
+  await request("POST", "/api/types", { key: contactType, name: "Relationship Contacts" });
+  await request("PUT", `/api/type/${contactType}`, { fields: [
+    { key: "organizations", name: "Organizations", kind: "link", target: organizationType, multiple: true },
+  ] });
+  const company = (await request("POST", "/api/records", { type: organizationType, title: `Company ${suffix}` })).record;
+  const existingName = `Existing person ${suffix}`, addedName = `New person ${suffix}`;
+  const existing = (await request("POST", "/api/records", { type: contactType, title: existingName, fields: { organizations: [company.id] } })).record;
+  const added = (await request("POST", "/api/records", { type: contactType, title: addedName })).record;
+  const state = await request("GET", "/api/state");
+  const forward = state.types.find((type: { key: string }) => type.key === contactType).fields[0];
+  await request("PUT", `/api/type/${organizationType}`, { fields: [
+    { key: "contacts", name: "Contacts", kind: "link", target: contactType, multiple: true, inverse: forward.id },
+  ] });
+  const record = async (id: string) => (await request("GET", `/api/record/${id}`)).record;
+  expect((await record(company.id)).fields.contacts).toEqual([existing.id]);
+  const open = async (type: string, title: string) => {
+    await page.goto(`/data/#/table/${type}`);
+    await page.locator(".sg-title-text").filter({ hasText: title }).click();
+    await page.keyboard.press("Space");
+    await expect(page.getByLabel("Record title", { exact: true })).toHaveValue(title);
+  };
+  const property = (key: string) => page.locator(`.prop-label[title="${key}"]`).locator("..");
+  const addLink = async (key: string, title: string) => {
+    const field = property(key);
+    await field.locator(".link-add").click();
+    await field.locator(".menu-input").fill(title);
+    await field.locator(".menu-item").filter({ hasText: title }).click();
+    await page.getByRole("button", { name: "Save record", exact: true }).click();
+  };
+  const removeLink = async (key: string, title: string) => {
+    await property(key).locator(".link-chip").filter({ hasText: title }).getByRole("button", { name: "Remove link", exact: true }).click();
+    await page.getByRole("button", { name: "Save record", exact: true }).click();
+  };
+  await open(organizationType, company.title);
+  await expect(property("contacts")).toContainText(existingName);
+  await addLink("contacts", addedName);
+  await expect.poll(async () => (await record(added.id)).fields.organizations).toContain(company.id);
+  await removeLink("contacts", existingName);
+  await expect.poll(async () => (await record(existing.id)).fields.organizations ?? []).not.toContain(company.id);
+  await page.screenshot({ path: testInfo.outputPath("organization-contacts.png") });
+  const observer = await page.context().newPage();
+  try {
+    await observer.goto(`/index.html#/r/${company.id}`);
+    const reverse = observer.locator('.prop-label[title="contacts"]').locator("..");
+    await expect(reverse).toContainText(addedName);
+    await open(contactType, addedName);
+    await removeLink("organizations", company.title);
+    await expect.poll(async () => (await record(company.id)).fields.contacts ?? []).toEqual([]);
+    await expect(reverse.locator(".link-chip")).toHaveCount(0);
+    await addLink("organizations", company.title);
+    await expect.poll(async () => (await record(company.id)).fields.contacts).toEqual([added.id]);
+    await expect(reverse).toContainText(addedName);
+  } finally { await observer.close(); }
+});

@@ -659,6 +659,26 @@ In Surface this isn't a separate feature. It's case 1 or case 2:
 - **Independent entry point, shared foundation:** the standalone surface and writing app share types, records, relations, view definitions and permissions. Neither keeps a separate authoritative copy. Grid components may also render app table views and embeds; that reuse does not make the standalone surface a tab inside the writing app. Board, list and calendar remain other layouts and do not substitute for table parity.
 - **Same data path in both database modes:** edits go through Surface's API/store and existing validation, permissions, history and conflict handling, whether the database is Supabase or the planned local store. View definitions remain exportable and editable by agents.
 
+### Table-parity acceptance, CLI first
+
+**Release decision:** publish the tested CLI/schema/relationship work now; Airtable table parity is the next implementation scope, not a claim about release 0.1.1. Every data capability must first be callable through the CLI with validation, permissions, history and sync. The web UI renders and invokes those same capabilities; no UI-only schema state or manual SQL-editor work for ordinary tables, fields or relationships.
+
+The reference is Airtable's [supported field types](https://support.airtable.com/articles/4808831313-supported-field-types-in-airtable-overview) and table workflows, not its entire automation/application platform.
+
+| Area | Implemented baseline | Remaining parity acceptance |
+|---|---|---|
+| Table and field lifecycle | Logical types/tables and fields can be added, edited, renamed and removed through CLI; populated-table deletion is guarded | Consistent defaults, field conversion previews, dependency-aware changes and import/export mappings |
+| Scalar fields | Text, number, date, checkbox, select, multi-select, URL, email and phone | Explicit long/rich text, date/time and timezone configuration, currency, percent, duration and rating semantics |
+| Relationships | Single/multiple links and editable computed inverse fields, stored once | Complete dependency and conversion behavior across linked tables, with no stale or duplicated membership |
+| Computed fields | Not implemented as field kinds | Formula, lookup, rollup and count with dependency ordering, cycle/error handling, edits and sync; never substitute copied/imported snapshots |
+| Files and interaction fields | Body attachments are not a typed attachment field | Attachment, barcode and button field behavior; references, permissions and export remain usable outside the UI |
+| People and automatic values | Records have identities and creation/update metadata | User/collaborator fields, created/modified-by fields, selectable created/modified-time fields and autonumber |
+| Record and grid workflows | CLI CRUD/querying and standalone typed table editing | Explicit range editing, multi-cell paste/fill, bulk updates/undo, summaries, duplicate/import/export, and validation/conflict acceptance checks |
+| Views and access | Workspace/personal saved views, filters/sorts/grouping and workspace access checks | A checked table-workflow matrix for view persistence, sharing, field visibility and effective permissions in CLI/API and web UI |
+
+For each remaining row: implement the data/CLI contract first, prove deterministic round-trips and error boundaries against local and shared stores, preserve the readable export, then implement and visually verify the web controls. Do not label the table-parity target complete merely because its controls or scalar placeholders exist.
+
+
 ### Where view definitions are kept
 
 **Built for saved definitions; richer layouts planned.** A view's definition is authored content, so it must remain exportable under the no-lock-in rule (§2a):

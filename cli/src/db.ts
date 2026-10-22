@@ -15,6 +15,8 @@ export interface FieldDef {
   options?: string[];
   target?: string; // type id (link fields)
   multiple?: boolean;
+  /** Computed reverse link: the target type's ordinary stored link field id. */
+  inverse?: string;
   required?: boolean;
 }
 
@@ -54,7 +56,13 @@ export async function fetchTypes(ws: string): Promise<TypeRow[]> {
   return data as TypeRow[];
 }
 
-/** All records of a workspace, paginated past PostgREST's 1000-row cap. */
+/** Old schema normalizers discard unknown metadata, so inverse schema writes fail closed. */
+export async function requireInverseSchema(): Promise<void> {
+  const { data, error } = await sb().rpc("surface_schema_version");
+  if (error || typeof data !== "number" || data < 7) throw new UserError(`Inverse relationships require database migration 0007. An authorized administrator can run \`surface cloud migrate --since 7\` with SUPABASE_ACCESS_TOKEN, or apply \`surface cloud schema --since 7\` in the SQL editor.${error ? ` ${error.message}` : ""}`);
+}
+
+/** Raw stored records, without computed inverse values; safe for snapshots and sync. */
 export async function fetchRecords(ws: string, opts: { includeDeleted?: boolean; typeIds?: string[] } = {}): Promise<RecordRow[]> {
   const out: RecordRow[] = [];
   const page = 1000;
@@ -74,6 +82,42 @@ export async function fetchRecord(id: string): Promise<RecordRow | null> {
   const { data, error } = await sb().from("records").select("*").eq("id", id).maybeSingle();
   if (error) throw dbError(error);
   return data as RecordRow | null;
+}
+
+/** Materialize reverse links without mutating stored rows. `sources` must contain every
+ * live source record, even when `records` is a partial checkout or an id lookup. */
+export function materializeInverseLinks(records: RecordRow[], types: TypeRow[], sources: RecordRow[] = records): RecordRow[] {
+  const typeMap = new Map(types.map((t) => [t.id, t]));
+  const inverses = new Map<string, Map<string, string[]>>();
+  for (const t of types) for (const f of t.fields) {
+    if (f.kind !== "link" || !f.inverse || !f.target) continue;
+    const source = typeMap.get(f.target);
+    const forward = source?.fields.find((x) => x.id === f.inverse && x.kind === "link" && !x.inverse && x.target === t.id);
+    if (!source || source.workspace_id !== t.workspace_id || !forward || inverses.has(forward.id)) continue;
+    const links = new Map<string, string[]>();
+    for (const r of sources) {
+      if (r.deleted_at || r.type_id !== source.id || r.workspace_id !== t.workspace_id) continue;
+      const value = r.fields[forward.id];
+      for (const id of new Set(Array.isArray(value) ? value : value == null ? [] : [value])) {
+        if (typeof id !== "string") continue;
+        const ids = links.get(id);
+        if (ids) ids.push(r.id);
+        else links.set(id, [r.id]);
+      }
+    }
+    for (const ids of links.values()) ids.sort();
+    inverses.set(forward.id, links);
+  }
+  return records.map((r) => {
+    const fields = typeMap.get(r.type_id)?.fields.filter((f) => f.kind === "link" && f.inverse);
+    if (!fields?.length) return r;
+    const values = { ...r.fields };
+    for (const f of fields) {
+      const ids = inverses.get(f.inverse!)?.get(r.id) ?? [];
+      values[f.id] = f.multiple ? ids : ids[0] ?? null;
+    }
+    return { ...r, fields: values };
+  });
 }
 
 export function typeByKey(types: TypeRow[], key: string): TypeRow {

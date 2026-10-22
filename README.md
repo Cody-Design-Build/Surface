@@ -16,14 +16,16 @@ git clone https://github.com/Cody-Design-Build/Surface.git ~/Developer/Surface
 ~/Developer/Surface/install.sh
 ```
 
-That gets Node if needed, installs everything, puts `surface` on your PATH (`~/.local/bin`), and creates this computer's own database with an empty workspace in `~/Surface`. **No account, no cloud, nothing leaves your computer.** Then:
+That gets Node if needed, installs the newest published stable Git release (not the development branch), puts `surface` on your PATH (`~/.local/bin`), and creates this computer's own database with an empty workspace in `~/Surface`. **No account, no cloud, nothing leaves your computer.** Then:
 
 ```sh
 cd ~/Surface && surface serve        # the app: open the link it prints
 surface data                         # the table app, on the same server
 ```
 
-`surface doctor` checks the install; `surface help` lists every command. `surface update` updates an installed copy; `surface update --check` checks first. `surface service install` starts one background server at login.
+`surface doctor` checks the install; `surface help` lists every command. Updates are CLI-only: `surface update --check` reads stable release tags from `origin`; `surface update` prepares dependencies and the app before stopping a running server, then activates and verifies the release, recovering the previous code and stopped local database snapshot if startup fails. The browser keeps version and release diagnostics inside its workspace-status popover; after the updated server starts, it offers Reload without automatically discarding drafts. It cannot install or schedule updates. See [release and recovery policy](cli/README.md#updates-and-one-background-server). `surface service install` starts one background server at login.
+
+**Release 0.1.1:** CLI-first field/table operations, stored-once editable inverse relationships, explicit administrator cloud migrations, safer release installation/recovery, and a consolidated web status/reload control. Airtable table parity remains the [next tracked scope](docs/SPEC.md#table-parity-acceptance-cli-first), not a feature claim for this release. A cloud that applied 0007 without the older aliases migration needs the forward repair in 0008; installing client code alone does not repair shared SQL.
 
 ### Then, if you want: your cloud, and sharing
 

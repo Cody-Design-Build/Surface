@@ -13,17 +13,20 @@
 import { exec, localAdmin, localOwnerPort, localUser, remoteClient, type Desc } from "./local.ts";
 import { CONFIG_DIR } from "./config.ts";
 import { logger } from "./log.ts";
+import { statusErrorKind } from "./system.ts";
 import fs from "node:fs";
 import path from "node:path";
 
 const L = logger("sync");
+const syncing = new Set<string>();
+let loopEnabled = false;
 
 export type Hub = { kind: "surface"; url: string; token: string; workspace: string } | { kind: "cloud"; workspace: string };
 
 export type HubInput = { kind: "cloud"; workspace?: string } | { kind: "surface"; url: string; token: string; workspace?: string };
 
 type Row = Record<string, any>;
-type Field = { id: string; key: string; kind: string; target?: string; [k: string]: unknown };
+type Field = { id: string; key: string; kind: string; target?: string; inverse?: string; [k: string]: unknown };
 type TypeRow = { id: string; key: string; name: string; icon: string | null; folder: string | null; fields: Field[]; display?: string; is_builtin?: boolean; updated_at: string };
 type Client = { from: (t: string) => any; rpc: (fn: string, args?: Row) => Promise<{ data: any; error: any }> };
 
@@ -56,6 +59,12 @@ function must<T = any>(r: { data: T; error: any }, what: string): T {
   return r.data;
 }
 
+async function requireInverseHub(client: Client): Promise<void> {
+  const result = await client.rpc("surface_schema_version");
+  if (result.error && statusErrorKind(result.error) === "network") must(result, "check inverse relationship support");
+  if (result.error || typeof result.data !== "number" || result.data < 7) throw new Error(`Inverse relationships require hub migration 0007. An authorized administrator can run \`surface cloud migrate --since 7\` with SUPABASE_ACCESS_TOKEN, or apply \`surface cloud schema --since 7\` in the SQL editor. Local edits are preserved.${result.error ? ` ${result.error.message}` : ""}`);
+}
+
 const chunks = <T,>(xs: T[], n: number) => Array.from({ length: Math.ceil(xs.length / n) }, (_, i) => xs.slice(i * n, i * n + n));
 
 // ---------------------------------------------------------------------------
@@ -67,12 +76,13 @@ export async function syncedWorkspaces(): Promise<{ workspace_id: string; hub: H
 
 export async function syncStatus(ws: string) {
   return localAdmin(async (tx) => {
-    const w = (await tx.query<any>("select hub, last_sync, last_error from surface_local.sync_workspaces where workspace_id = $1", [ws])).rows[0];
+    const w = (await tx.query<{ hub: Hub; last_sync: string | null; last_error: string | null }>("select hub, last_sync, last_error from surface_local.sync_workspaces where workspace_id = $1", [ws])).rows[0];
     if (!w) return null;
-    const pending = (await tx.query<any>("select kind, count(*)::int as n from surface_local.sync_rows where workspace_id = $1 and dirty group by kind", [ws])).rows;
-    const conflicts = (await tx.query<any>("select id, record_id, copy_id, title, at from surface_local.sync_conflicts where workspace_id = $1 and not resolved order by at", [ws])).rows;
-    const hub = { ...w.hub, token: w.hub.token ? "…" : undefined };
-    return { hub, last_sync: w.last_sync, last_error: w.last_error, pending: Object.fromEntries(pending.map((p: any) => [p.kind, p.n])), conflicts };
+    const pending = (await tx.query<{ kind: string; n: number }>("select kind, count(*)::int as n from surface_local.sync_rows where workspace_id = $1 and dirty group by kind", [ws])).rows;
+    const conflicts = (await tx.query<{ id: string; record_id: string; copy_id: string; title: string; at: string }>("select id, record_id, copy_id, title, at from surface_local.sync_conflicts where workspace_id = $1 and not resolved order by at", [ws])).rows;
+    const hub = w.hub.kind === "surface" ? { ...w.hub, token: "…" } : w.hub;
+    const kind = w.last_error ? statusErrorKind(w.last_error) : null;
+    return { hub, last_sync: w.last_sync, last_error: w.last_error, syncing: syncing.has(ws), loopEnabled, errorKind: kind === "database" ? "sync" : kind, pending: Object.fromEntries(pending.map(p => [p.kind, p.n])), conflicts };
   });
 }
 
@@ -90,7 +100,7 @@ async function enableSyncNow(ws: string, hubIn: HubInput): Promise<Hub> {
   }
   const hub = { ...hubIn, workspace: hubWs } as Hub;
   await localAdmin(async (tx) => {
-    await tx.query("insert into surface_local.sync_workspaces (workspace_id, hub) values ($1, $2::jsonb) on conflict (workspace_id) do update set hub = excluded.hub", [ws, JSON.stringify(hub)]);
+    await tx.query("insert into surface_local.sync_workspaces (workspace_id, hub) values ($1, $2::jsonb) on conflict (workspace_id) do update set hub = excluded.hub, last_sync = null, last_error = null", [ws, JSON.stringify(hub)]);
     // everything already here goes up on the first sync
     await tx.query(`insert into surface_local.sync_rows (workspace_id, kind, key, dirty)
       select workspace_id, 'type', id, true from public.types where workspace_id = $1
@@ -137,21 +147,30 @@ export async function resolveConflict(ws: string, id: string) {
 type Mark = { kind: string; key: string; synced: string | null; hub_id?: string | null; field_ids?: Record<string,string> | null };
 
 async function syncWorkspaceNow(ws: string): Promise<SyncReport> {
+  syncing.add(ws);
+  try { return await syncWorkspaceRound(ws); }
+  finally { syncing.delete(ws); }
+}
+
+async function syncWorkspaceRound(ws: string): Promise<SyncReport> {
   const rep: SyncReport = { workspace: ws, pushed: 0, pulled: 0, conflicts: [], errors: [] };
   const conf = (await syncedWorkspaces()).find((w) => w.workspace_id === ws);
   if (!conf) throw new Error(`sync is off for workspace ${ws}`);
   const hub = conf.hub;
-  const client = await hubClient(hub);
   try {
+    const client = await hubClient(hub);
     const hubTypes = await fetchHubTypes(client, hub.workspace);
+    const localTypes = await localAdmin(async tx => (await tx.query<TypeRow>("select * from public.types where workspace_id=$1", [ws])).rows);
+    if ([...localTypes, ...hubTypes].some(t => t.fields.some(f => f.inverse))) await requireInverseHub(client);
     await syncTypes(ws, hub, client, hubTypes, rep);
     const types = await mapTypes(ws, await fetchHubTypes(client, hub.workspace));
     await pushRecords(ws, hub, client, types, rep);
     await pullRecords(ws, hub, client, types, rep);
     await syncViews(ws, hub, client, rep);
-    await localAdmin((tx) => tx.query("update surface_local.sync_workspaces set last_sync = now(), last_error = $2 where workspace_id = $1", [ws, rep.errors.length ? rep.errors.join("; ").slice(0, 2000) : null]));
+    if (rep.errors.length) await localAdmin((tx) => tx.query("update surface_local.sync_workspaces set last_error = $2 where workspace_id = $1", [ws, rep.errors.join("; ").slice(0, 2000)]));
+    else await localAdmin((tx) => tx.query("update surface_local.sync_workspaces set last_sync = now(), last_error = null where workspace_id = $1", [ws]));
   } catch (e) {
-    if (e instanceof Offline) {
+    if (e instanceof Offline || statusErrorKind(e) === "network") {
       rep.offline = true;
       rep.offlineReason = (e as Error).message;
     } else {
@@ -231,12 +250,13 @@ export async function routeSchemaWrite(d: Extract<Desc, { table: string }>) {
   const ws = rows[0].workspace_id as string;
   return inWorkspace(ws, async () => {
     const conf = shared[0].config!;
+    const client = await hubClient(conf.hub);
+    if (input.some(row => Array.isArray(row.fields) && row.fields.some((f: Field) => f.inverse))) await requireInverseHub(client);
     const report = await syncWorkspaceNow(ws);
     if (report.offline || report.errors.length) throw new Error("Schema changes need the cloud online and pending edits synced first. " + (report.offlineReason ?? report.errors.join("; ")));
-    const client = await hubClient(conf.hub);
     const localTypes = await localAdmin(async tx => (await tx.query<any>("select * from public.types where workspace_id=$1", [ws])).rows as TypeRow[]);
     const cloudTypes = await fetchHubTypes(client, conf.hub.workspace);
-    const marks = await localAdmin(async tx => (await tx.query<any>("select key,hub_id from surface_local.sync_rows where workspace_id=$1 and kind='type'", [ws])).rows);
+    const marks = await localAdmin(async tx => (await tx.query<any>("select key,hub_id,field_ids from surface_local.sync_rows where workspace_id=$1 and kind='type'", [ws])).rows);
     const cloudType = (id: string) => cloudTypes.find(t => t.id === marks.find(m => m.key === id)?.hub_id) ?? cloudTypes.find(t => t.key === localTypes.find(l => l.id === id)?.key);
     const changed: string[] = [];
     for (const { row } of shared) {
@@ -251,6 +271,15 @@ export async function routeSchemaWrite(d: Extract<Desc, { table: string }>) {
         const rf = remote?.fields.find(p => p.key === prior?.key);
         if (rf) copy.id = rf.id; else delete (copy as Row).id;
         if (copy.target) copy.target = cloudType(copy.target)?.key ?? copy.target;
+        if (copy.inverse) {
+          const source = localTypes.find(t => t.id === f.target);
+          const forward = source?.fields.find(x => x.id === copy.inverse && !x.inverse);
+          const sourceMark = marks.find(m => m.key === source?.id);
+          const remoteForward = cloudType(f.target!)?.fields.find(x => sourceMark?.field_ids?.[x.id] === forward?.id)
+            ?? cloudType(f.target!)?.fields.find(x => x.key === forward?.key);
+          if (!remoteForward) throw new Error(`Cannot map inverse "${f.key}" to its stored cloud link. Refresh schema and retry.`);
+          copy.inverse = remoteForward.id;
+        }
         return copy;
       });
       let query;
@@ -330,6 +359,7 @@ async function runOp(op: SyncOp, args: unknown[]) {
 
 /** For `surface serve`: sync every few seconds, and soon after a local change. */
 export function startSyncLoop(onChange: () => void, everyMs = 5000, onTick: () => void = () => {}) {
+  loopEnabled = true;
   let running = false;
   let again = false;
   let stopped = false;
@@ -377,7 +407,7 @@ export function startSyncLoop(onChange: () => void, everyMs = 5000, onTick: () =
   const timer = setInterval(tick, everyMs);
   timer.unref();
   setTimeout(tick, 500);
-  return { kick: () => void tick(), stop: () => { stopped = true; clearInterval(timer); } };
+  return { kick: () => void tick(), stop: () => { stopped = true; loopEnabled = false; clearInterval(timer); } };
 }
 
 
@@ -411,13 +441,22 @@ async function syncTypes(ws: string, hub: Hub, client: Client, hubTypes: TypeRow
     const m = markOf.get(t.id);
     return (m?.hub_id && hubById.get(m.hub_id)) || hubByKey.get(t.key);
   };
-  const toHubFields = (t: TypeRow, h: TypeRow | undefined) => {
+  const toHubFields = (t: TypeRow, h: TypeRow | undefined, storedOnly = false) => {
     const hk = fieldsByKey(h);
-    return t.fields.map((f) => {
+    return t.fields.filter((f) => !storedOnly || !f.inverse).map((f) => {
       const out: Field = { ...f };
       const same = hk.get(f.key);
       if (same) out.id = same.id;
       if (f.kind === "link" && f.target) out.target = localById.get(f.target)?.key ?? f.target;
+      if (f.inverse) {
+        const source = localById.get(f.target!);
+        const forward = source?.fields.find(x => x.id === f.inverse && !x.inverse);
+        const target = source ? hubFor(source) : undefined;
+        const fieldIds = source ? markOf.get(source.id)?.field_ids : undefined;
+        const mapped = target?.fields.find(x => fieldIds?.[x.id] === forward?.id) ?? target?.fields.find(x => x.key === forward?.key);
+        if (!mapped) throw new Error(`Cannot sync inverse "${t.key}.${f.key}" before its stored source field.`);
+        out.inverse = mapped.id;
+      }
       return out;
     });
   };
@@ -438,6 +477,29 @@ async function syncTypes(ws: string, hub: Hub, client: Client, hubTypes: TypeRow
     local.splice(local.findIndex(x=>x.id===t.id),1);
   }
 
+  // A new relationship pair is cyclic at the type level: identities first,
+  // then stored source fields, then their inverses. Never persist reverse values.
+  const inverseSchema = [...local, ...hubTypes].some(t => t.fields.some(f => f.inverse));
+  if (inverseSchema) {
+    for (const t of local) {
+      const m = markOf.get(t.id);
+      if (!m?.dirty || hubFor(t)) continue;
+      const saved = must(await client.from("types").insert({ workspace_id: hub.workspace, key: t.key, name: t.name, icon: t.icon, folder: t.folder, display: t.display ?? "document", fields: [] }).select("*"), `create hub type ${t.key}`)[0] as TypeRow | undefined;
+      if (!saved) throw new Error(`the hub refused type ${t.key} (permission?)`);
+      hubById.set(saved.id, saved);
+      hubByKey.set(saved.key, saved);
+    }
+    for (const t of local) {
+      const m = markOf.get(t.id);
+      if (!m?.dirty || m.synced) continue;
+      const h = hubFor(t)!;
+      const fields = [...toHubFields(t, h, true), ...h.fields.filter(f => f.inverse)];
+      const saved = must(await client.from("types").update({ fields }).eq("id", h.id).select("*"), `prepare stored hub fields ${t.key}`)[0] as TypeRow | undefined;
+      if (!saved) throw new Error(`the hub refused type ${t.key} (permission?)`);
+      hubById.set(saved.id, saved);
+      hubByKey.set(saved.key, saved);
+    }
+  }
   // Bootstrap/legacy type edits only; new shared schema edits use routeSchemaWrite.
   for (const t of local) {
     const m = markOf.get(t.id);
@@ -462,6 +524,18 @@ async function syncTypes(ws: string, hub: Hub, client: Client, hubTypes: TypeRow
     rep.pushed++;
   }
 
+  if (inverseSchema) {
+    await localAdmin(async tx => {
+      for (const h of hubById.values()) {
+        const lm = [...markOf.values()].find(m => m.hub_id === h.id);
+        if ((lm && localById.has(lm.key)) || local.some(t => t.key === h.key)) continue;
+        const row = (await tx.query<TypeRow>("insert into public.types (id, workspace_id, key, name, icon, folder, display, fields, is_builtin) values ($1,$2,$3,$4,$5,$6,$7,'[]'::jsonb,$8) returning *",
+          [h.id, ws, h.key, h.name, h.icon, h.folder, h.display ?? "document", !!h.is_builtin])).rows[0];
+        local.push(row);
+        localById.set(row.id, row);
+      }
+    }, { applying: true });
+  }
   // pull hub type changes (a few passes so link targets to new types resolve)
   let pending = [...hubById.values()];
   for (let pass = 0; pass < 3 && pending.length; pass++) {
@@ -473,7 +547,8 @@ async function syncTypes(ws: string, hub: Hub, client: Client, hubTypes: TypeRow
       if (lt && m && m.synced === h.updated_at && m.hub_id === h.id && m.field_ids) continue;
       if (lt && m?.dirty && !m.synced) continue; // pushed above or failed
       const lk = fieldsByKey(lt);
-      const fields = h.fields.map((f) => {
+      let unresolvedInverse = false;
+      const fields = h.fields.flatMap((f): Field[] => {
         const out: Field = { ...f };
         const same = lk.get(f.key) ?? lt?.fields.find(lf => lf.id === m?.field_ids?.[f.id]);
         if (same) out.id = same.id;
@@ -482,7 +557,18 @@ async function syncTypes(ws: string, hub: Hub, client: Client, hubTypes: TypeRow
           const target = local.find((x) => x.key === key) ?? (key === (lt?.key ?? h.key) ? lt : undefined);
           out.target = target?.id ?? key ?? f.target;
         }
-        return out;
+        if (f.inverse) {
+          const inverse = f.inverse;
+          const source = hubById.get(f.target!);
+          const forward = source?.fields.find(x => x.id === inverse && !x.inverse);
+          const target = local.find(x => x.key === localKeyOfHubId(f.target!));
+          const sourceMark = target ? markOf.get(target.id) : undefined;
+          const mapped = target?.fields.find(x => x.id === sourceMark?.field_ids?.[inverse])
+            ?? target?.fields.find(x => x.key === forward?.key);
+          if (!mapped) { unresolvedInverse = true; return []; }
+          out.inverse = mapped.id;
+        }
+        return [out];
       });
       try {
         const saved = await localAdmin(async (tx) => {
@@ -495,15 +581,22 @@ async function syncTypes(ws: string, hub: Hub, client: Client, hubTypes: TypeRow
               [h.id, ws, h.key, h.name, h.icon, h.folder, h.display ?? "document", JSON.stringify(fields), !!h.is_builtin])).rows[0];
           }
           await tx.query(`insert into surface_local.sync_rows (workspace_id, kind, key, synced, dirty, hub_id) values ($1, 'type', $2, $3, false, $4)
-             on conflict (workspace_id, kind, key) do update set synced = $3, dirty = false, hub_id = $4`, [ws, row.id, h.updated_at, h.id]);
-          await tx.query("update surface_local.sync_rows set field_ids=$3::jsonb where workspace_id=$1 and kind='type' and key=$2",[ws,row.id,JSON.stringify(Object.fromEntries(h.fields.map(f=>[f.id,row.fields.find(lf=>lf.key===f.key)!.id])))]);
+             on conflict (workspace_id, kind, key) do update set synced = $3, dirty = false, hub_id = $4`, [ws, row.id, unresolvedInverse ? null : h.updated_at, h.id]);
+          await tx.query("update surface_local.sync_rows set field_ids=$3::jsonb where workspace_id=$1 and kind='type' and key=$2",[ws,row.id,JSON.stringify(Object.fromEntries(h.fields.flatMap(f => {
+            const field = row.fields.find(lf => lf.key === f.key);
+            return field ? [[f.id, field.id]] : [];
+          })))]);
           return row;
         }, { applying: true });
         localById.set(saved.id, saved);
         const i = local.findIndex((x) => x.id === saved.id);
         if (i >= 0) local[i] = saved;
         else local.push(saved);
-        markOf.set(saved.id, { kind: "type", key: saved.id, synced: h.updated_at, hub_id: h.id, dirty: false });
+        markOf.set(saved.id, { kind: "type", key: saved.id, synced: unresolvedInverse ? null : h.updated_at, hub_id: h.id, dirty: false });
+        if (unresolvedInverse) {
+          if (pass === 2) rep.errors.push(`type ${h.key}: inverse source fields could not be mapped`);
+          next.push(h);
+        }
         rep.pulled++;
       } catch (e) {
         if (pass === 2) rep.errors.push(`type ${h.key}: ${(e as Error).message}`);
@@ -528,12 +621,12 @@ type Types = Awaited<ReturnType<typeof mapTypes>>;
 
 const byKey = (fields: Record<string, unknown>, t: TypeRow | undefined) => {
   const out: Record<string, unknown> = {};
-  for (const f of t?.fields ?? []) if (fields[f.id] !== undefined && fields[f.id] !== null) out[f.key] = fields[f.id];
+  for (const f of t?.fields ?? []) if (!f.inverse && fields[f.id] !== undefined && fields[f.id] !== null) out[f.key] = fields[f.id];
   return out;
 };
 const byId = (fields: Record<string, unknown>, t: TypeRow | undefined) => {
   const out: Record<string, unknown> = {};
-  for (const f of t?.fields ?? []) if (fields[f.key] !== undefined && fields[f.key] !== null) out[f.id] = fields[f.key];
+  for (const f of t?.fields ?? []) if (!f.inverse && fields[f.key] !== undefined && fields[f.key] !== null) out[f.id] = fields[f.key];
   return out;
 };
 
@@ -867,7 +960,7 @@ async function pullRecords(ws: string, hub: Hub, client: Client, types: Types, r
 function linkTargets(fields: Record<string, unknown> | null, t: TypeRow | undefined): string[] {
   const out: string[] = [];
   for (const f of t?.fields ?? []) {
-    if (f.kind !== "link") continue;
+    if (f.kind !== "link" || f.inverse) continue;
     const v = fields?.[f.id];
     if (typeof v === "string") out.push(v);
     else if (Array.isArray(v)) out.push(...v.map(String));

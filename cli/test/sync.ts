@@ -59,6 +59,87 @@ function run(who: Who, args: string[], opts: { cwd?: string; fail?: boolean; env
 const q = (who: Who, type: string) => JSON.parse(run(who, ["query", type, "--json"])) as Record<string, any>[];
 const find = (who: Who, type: string, title: string) => q(who, type).find((r) => r.title === title);
 const idOf = (out: string) => /\(([0-9a-z]{12})\)/.exec(out)![1];
+const isObject = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value);
+function storedRows(value: unknown): { id: string; [key: string]: unknown }[] {
+  assert.ok(Array.isArray(value));
+  return value.map(row => {
+    assert.ok(isObject(row) && typeof row.id === "string");
+    return { ...row, id: row.id };
+  }).sort((a, b) => a.id.localeCompare(b.id));
+}
+
+/** Read real sync state/reports without depending on human-facing command wording. */
+function callSync(who: Who, op: "status" | "now"): unknown {
+  const config: unknown = JSON.parse(fs.readFileSync(path.join(dir(who), ".surface", "config.json"), "utf8"));
+  assert.ok(isObject(config) && typeof config.workspace === "string");
+  const script = `
+    import { sb, requireUser } from ${JSON.stringify(new URL("../src/client.ts", import.meta.url).href)};
+    import { syncCall } from ${JSON.stringify(new URL("../src/sync.ts", import.meta.url).href)};
+    import { closeLocal } from ${JSON.stringify(new URL("../src/local.ts", import.meta.url).href)};
+    try { await requireUser(); console.log(JSON.stringify(await syncCall(${JSON.stringify(op)}, ${JSON.stringify(config.workspace)}))); }
+    finally { await sb().auth.stopAutoRefresh(); await closeLocal(); }
+  `;
+  return JSON.parse(execFileSync(process.execPath, ["--no-warnings", "--input-type=module", "-e", script], {
+    cwd: dir(who), env: envOf(who), encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],
+  }));
+}
+function syncData(who: Who) {
+  const state = callSync(who, "status");
+  assert.ok(isObject(state) && isObject(state.hub) && typeof state.hub.workspace === "string" && isObject(state.pending) && Array.isArray(state.conflicts));
+  const conflicts = state.conflicts.map(conflict => {
+    assert.ok(isObject(conflict) && typeof conflict.record_id === "string" && typeof conflict.copy_id === "string");
+    return { record_id: conflict.record_id, copy_id: conflict.copy_id };
+  });
+  return { hub: { workspace: state.hub.workspace }, last_error: state.last_error, errorKind: state.errorKind, pending: state.pending, conflicts };
+}
+function syncRound(who: Who) {
+  const reports = callSync(who, "now");
+  assert.ok(Array.isArray(reports));
+  return reports.map(report => {
+    assert.ok(isObject(report) && Array.isArray(report.errors));
+    return { scan: report.scan, errors: report.errors };
+  });
+}
+
+/** A join must leave actual hub rows/revisions untouched, regardless of progress accounting. */
+async function hubSnapshot(token: string) {
+  const tables = ["types", "records", "views"] as const;
+  if (CLOUD) {
+    const script = `
+      import { sb, requireUser } from ${JSON.stringify(new URL("../src/client.ts", import.meta.url).href)};
+      try {
+        await requireUser();
+        const snapshot = {};
+        for (const table of ${JSON.stringify(tables)}) {
+          const { data, error } = await sb().from(table).select("*").eq("workspace_id", ${JSON.stringify(hubWs)});
+          if (error) throw new Error(error.message);
+          snapshot[table] = data;
+        }
+        console.log(JSON.stringify(snapshot));
+      } finally { await sb().auth.stopAutoRefresh(); }
+    `;
+    const data: unknown = JSON.parse(execFileSync(process.execPath, ["--no-warnings", "--input-type=module", "-e", script], {
+      cwd: tmp, env: { ...process.env, SURFACE_STORE: "cloud", SURFACE_CONFIG_DIR: REAL_CFG, NO_COLOR: "1" },
+      encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],
+    }));
+    assert.ok(isObject(data));
+    return { types: storedRows(data.types), records: storedRows(data.records), views: storedRows(data.views) };
+  }
+  const snapshot: Record<(typeof tables)[number], { id: string; [key: string]: unknown }[]> = { types: [], records: [], views: [] };
+  for (const table of tables) {
+    const response = await fetch(`${hubUrl}/api/_db`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-surface-token": token },
+      body: JSON.stringify({ kind: "select", table, columns: "*", filters: [{ col: "workspace_id", op: "eq", value: hubWs }], order: [], returning: false }),
+    });
+    assert.equal(response.status, 200);
+    const result: unknown = await response.json();
+    assert.ok(isObject(result));
+    assert.equal(result.error, null);
+    snapshot[table] = storedRows(result.data);
+  }
+  return snapshot;
+}
 let step = 0;
 const ok = (name: string) => console.log(`ok ${++step} ${name}`);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -117,37 +198,30 @@ try {
   const t1 = idOf(run("a", ["new", "task", "Order tile", "status=todo", `project=${proj}`]));
   run("a", ["new", "page", "Notes", "--parent", proj]);
   run("a", ["view", "new", "Open tasks", "--from", "task", "--where", "status=todo", "--key", "open-tasks"]);
-  const en = run("a", ["sync", "enable", ...H]);
-  assert.match(en, /Sync is on/);
-  assert.match(en, /up, 0 down/);
-  hubWs = /workspace ([0-9a-z]{12})/.exec(en)![1];
+  run("a", ["sync", "enable", ...H]);
+  const enabled = syncData("a");
+  assert.ok(enabled);
+  assert.equal(enabled.last_error, null);
+  assert.deepEqual(enabled.pending, {});
+  hubWs = enabled.hub.workspace;
   ok("enable: a local workspace goes up to the hub");
 
-  // the hub really has it (ask its database directly)
-  let hubTitles: string[];
-  if (CLOUD) {
-    hubTitles = ["project", "task", "page"].flatMap((t) => (JSON.parse(cloud(["query", t, "--json", "--workspace", hubWs])) as { title: string }[]).map((r) => r.title));
-  } else {
-    const hubQ = await fetch(`${hubUrl}/api/_db`, {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-surface-token": token },
-      body: JSON.stringify({ kind: "select", table: "records", columns: "id,title,rev", filters: [{ col: "workspace_id", op: "eq", value: hubWs }], order: [], returning: false }),
-    }).then((r) => r.json());
-    hubTitles = hubQ.data.map((r: any) => r.title);
-  }
-  assert.deepEqual(hubTitles.sort(), ["Kitchen", "Notes", "Order tile"]);
+  // The hub really has the same record identities and values.
+  const beforeJoin = await hubSnapshot(token);
+  assert.deepEqual(beforeJoin.records.map(r => r.title).sort(), ["Kitchen", "Notes", "Order tile"]);
+  assert.ok(beforeJoin.records.some(r => r.id === proj && r.title === "Kitchen"));
+  assert.ok(beforeJoin.records.some(r => r.id === t1 && r.title === "Order tile"));
   ok("the hub holds the same records with the same ids");
 
   // computer B joins: a new local copy, with types, fields, links, parent and views
   fs.mkdirSync(path.join(tmp, "b"), { recursive: true });
-  const jn = run("b", ["sync", "join", hubWs, dir("b"), ...H], { cwd: path.join(tmp, "b") });
-  assert.match(jn, /Checked out/);
-  assert.match(jn, /: 0 up, \d+ down/); // joining never writes to the hub
+  run("b", ["sync", "join", hubWs, dir("b"), ...H], { cwd: path.join(tmp, "b") });
+  assert.deepEqual(await hubSnapshot(token), beforeJoin, "joining must not write records, schemas or views to the hub");
   const bt = find("b", "task", "Order tile")!;
   assert.equal(bt.id, t1);
   assert.equal(bt.fields.project, proj);
   assert.match(fs.readFileSync(path.join(dir("b"), "Pages", "Notes.md"), "utf8"), /parent: "\[\[Kitchen\]\]"/);
-  assert.match(run("b", ["views"]), /open-tasks/);
+  assert.ok(fs.existsSync(path.join(dir("b"), ".surface", "views", "open-tasks.yaml")));
   assert.ok(fs.readdirSync(path.join(dir("b"), "Tasks")).some((f) => f.startsWith("Order tile")));
   ok("join: B gets types, records (same ids), links, parents, views and Markdown files");
 
@@ -173,8 +247,9 @@ try {
   // later rounds pull incrementally (only what changed since the cursor), and still get changes
   run("a", ["set", t1, "status=todo"]);
   run("a", ["sync"]);
-  const inc = run("b", ["sync"], { env: { SURFACE_SYNC_DEBUG: "1" } });
-  assert.match(inc, /incremental/);
+  const incremental = syncRound("b");
+  assert.equal(incremental[0].scan, "incremental");
+  assert.deepEqual(incremental[0].errors, []);
   assert.equal(find("b", "task", "Order tile")!.fields.status, "todo");
   ok("incremental pull: only changes since the last round");
 
@@ -182,20 +257,19 @@ try {
   run("a", ["set", t1, "status=done"]);
   run("b", ["set", t1, "status=doing", "body=B's note"]);
   run("a", ["sync"]);
-  const bs = run("b", ["sync"]);
-  assert.match(bs, /conflict/);
+  run("b", ["sync"]);
   const bTasks = q("b", "task");
   assert.equal(bTasks.find((r) => r.id === t1)!.fields.status, "done"); // took A's (the hub's) version
   const copy = bTasks.find((r) => r.title.startsWith("Order tile (conflict"))!;
   assert.ok(copy, "conflict copy exists");
   assert.equal(copy.fields.status, "doing");
-  assert.match(run("b", ["sync", "status"]), /Conflict: "Order tile"/);
+  assert.equal(syncData("b").conflicts.find(c => c.record_id === t1)?.copy_id, copy.id);
   run("b", ["sync"]);
   run("a", ["sync"]);
   assert.ok(find("a", "task", copy.title), "the conflict copy syncs like any record");
   run("b", ["rm", copy.id]);
   run("b", ["sync", "resolve", t1]);
-  assert.doesNotMatch(run("b", ["sync", "status"]), /Conflict:/);
+  assert.deepEqual(syncData("b").conflicts, []);
   ok("conflict: hub version wins, B's version kept as a copy, resolvable");
 
   // delete on B reaches A
@@ -222,10 +296,11 @@ try {
   // offline: the hub goes away; A keeps working; changes go up when it's back
   if (hub) await stop(hub.proc);
   run("a", ["set", t1, "status=done"]);
-  const off = run("a", ["sync"], { env: OFFLINE });
-  assert.match(off, /offline/);
+  run("a", ["sync"], { env: OFFLINE });
   assert.equal(find("a", "task", "Order tile")!.fields.status, "done");
-  assert.match(run("a", ["sync", "status"]), /Waiting to go up: 1 record/);
+  const offline = syncData("a");
+  assert.equal(offline.errorKind, "network");
+  assert.equal(offline.pending.record, 1);
   if (!CLOUD) hub = await serveOn("hub", HUB_PORT);
   run("a", ["sync"]);
   run("b", ["sync"]);
@@ -261,7 +336,7 @@ try {
     throw e;
   });
   // `surface sync` on A while serve owns the database goes through serve
-  assert.match(run("a", ["sync"]), /up, \d+ down/);
+  run("a", ["sync"]);
   // the app's sync state: enabled, hub, nothing waiting, no conflicts; then a conflict shows up there
   const ss = await fetch(`http://127.0.0.1:${A_PORT}/api/sync`, { headers: hdr }).then((r) => r.json());
   assert.equal(ss.enabled, true);

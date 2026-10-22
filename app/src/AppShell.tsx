@@ -10,10 +10,10 @@ import packageInfo from "../../cli/package.json" with { type: "json" };
 const SidebarSize = createContext<{ width: number; maxWidth: number; setWidth: (width: number) => void } | null>(null);
 const boundedWidth = (width: number) => Math.max(160, Math.min(480, width));
 
-/** Every app uses this shell: shared account, workspace, version, updates and column sizing. */
-export function AppShell({ appId, app, online, tick, openRecord, beforeNavigate, onNavigationError, onSwitching, updatesBlocked, className = "", children }: {
+/** Shared account, workspace status and column sizing. Installation stays in the CLI. */
+export function AppShell({ appId, app, online, tick, openRecord, beforeNavigate, beforeReload, onNavigationError, onSwitching, className = "", children }: {
   appId: string; app: AppState; online: boolean; tick?: number; openRecord: (id: string) => void;
-  beforeNavigate?: () => boolean; onNavigationError?: () => void; onSwitching?: (busy: boolean) => void; updatesBlocked?: string;
+  beforeNavigate?: () => boolean; beforeReload?: () => boolean; onNavigationError?: () => void; onSwitching?: (busy: boolean) => void;
   className?: string; children: ReactNode;
 }) {
   const [width, setWidth] = useState(() => {
@@ -38,7 +38,7 @@ export function AppShell({ appId, app, online, tick, openRecord, beforeNavigate,
   const resize = (next: number) => { const value = Math.min(boundedWidth(next), maxWidth); setWidth(value); localStorage.setItem("surface.sidebar-width", String(value)); };
   return <SidebarSize.Provider value={{ width: visibleWidth, maxWidth, setWidth: resize }}>
     <div className={`surface-app ${className}`} style={{ "--app-sidebar-size": `${visibleWidth}px` } as CSSProperties}>
-      <AppHeader appId={appId} app={app} online={online} tick={tick} openRecord={openRecord} beforeNavigate={beforeNavigate} onNavigationError={onNavigationError} onSwitching={onSwitching} updatesBlocked={updatesBlocked} />
+      <AppHeader appId={appId} app={app} online={online} tick={tick} openRecord={openRecord} beforeNavigate={beforeNavigate} beforeReload={beforeReload} onNavigationError={onNavigationError} onSwitching={onSwitching} />
       <div className="app-content">{children}</div>
     </div>
   </SidebarSize.Provider>;
@@ -63,9 +63,9 @@ export function SidebarResizeHandle() {
     }} />;
 }
 
-function AppHeader({ appId, app, online, tick, openRecord, beforeNavigate, onNavigationError, onSwitching, updatesBlocked }: {
+function AppHeader({ appId, app, online, tick, openRecord, beforeNavigate, beforeReload, onNavigationError, onSwitching }: {
   appId: string; app: AppState; online: boolean; tick?: number; openRecord: (id: string) => void;
-  beforeNavigate?: () => boolean; onNavigationError?: () => void; onSwitching?: (busy: boolean) => void; updatesBlocked?: string;
+  beforeNavigate?: () => boolean; beforeReload?: () => boolean; onNavigationError?: () => void; onSwitching?: (busy: boolean) => void;
 }) {
   const [workspaces, setWorkspaces] = useState<Awaited<ReturnType<typeof api.workspaces>>["workspaces"]>([]);
   const [switching, setSwitching] = useState(false);
@@ -73,11 +73,8 @@ function AppHeader({ appId, app, online, tick, openRecord, beforeNavigate, onNav
   const [system, setSystem] = useState<SystemInfo | null>(null);
   const [systemUnavailable, setSystemUnavailable] = useState(false);
   const [systemRetry, setSystemRetry] = useState(0);
-  const [updateOpen, setUpdateOpen] = useState(false);
-  const [requesting, setRequesting] = useState(false);
-  const updateRef = useRef<HTMLDivElement>(null);
-  const initialCommit = useRef<string | null>(null);
-  const activeJob = system?.update.job?.state === "running";
+  const [reloadBlocked, setReloadBlocked] = useState(false);
+  const initialCommit = useRef<string | null>(typeof __SURFACE_BUILD_COMMIT__ === "string" ? __SURFACE_BUILD_COMMIT__ : null);
   useEffect(() => {
     let active = true;
     api.workspaces().then(result => { if (active) setWorkspaces(result.workspaces); }).catch(err => { if (active) setError(String(err.message ?? err)); });
@@ -95,15 +92,9 @@ function AppHeader({ appId, app, online, tick, openRecord, beforeNavigate, onNav
       } catch { if (active) setSystemUnavailable(true); /* Keep polling through a server restart. */ }
     };
     void load();
-    const timer = window.setInterval(load, activeJob ? 1500 : 15000);
+    const timer = window.setInterval(load, 15000);
     return () => { active = false; window.clearInterval(timer); };
-  }, [activeJob, systemRetry]);
-  useEffect(() => {
-    if (!updateOpen) return;
-    const close = (event: PointerEvent) => { if (event.target instanceof Node && !updateRef.current?.contains(event.target)) setUpdateOpen(false); };
-    document.addEventListener("pointerdown", close);
-    return () => document.removeEventListener("pointerdown", close);
-  }, [updateOpen]);
+  }, [systemRetry]);
   const changeWorkspace = async (id: string) => {
     if (!system || systemUnavailable || switching) return;
     if (id === app.workspace.id || (beforeNavigate && !beforeNavigate())) return;
@@ -116,53 +107,50 @@ function AppHeader({ appId, app, online, tick, openRecord, beforeNavigate, onNav
       location.assign(next.url && view ? appUrl(view, next.url) : next.url || location.pathname);
     } catch (err) { onNavigationError?.(); setError(String((err as Error).message)); setSwitching(false); onSwitching?.(false); }
   };
-  const startUpdate = async (operation: "check" | "install") => {
-    if (operation === "install" && updatesBlocked) { setError(updatesBlocked); return; }
-    setRequesting(true); setError("");
-    try {
-      const result = await api.updateSystem(operation);
-      setSystem(current => current ? {...current, update: {...current.update, job: result.job}} : current);
-    }
-    catch (err) { setError(String((err as Error).message)); }
-    finally { setRequesting(false); }
-  };
-  const job = system?.update.job;
   const runningCommit = system?.runningVersion?.commit ?? system?.version.commit;
   const changed = !!(runningCommit && initialCommit.current && runningCommit !== initialCommit.current);
-  const updateStatus = changed ? "Reload to finish" : system?.update.available ? "Update available" : activeJob ? "Checking…" : systemUnavailable || job?.state === "error" ? "Check unavailable" : system?.update.checkedAt && system.update.availableCommit === system.version.commit ? "Up to date" : "Not checked";
-  const updateTone = changed || system?.update.available ? "available" : updateStatus === "Up to date" ? "current" : "unknown";
-  const availableVersion = system?.update.availableCommit ? `${system.update.availableVersion ? `v${system.update.availableVersion} · ` : ""}${system.update.availableCommit.slice(0, 7)}` : "unknown";
+  const restartNeeded = !!(system?.runningVersion?.commit && system.version.commit && system.runningVersion.commit !== system.version.commit);
+  const checked = !!system?.update.checkedAt && Date.now() - Date.parse(system.update.checkedAt) < 4 * 60 * 60 * 1000;
+  const updateStatus = !online || systemUnavailable ? "Version status unavailable" : changed ? "New version ready" : restartNeeded ? "Restart Surface to load installed version" : system?.update.available ? `Surface ${system.update.availableVersion ?? "update"} available` : checked && system?.update.availableCommit === system.version.commit ? "Up to date" : "Version not checked recently";
+  const version = system?.runningVersion ?? system?.version;
+  const releaseDetails = system?.update.checkedAt ? `Last checked ${new Date(system.update.checkedAt).toLocaleString()}. Run surface update --check to refresh.` : "Run surface update --check to check published releases.";
+  const connectivity = system?.cloudConnectivity;
+  const connectivityState = !online || systemUnavailable ? "unknown" : connectivity?.state ?? "unknown";
+  const deviceStatus = !online || systemUnavailable ? "Device status unavailable" : connectivityState === "online" ? "Device · cloud reachable" : connectivityState === "unreachable" ? "Device · cloud unreachable" : connectivityState === "unconfigured" ? "Device · cloud not configured" : "Device · checking cloud";
+  const deviceDetails = `${system?.machine ?? "Server device"}${connectivity?.target ? ` → ${connectivity.target}` : ""}. ${connectivity?.checkedAt ? `Observed ${new Date(connectivity.checkedAt).toLocaleString()}.` : "No connectivity observation yet."} Cloud reachability does not establish database access or successful sync.`;
+  const reload = () => {
+    if (beforeReload && !beforeReload()) { setReloadBlocked(true); return; }
+    location.reload();
+  };
   return <header className="app-topbar">
-    <div className="app-name-column"><label className="app-workspace"><select aria-label="Workspace" value={app.workspace.id} disabled={!system || systemUnavailable || switching || !!activeJob} onChange={event => void changeWorkspace(event.target.value)}>
+    <div className="app-name-column"><label className="app-workspace"><select aria-label="Workspace" value={app.workspace.id} disabled={!system || systemUnavailable || switching} onChange={event => void changeWorkspace(event.target.value)}>
       {!workspaces.some(workspace => workspace.id === app.workspace.id) && <option value={app.workspace.id}>{app.workspace.name}</option>}
       {workspaces.map(workspace => <option key={workspace.id} value={workspace.id}>{workspace.name}</option>)}
     </select></label></div>
-    <div className="app-view-type"><AppSwitcher key={app.workspace.id} appId={appId} workspaceId={app.workspace.id} disabled={!system || systemUnavailable || switching || !!activeJob} availableViews={workspaceViewTypes(app)} beforeNavigate={beforeNavigate} /></div>
+    <div className="app-view-type"><AppSwitcher key={app.workspace.id} appId={appId} workspaceId={app.workspace.id} disabled={!system || systemUnavailable || switching} availableViews={workspaceViewTypes(app)} beforeNavigate={beforeNavigate} /></div>
     <div className="app-topbar-right">
       {switching && <span className="app-operation" role="status">Opening workspace…</span>}
-      <div className="app-update" ref={updateRef} onKeyDown={event => { if (event.key === "Escape") { setUpdateOpen(false); updateRef.current?.querySelector("button")?.focus(); } }}>
-        <span className="app-version" title={system ? `Installed on ${system.machine}` : "App build version"}><small>{system ? "Installed" : "App build"}</small><span>v{system?.version.number ?? packageInfo.version}{system?.version.commit && ` · ${system.version.commit.slice(0, 7)}`}</span></span>
-        <span className={`app-update-status ${updateTone}`} role="status"><span>{updateStatus}</span><small>Available · {availableVersion}</small></span>
-        <button className={`app-update-trigger${system?.update.available || changed ? " has-update" : ""}`} aria-expanded={updateOpen} onClick={() => setUpdateOpen(value => !value)}>{activeJob ? job?.operation === "check" ? "Checking…" : "Updating…" : changed ? "Reload" : "Update"}</button>
-        {updateOpen && <div className="app-update-menu" aria-label="App updates">
-          <strong>Updates for all apps</strong>
-          <p className="app-build-info">Installed: v{system?.version.number ?? packageInfo.version}{system?.version.commit && ` · ${system.version.commit.slice(0, 7)}`}</p>
-          <p className="app-build-info">Available: {availableVersion}</p>
-          {system?.runningVersion?.commit && system.runningVersion.commit !== system.version.commit && <p className="app-build-info">Running server: {system.runningVersion.commit.slice(0, 7)}. Restart Surface to load the installed revision.</p>}
-          {system?.update.checkedAt && <p>Last checked: {new Date(system.update.checkedAt).toLocaleString()}</p>}
-          {!system && systemUnavailable && <p>Reconnect or restart the local server to use update controls.</p>}
-          {changed ? <><p>The update is installed. Reload to use it.</p><button className="btn-soft" onClick={() => { if (!beforeNavigate || beforeNavigate()) location.reload(); }}>Reload app</button></> : <>
-            <p>{activeJob ? job?.operation === "check" ? "Checking for updates…" : "Installing and restarting apps…" : system?.update.available ? "An update is available." : system?.update.checkedAt ? "No update was found at the last check." : "Check for the latest version."}</p>
-            {job?.state === "error" && <p role="alert">{job.error}</p>}
-            <button className="btn-soft" disabled={requesting || !!activeJob || !system} onClick={() => void startUpdate("check")}>Check for updates</button>
-            {system?.update.available && <><p>Installing restarts all apps on this computer. Save any open edits first.</p>{updatesBlocked && <p>{updatesBlocked}</p>}<button className="btn-soft" disabled={requesting || !!activeJob || !!updatesBlocked} onClick={() => void startUpdate("install")}>Install and restart apps</button></>}
-          </>}
+      <div className="app-status">
+        <SyncBadge key={app.workspace.id} tick={tick} onOpenRecord={openRecord} serverOnline={online}>
+          <div className="sync-sub">Surface</div>
+          <div className="sync-row"><span>{system ? "Running version" : "App build"}</span><strong>v{version?.number ?? packageInfo.version}</strong></div>
+          {systemUnavailable && <p className="sync-note">Version and account details are unavailable; any displayed version is the last observation. Workspace switching needs the current server API. Run <code>surface restart</code>, then reload after saving.</p>}
+          {version?.commit && <details className="surface-technical"><summary>Technical details</summary><p className="sync-note">Commit <code>{version.commit}</code></p></details>}
+          <p className="sync-note">{updateStatus}</p>
+          {system?.update.available && <p className="sync-note">Install in your terminal: <code>surface update</code>.</p>}
+          {restartNeeded && <p className="sync-note">Run <code>surface restart</code>, then reload this page after saving.</p>}
+          <p className="sync-note">{releaseDetails}</p>
+          <div className="sync-sub">Device connection</div>
+          <p className="sync-note">{deviceStatus}</p>
+          <p className="sync-note">{deviceDetails}</p>
+        </SyncBadge>
+        {online && !systemUnavailable && changed && <div className="app-reload-notice" role="status">
+          <span>New version ready</span><button className="btn-soft" onClick={reload}>Reload</button>
+          {reloadBlocked && <span className="app-reload-blocked">Save or resolve unsaved edits before reloading.</span>}
         </div>}
       </div>
-      <AccountMenu system={system} unavailable={systemUnavailable} onRetry={() => setSystemRetry(value => value + 1)}>
-        <SyncBadge tick={tick} onOpenRecord={openRecord} serverOnline={online} />
-      </AccountMenu>
+      <AccountMenu system={system} unavailable={systemUnavailable} onRetry={() => setSystemRetry(value => value + 1)} />
     </div>
-    {(error || systemUnavailable) && <div className="app-header-error" role="alert">{error || "Workspace and view switching need a reachable, current Surface server. Restart Surface, then reload this page."}{error && <button aria-label="Dismiss error" onClick={() => setError("")}>×</button>}</div>}
+    {error && <div className="app-header-error" role="alert">{error}<button aria-label="Dismiss error" onClick={() => setError("")}>×</button></div>}
   </header>;
 }

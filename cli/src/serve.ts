@@ -7,11 +7,12 @@ import http from "node:http";
 import path from "node:path";
 import os from "node:os";
 import { appAtPath } from "../../surfaces.mts";
-import { installedVersion, systemInfo } from "./system.ts";
+import { installedVersion, statusErrorKind, systemInfo } from "./system.ts";
 import { maybeCheckForUpdates } from "./update.ts";
 import { CONFIG_DIR, findCheckout, knownCheckouts, rememberCheckout, saveCheckout, type Checkout } from "./config.ts";
 import { storeKind, dbError, requireUser, sb } from "./client.ts";
-import { deleteView, fetchInvites, fetchMembers, fetchViews, myInvites, pushRecord, saveView, type RecordRow, type TypeRow, type ViewRow } from "./db.ts";
+import { dataDir } from "./local.ts";
+import { deleteView, fetchInvites, fetchMembers, fetchViews, materializeInverseLinks, myInvites, pushRecord, requireInverseSchema, saveView, type RecordRow, type TypeRow, type ViewRow } from "./db.ts";
 import { makeResolver, linkNames, pull, snapshot, type Snapshot } from "./checkout.ts";
 import { toShown, toStored } from "./links.ts";
 import { normalize } from "./normalize.ts";
@@ -71,14 +72,34 @@ async function workspaceHandler(co: Checkout, opts: { port: number; watch?: bool
   const token = serveToken();
   const port = opts.port;
 
+  let database: { state: "ready" | "checking" | "error"; checkedAt: string | null; error: string | null; errorKind: "network" | "auth" | "database" | null } =
+    { state: "checking", checkedAt: null, error: null, errorKind: null };
+  function databaseReady() {
+    database = { state: "ready", checkedAt: new Date().toISOString(), error: null, errorKind: null };
+  }
+  function databaseFailed(error: unknown) {
+    database = { state: "error", checkedAt: new Date().toISOString(), error: (error as Error).message, errorKind: statusErrorKind(error) };
+  }
   let state: State = await load();
   const clients = new Set<http.ServerResponse>();
   const extraCheckouts = new Map<string, { co: Checkout; watcher: { close: () => void } }>();
 
   async function load(): Promise<State> {
-    const snap = await snapshot(co);
-    const views = await fetchViews(ws);
-    return { snap, views, revKey: revKeyOf(snap.all, views) };
+    try {
+      const snap = await snapshot(co);
+      // Read projection only: checkout/sync snapshots always retain canonical stored fields.
+      const all = materializeInverseLinks(snap.all, snap.types);
+      const byId = new Map(all.map((r) => [r.id, r]));
+      snap.all = all;
+      snap.records = snap.records.map((r) => byId.get(r.id)!);
+      snap.byId = byId;
+      const views = await fetchViews(ws);
+      databaseReady();
+      return { snap, views, revKey: revKeyOf(snap.all, views) };
+    } catch (error) {
+      databaseFailed(error);
+      throw error;
+    }
   }
   function revKeyOf(records: RecordRow[], views: ViewRow[]) {
     return records.map((r) => `${r.id}:${r.rev}`).sort().join(",") + "|" + views.map(viewRevKey).sort().join(",");
@@ -97,7 +118,15 @@ async function workspaceHandler(co: Checkout, opts: { port: number; watch?: bool
     await exclusive(() => refreshNow(reason, ids));
   }
   async function refreshNow(reason: string, ids: string[] = []) {
-    state = await load();
+    const previous = state.snap.byId;
+    const next = await load();
+    if (ids.length) {
+      const changed = new Set(ids);
+      for (const record of next.snap.all) if (previous.get(record.id)?.rev !== record.rev) changed.add(record.id);
+      for (const id of previous.keys()) if (!next.snap.byId.has(id)) changed.add(id);
+      ids = [...changed];
+    }
+    state = next;
     try {
       // The CLI and agents write .surface/ too: re-read it so a stale in-memory copy never overwrites theirs.
       const disk = findCheckout(co.root);
@@ -135,7 +164,9 @@ async function workspaceHandler(co: Checkout, opts: { port: number; watch?: bool
       const views = await fetchViews(ws);
       const key = (data as { id: string; rev: number }[]).map((r) => `${r.id}:${r.rev}`).sort().join(",") + "|" + views.map(viewRevKey).sort().join(",");
       // types change rarely; compare them too so a display or field change shows up
-      const { data: tdata } = await sb().from("types").select("id,updated_at").eq("workspace_id", ws);
+      const { data: tdata, error: typeError } = await sb().from("types").select("id,updated_at").eq("workspace_id", ws);
+      if (typeError) throw typeError;
+      databaseReady();
       const tkey = JSON.stringify((tdata ?? []).map((t) => [t.id, t.updated_at]).sort());
       if (typesKey && tkey !== typesKey) {
         typesKey = tkey;
@@ -149,6 +180,7 @@ async function workspaceHandler(co: Checkout, opts: { port: number; watch?: bool
         await refresh("remote", changed);
       }
     } catch (e) {
+      databaseFailed(e);
       L.warn("database watch failed", { err: e as Error });
       console.error("watch:", (e as Error).message);
     } finally {
@@ -298,7 +330,11 @@ async function workspaceHandler(co: Checkout, opts: { port: number; watch?: bool
     const t = r && !body.type ? typeOf(r.type_id) : state.snap.types.find((x) => x.key === (body.type ?? "page"));
     if (!t) throw new HttpError(400, `Unknown type "${body.type}"`);
     const resolver = makeResolver(co, state.snap);
-    const fields: Record<string, unknown> = r ? Object.fromEntries(t.fields.map((f) => [f.key, r.fields[f.id] ?? null])) : {};
+    // Missing reverse keys mean "keep"; never copy computed values into an unrelated save.
+    const fields: Record<string, unknown> = r ? Object.fromEntries(t.fields.filter((f) => !f.inverse).map((f) => [f.key, r.fields[f.id] ?? null])) : {};
+    if (r && !Number.isInteger(body.baseRev) && t.fields.some((f) => f.inverse && Object.hasOwn((body.fields as Record<string, unknown>) ?? {}, f.key))) {
+      throw new HttpError(422, "baseRev is required when replacing an inverse relationship; reload the record first.");
+    }
     const notices: string[] = [];
     const errors: Record<string, string> = {};
     for (const [k, raw] of Object.entries((body.fields as Record<string, unknown>) ?? {})) {
@@ -396,10 +432,10 @@ async function workspaceHandler(co: Checkout, opts: { port: number; watch?: bool
         hasSidebar: shared.exists,
       });
     }
-    // ---- sync state for this workspace (local store only)
+    // ---- database observation and sync state for this workspace
     if (parts[0] === "sync" && (m === "GET" || m === "POST")) {
-      if (storeKind() !== "local") return send(200, { enabled: false, store: "cloud" });
-      // syncCall runs here if this process owns the database, else hands off to the `surface serve` that does
+      if (storeKind() !== "local") return send(200, { enabled: false, store: "cloud", state: "cloud", syncing: false, loopEnabled: false, database });
+      // The database owner holds the actual in-flight round state.
       const { syncCall } = await import("./sync.ts");
       if (m === "POST") {
         const b = await readBody();
@@ -410,9 +446,11 @@ async function workspaceHandler(co: Checkout, opts: { port: number; watch?: bool
         }
       }
       const s = await syncCall("status", ws);
-      if (!s) return send(200, { enabled: false, store: "local" });
-      const offline = !!s.last_error?.startsWith("offline");
-      return send(200, { enabled: true, store: "local", hub: s.hub.kind === "cloud" ? "the cloud" : s.hub.url, hubWorkspace: s.hub.workspace, lastSync: s.last_sync, error: offline ? null : s.last_error, offline, pending: Object.values(s.pending as Record<string, number>).reduce((a, b) => a + b, 0), conflicts: s.conflicts });
+      if (!s) return send(200, { enabled: false, store: "local", state: "local", syncing: false, loopEnabled: false, database });
+      const offline = s.errorKind === "network";
+      const pending = Object.values(s.pending as Record<string, number>).reduce((a, b) => a + b, 0);
+      const state = s.syncing ? "syncing" : s.last_error ? offline ? "unreachable" : "error" : !s.last_sync ? "never-synced" : pending ? "pending" : "synced";
+      return send(200, { enabled: true, store: "local", state, syncing: s.syncing, loopEnabled: s.loopEnabled, database, hub: s.hub.kind === "cloud" ? "the cloud" : s.hub.url, hubWorkspace: s.hub.workspace, lastSync: s.last_sync, error: s.last_error, errorKind: s.errorKind, offline, pending, conflicts: s.conflicts });
     }
     // ---- views (tables, boards, lists, calendars)
     if (parts[0] === "view" && parts[1]) {
@@ -513,6 +551,10 @@ async function workspaceHandler(co: Checkout, opts: { port: number; watch?: bool
           if (!out.id) delete out.id;
           return out;
         });
+        if (fields.some((f) => f.inverse)) {
+          try { await requireInverseSchema(); }
+          catch (error) { throw new HttpError(422, (error as Error).message); }
+        }
         patch.fields = fields;
       }
       if (b.display !== undefined) {
@@ -832,7 +874,7 @@ export async function serve(initial: Checkout, opts: { port: number; host?: stri
         const { localAdmin } = await import("./local.ts");
         const pending = storeKind() === "local" ? await localAdmin(async tx => (await tx.query<{n:number}>("select count(*)::int as n from surface_local.sync_rows where dirty")).rows[0].n) : 0;
         res.writeHead(200,{"content-type":"application/json"});
-        return res.end(JSON.stringify({ clients: loaded.reduce((n,c) => n+c.clients(),0), pending }));
+        return res.end(JSON.stringify({ clients: loaded.reduce((n,c) => n+c.clients(),0), pending, commit: version.commit, dataDir: storeKind() === "local" ? dataDir() : null }));
       }
       // CLI processes on this computer send their queries here while serve owns the local database
       if (url.pathname === "/api/_db" && req.method === "POST") {
@@ -884,17 +926,6 @@ export async function serve(initial: Checkout, opts: { port: number; host?: stri
         if (localUrl.pathname === "/api/system" && req.method === "GET") {
           res.writeHead(200,{"content-type":"application/json","cache-control":"no-store"});
           return res.end(JSON.stringify(systemInfo(version)));
-        }
-        if (localUrl.pathname === "/api/system/update" && req.method === "POST") {
-          let body = "";
-          for await (const chunk of req) { body += chunk; if (body.length > 1024) throw new HttpError(413,"Request too large"); }
-          let operation: unknown;
-          try { operation = JSON.parse(body).operation; } catch { throw new HttpError(400,"Invalid update request"); }
-          if (operation !== "check" && operation !== "install") throw new HttpError(400,"Expected check or install");
-          const { startUpdateJob } = await import("./update.ts");
-          const job = await startUpdateJob(operation);
-          res.writeHead(202,{"content-type":"application/json","cache-control":"no-store"});
-          return res.end(JSON.stringify({job}));
         }
         return await (await context(ws)).api(req, localUrl, res);
       }
@@ -950,7 +981,7 @@ export async function serve(initial: Checkout, opts: { port: number; host?: stri
   console.log(`Surface is running for all workspaces on this computer.`);
   console.log(`Open: ${link}`);
   console.log(`Log: ${logFile() ?? "off"}`);
-  // The checker runs in a separate process and shares its cache with every app and CLI.
+  // Passive bounded release discovery shares its cache with the CLI; it never installs.
   const checkUpdates = () => void maybeCheckForUpdates().catch(e => L.debug("update discovery unavailable", { err:e }));
   if (opts.listen !== false) checkUpdates();
   const updateTimer = opts.listen !== false ? setInterval(checkUpdates,15 * 60 * 1000) : null;

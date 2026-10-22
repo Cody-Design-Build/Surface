@@ -109,15 +109,17 @@ function useOutside(ref: React.RefObject<HTMLElement | null>, onOut: () => void,
   }, [active, onOut, ref]);
 }
 
-function hue(s: string) {
-  let h = 0;
-  for (const c of s) h = (h * 31 + c.charCodeAt(0)) % 360;
-  return h;
+const LABEL_COLORS = ["blue", "violet", "green", "amber", "red"] as const;
+function labelColor(label: string) {
+  let hash = 0;
+  for (const char of label) hash = (hash * 31 + char.charCodeAt(0)) % 360;
+  return LABEL_COLORS[hash % LABEL_COLORS.length];
 }
 
 export function Pill({ label, onRemove }: { label: string; onRemove?: () => void }) {
+  const color = labelColor(label);
   return (
-    <span className="pill" style={{ "--h": hue(label) } as React.CSSProperties}>
+    <span className="pill" style={{ "--pill-bg": `var(--${color}-3)`, "--pill-text": `var(--${color}-11)`, "--pill-hover": `var(--${color}-4)` } as React.CSSProperties}>
       {label}
       {onRemove ? (
         <button type="button" className="pill-x" onClick={(e) => (e.stopPropagation(), onRemove())} aria-label={`Remove ${label}`}>

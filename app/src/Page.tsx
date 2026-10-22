@@ -144,7 +144,7 @@ export function Page({ id, app, remoteTick, remoteIds, open, openTitle, createPa
         setNotice(res.notices.join(" · "));
         window.setTimeout(() => setNotice(null), 4000);
       }
-      onStatus("saved");
+      onStatus(Object.keys(pending.current).length ? "saving" : "saved");
     } catch (e) {
       if (e instanceof ApiError && e.status === 409) {
         pending.current = { ...patch, ...pending.current, fields: { ...(patch.fields ?? {}), ...(pending.current.fields ?? {}) } };

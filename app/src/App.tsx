@@ -281,7 +281,7 @@ export function App() {
   const statusText = status.s === "saving" ? "Saving…" : status.s === "conflict" ? "Conflict" : status.s === "error" ? status.msg ?? "Error" : "Saved";
 
   return (
-    <AppShell appId="writing" app={app} online={online} tick={remote.tick} openRecord={openRecord} updatesBlocked={status.s === "saving" ? "Wait for your edits to finish saving." : status.s === "error" || status.s === "conflict" ? "Resolve unsaved edits before updating." : undefined}>
+    <AppShell appId="writing" app={app} online={online} tick={remote.tick} openRecord={openRecord} beforeReload={() => status.s === "saved"}>
     <div className={`shell ${sidebar ? "" : "side-closed"}`}>
       <Sidebar
         app={app}

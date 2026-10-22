@@ -1,4 +1,12 @@
 #!/bin/sh
-# Runs the TypeScript source directly (Node >= 23.6 strips types).
-DIR="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
+# Resolve links portably (macOS readlink has no -f), then follow the active release.
+SOURCE="$0"
+while [ -L "$SOURCE" ]; do
+  BASE="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+  TARGET="$(readlink "$SOURCE")"
+  case "$TARGET" in /*) SOURCE="$TARGET";; *) SOURCE="$BASE/$TARGET";; esac
+done
+DIR="$(cd -P "$(dirname "$SOURCE")/.." && pwd)"
+CONFIG="${SURFACE_CONFIG_DIR:-$HOME/.config/surface-cli}"
+if [ -d "$CONFIG/runtime/current/cli" ]; then DIR="$CONFIG/runtime/current/cli"; fi
 exec node --no-warnings "$DIR/src/main.ts" "$@"

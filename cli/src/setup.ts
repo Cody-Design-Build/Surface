@@ -10,6 +10,8 @@ import path from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
 import { CONFIG_DIR } from "./config.ts";
 import { setStoreKind, storeKind, UserError } from "./client.ts";
+import { ACTIVE_LINK, activeRoot, serviceInstalled, writeServiceDefinition } from "./service.ts";
+import { removeLegacyUpdateSchedules } from "./update.ts";
 
 const CLI_DIR = path.resolve(import.meta.dirname, "..");
 const ROOT = path.resolve(CLI_DIR, "..");
@@ -52,17 +54,18 @@ function onPath(): string | null {
 
 /** Put `surface` on the PATH: a symlink in ~/.local/bin (no sudo). */
 function linkBin(): string {
+  const target = path.join(ACTIVE_LINK,"cli/bin/surface");
   const existing = onPath();
   if (existing) {
     try {
-      if (fs.realpathSync(existing) === fs.realpathSync(BIN)) return existing;
+      if (fs.realpathSync(existing) === fs.realpathSync(target)) return existing;
     } catch {}
   }
   const dir = path.join(os.homedir(), ".local", "bin");
   fs.mkdirSync(dir, { recursive: true });
   const link = path.join(dir, "surface");
   fs.rmSync(link, { force: true });
-  fs.symlinkSync(BIN, link);
+  fs.symlinkSync(target, link);
   return link;
 }
 
@@ -72,6 +75,7 @@ export async function setup(flags: Record<string, string | boolean>) {
   const dir = path.resolve(String(flags.dir ?? path.join(os.homedir(), "Surface")).replace(/^~(?=\/|$)/, os.homedir()));
   const name = String(flags.name ?? "My workspace");
   const port = Number(flags.port ?? 4317);
+  if (fs.existsSync(ACTIVE_LINK) && activeRoot() !== ROOT) throw new UserError("Another release is active. Run the installed `surface setup`, or `surface update` to change releases.");
   console.log(`Setting up Surface from ${ROOT}`);
 
   step("1. Node");
@@ -79,11 +83,11 @@ export async function setup(flags: Record<string, string | boolean>) {
   ok(`Node ${process.versions.node}`);
 
   step("2. Packages");
-  sh("npm", ["install", "--no-fund", "--no-audit"], CLI_DIR);
+  sh("npm", ["ci", "--no-fund", "--no-audit"], CLI_DIR);
   ok("CLI packages");
   if (flags["skip-app"]) warn("web UI skipped (--skip-app)");
   else {
-    sh("npm", ["install", "--no-fund", "--no-audit"], APP_DIR);
+    sh("npm", ["ci", "--no-fund", "--no-audit"], APP_DIR);
     ok("web UI packages");
     const dist = path.join(APP_DIR, "dist", "index.html");
     if (!fs.existsSync(dist) || fs.statSync(dist).mtimeMs < newest(path.join(APP_DIR, "src")) || flags.rebuild) {
@@ -91,10 +95,17 @@ export async function setup(flags: Record<string, string | boolean>) {
       ok("web UI built");
     } else ok("web UI already built");
   }
+  // Packages and the UI are ready before changing the stable command/service path.
+  removeLegacyUpdateSchedules();
+  if (!fs.existsSync(ACTIVE_LINK)) {
+    fs.mkdirSync(path.dirname(ACTIVE_LINK),{recursive:true});
+    fs.symlinkSync(ROOT,ACTIVE_LINK,"dir");
+  }
+  if (!flags.service && serviceInstalled()) writeServiceDefinition();
 
   step("3. The `surface` command");
   const link = linkBin();
-  ok(`${link} → ${BIN}`);
+  ok(`${link} → ${path.join(ACTIVE_LINK,"cli/bin/surface")}`);
   const pathDirs = (process.env.PATH ?? "").split(path.delimiter);
   if (!pathDirs.includes(path.dirname(link))) {
     const rc = process.env.SHELL?.endsWith("zsh") ? "~/.zshrc" : process.env.SHELL?.endsWith("fish") ? "~/.config/fish/config.fish" : "~/.bashrc";

@@ -7,7 +7,8 @@ import { CONFIG_DIR, readJson } from "./config.ts";
 import { UserError } from "./client.ts";
 
 export const ROOT = path.resolve(import.meta.dirname, "../..");
-const MAIN = path.join(ROOT, "cli", "src", "main.ts");
+export const ACTIVE_LINK = path.join(CONFIG_DIR, "runtime", "current");
+export function activeRoot() { return fs.existsSync(ACTIVE_LINK) ? fs.realpathSync(ACTIVE_LINK) : ROOT; }
 const xml = (s: string) => s.replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" }[c]!));
 const unit = (s: string) => '"' + s.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/%/g, "%%") + '"';
 /** Persist operational settings only, never passwords, access tokens or hub tokens. */
@@ -19,7 +20,8 @@ export function serviceEnvironment(): Record<string,string> {
 }
 export function serviceDefinition(port = 4317, platform = process.platform, home = os.homedir()) {
   const log = path.join(CONFIG_DIR, "serve.log");
-  const args = [process.execPath, "--no-warnings", MAIN, "serve", "--port", String(port)];
+  const main = path.join(fs.existsSync(ACTIVE_LINK) ? ACTIVE_LINK : ROOT, "cli/src/main.ts");
+  const args = [process.execPath, "--no-warnings", main, "serve", "--port", String(port)];
   const variables = serviceEnvironment();
   if (platform === "darwin") {
     const file = path.join(home, "Library", "LaunchAgents", "dev.surface.serve.plist");
@@ -43,6 +45,36 @@ export function runCommand(cmd: string, args: string[], opts: { cwd?: string; qu
   return r;
 }
 export function serviceInstalled() { return fs.existsSync(serviceDefinition().file); }
+/** Read settings persisted by our service writer, including when its server is stopped. */
+export function installedServiceEnvironment() {
+  const body = fs.readFileSync(serviceDefinition().file,"utf8");
+  const variables: Record<string,string> = {};
+  if (process.platform === "darwin") {
+    const dictionary = /<key>EnvironmentVariables<\/key><dict>([\s\S]*?)<\/dict>/.exec(body)?.[1] ?? "";
+    const decode = (value:string) => value.replace(/&(amp|lt|gt|quot|apos);/g,(_match,key:string)=>({amp:"&",lt:"<",gt:">",quot:'"',apos:"'"}[key]!));
+    for (const match of dictionary.matchAll(/<key>([^<]*)<\/key><string>([^<]*)<\/string>/g)) variables[decode(match[1])] = decode(match[2]);
+  } else {
+    for (const match of body.matchAll(/^Environment="((?:\\.|[^"\\])*)"/gm)) {
+      const entry = match[1].replace(/\\(["\\])/g,"$1").replace(/%%/g,"%");
+      const split = entry.indexOf("=");
+      if (split > 0) variables[entry.slice(0,split)] = entry.slice(split+1);
+    }
+  }
+  return variables;
+}
+/** Change only the entry point; preserve the service's port, Node, environment and policy. */
+export function writeServiceDefinition() {
+  const d = serviceDefinition();
+  const original = fs.readFileSync(d.file,"utf8");
+  const main = path.join(ACTIVE_LINK,"cli/src/main.ts");
+  const pattern = process.platform === "darwin"
+    ? /(<string>--no-warnings<\/string>\s*)<string>[^<]*<\/string>/
+    : /^(ExecStart=(?:"(?:\\.|[^"\\])*"|\S+)\s+(?:"--no-warnings"|--no-warnings)\s+)(?:"(?:\\.|[^"\\])*"|\S+)/m;
+  if (!pattern.test(original)) throw new UserError("Unrecognized Surface service entry point; restore or reinstall its service definition before updating.");
+  const body = original.replace(pattern,(_match,prefix:string)=>prefix + (process.platform === "darwin" ? `<string>${xml(main)}</string>` : unit(main)));
+  fs.writeFileSync(d.file,body);
+  if (process.platform === "linux") runCommand("systemctl",["--user","daemon-reload"],{quiet:true});
+}
 export function serviceAction(action: "install" | "start" | "stop" | "restart" | "status", port?: number) {
   const saved = readJson<{ port?: number }>(path.join(CONFIG_DIR,"serve.json"),{});
   const d = serviceDefinition(port ?? saved.port ?? 4317);

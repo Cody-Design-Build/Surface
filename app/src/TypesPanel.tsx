@@ -94,7 +94,7 @@ function TypeEditor({ app, t, readOnly, onToast, noun }: { app: AppState; t: Typ
   const save = async () => {
     const untargeted = fields.find((f) => f._new && f.kind === "link" && !f.target);
     if (untargeted) { setError(`Choose which table “${untargeted.name || "the new field"}” links to.`); return; }
-    if (removed.length && !confirm(`Remove ${removed.map((f) => `“${f.name}”`).join(", ")}? Values are dropped from every ${t.name.toLowerCase()} (they stay in history).`)) return;
+    if (removed.length && !confirm(`Remove ${removed.map((f) => `“${f.name}”`).join(", ")}? Stored field values are dropped from every ${t.name.toLowerCase()} (they stay in history). Removing an inverse field keeps its stored forward links.`)) return;
     setBusy(true);
     try {
       await api.saveType(t.key, {
@@ -105,6 +105,7 @@ function TypeEditor({ app, t, readOnly, onToast, noun }: { app: AppState; t: Typ
           if (out.kind !== "link") {
             delete out.target;
             delete out.multiple;
+            delete out.inverse;
           }
           if (!out.required) delete out.required;
           void _new;
@@ -154,6 +155,7 @@ function TypeEditor({ app, t, readOnly, onToast, noun }: { app: AppState; t: Typ
               <span className="field-kind">
                 {KINDS.find((k) => k.kind === f.kind)?.label}
                 {f.kind === "link" ? ` → ${app.types.find((x) => x.key === f.target)?.name ?? "any"}${f.multiple ? " (many)" : ""}` : ""}
+                {f.inverse ? " · inverse (stored once)" : ""}
                 {f.required ? " · required" : ""}
               </span>
               {!readOnly ? (
@@ -260,7 +262,7 @@ function TypeEditor({ app, t, readOnly, onToast, noun }: { app: AppState; t: Typ
 }
 
 function strip(f: Partial<FieldDef> & { _new?: boolean }) {
-  return { key: f.key, name: f.name, kind: f.kind, options: f.options ?? null, target: f.target ?? null, multiple: !!f.multiple, required: !!f.required };
+  return { key: f.key, name: f.name, kind: f.kind, options: f.options ?? null, target: f.target ?? null, multiple: !!f.multiple, inverse: f.inverse ?? null, required: !!f.required };
 }
 function swap<T>(a: T[], i: number, j: number) {
   const b = [...a];
