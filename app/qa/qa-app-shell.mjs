@@ -12,6 +12,7 @@ const {api,syncApi} = await import("../src/api.ts");
 const {AppShell,SidebarResizeHandle} = await import("../src/AppShell.tsx");
 const originals = {system:api.system,workspaces:api.workspaces,switchWorkspace:api.switchWorkspace,workspaceState:api.workspaceState,updateSystem:api.updateSystem,status:syncApi.status};
 const info = {machine:"test-laptop",account:{id:"signup-user",name:"Team Member",email:"member@example.com"},version:{number:"0.1.0",commit:"a".repeat(40)},update:{available:true,availableCommit:"b".repeat(40),availableVersion:"0.2.0",checkedAt:new Date().toISOString(),job:null}};
+info.runningVersion={number:"0.1.0",commit:"0".repeat(40)};
 api.system = async () => structuredClone(info);
 api.workspaces = async () => ({workspaces:[{id:"abc123",name:"Business",current:true},{id:"other",name:"Other workspace",current:false}],invites:[]});
 syncApi.status = async () => ({enabled:false});
@@ -32,6 +33,7 @@ try {
   assert.equal(host.querySelector(".app-version").textContent,"Installedv0.1.0 · aaaaaaa");
   assert.match(host.querySelector(".app-update-status").textContent,/Update available.*Available · v0.2.0 · bbbbbbb/);
   assert(host.querySelector(".app-update-status.available"),"a different revision has the red update status");
+  assert.equal(host.querySelector(".app-update-trigger").textContent,"Update","an old running server doesn't hide check/install behind Reload");
   assert.equal(updateCalls.length,0,"detecting an update never installs it");
   await click(host.querySelector(".app-account-trigger"));
   assert.match(host.querySelector(".app-account-details").textContent,/Team Member.*member@example.com/);
@@ -75,6 +77,7 @@ try {
   assert.match(host.querySelector('[role="alert"]').textContent,/Workspace unavailable/);
   await click(host.querySelector(".app-update-trigger"));
   assert.match(host.querySelector(".app-update-menu").textContent,/Installed: v0.1.0 · aaaaaaa.*Available: v0.2.0 · bbbbbbb/);
+  assert.match(host.querySelector(".app-update-menu").textContent,/Running server: 0000000/);
   const install=[...host.querySelectorAll(".app-update-menu button")].find(button=>button.textContent==="Install and restart apps");
   await render("data",{updatesBlocked:"Save your edits first."});
   assert(install.disabled,"pending edits block manual installation");

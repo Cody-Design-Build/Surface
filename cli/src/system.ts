@@ -41,6 +41,9 @@ export function installedVersion() {
   return { number, commit };
 }
 
-export function systemInfo(version = installedVersion()) {
-  return { machine: os.hostname(), account: signedInAccount(), version, update: { ...cachedUpdate(version.commit), job: updateJobStatus() } };
+export function systemInfo(runningVersion = installedVersion()) {
+  // The worker checks the checkout on disk. A long-lived server can still be
+  // running an earlier revision after a commit or pull; don't discard its results.
+  const version = installedVersion();
+  return { machine: os.hostname(), account: signedInAccount(), version, runningVersion, update: { ...cachedUpdate(version.commit), job: updateJobStatus() } };
 }

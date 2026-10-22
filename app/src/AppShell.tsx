@@ -89,7 +89,7 @@ function AppHeader({ appId, app, online, tick, openRecord, beforeNavigate, onNav
       try {
         const info = await api.system();
         if (!active) return;
-        initialCommit.current ??= info.version.commit;
+        initialCommit.current ??= info.runningVersion?.commit ?? info.version.commit;
         setSystem(info);
         setSystemUnavailable(false);
       } catch { if (active) setSystemUnavailable(true); /* Keep polling through a server restart. */ }
@@ -127,7 +127,8 @@ function AppHeader({ appId, app, online, tick, openRecord, beforeNavigate, onNav
     finally { setRequesting(false); }
   };
   const job = system?.update.job;
-  const changed = !!(system?.version.commit && initialCommit.current && system.version.commit !== initialCommit.current);
+  const runningCommit = system?.runningVersion?.commit ?? system?.version.commit;
+  const changed = !!(runningCommit && initialCommit.current && runningCommit !== initialCommit.current);
   const updateStatus = changed ? "Reload to finish" : system?.update.available ? "Update available" : activeJob ? "Checking…" : systemUnavailable || job?.state === "error" ? "Check unavailable" : system?.update.checkedAt && system.update.availableCommit === system.version.commit ? "Up to date" : "Not checked";
   const updateTone = changed || system?.update.available ? "available" : updateStatus === "Up to date" ? "current" : "unknown";
   const availableVersion = system?.update.availableCommit ? `${system.update.availableVersion ? `v${system.update.availableVersion} · ` : ""}${system.update.availableCommit.slice(0, 7)}` : "unknown";
@@ -147,6 +148,7 @@ function AppHeader({ appId, app, online, tick, openRecord, beforeNavigate, onNav
           <strong>Updates for all apps</strong>
           <p className="app-build-info">Installed: v{system?.version.number ?? packageInfo.version}{system?.version.commit && ` · ${system.version.commit.slice(0, 7)}`}</p>
           <p className="app-build-info">Available: {availableVersion}</p>
+          {system?.runningVersion?.commit && system.runningVersion.commit !== system.version.commit && <p className="app-build-info">Running server: {system.runningVersion.commit.slice(0, 7)}. Restart Surface to load the installed revision.</p>}
           {system?.update.checkedAt && <p>Last checked: {new Date(system.update.checkedAt).toLocaleString()}</p>}
           {!system && systemUnavailable && <p>Reconnect or restart the local server to use update controls.</p>}
           {changed ? <><p>The update is installed. Reload to use it.</p><button className="btn-soft" onClick={() => { if (!beforeNavigate || beforeNavigate()) location.reload(); }}>Reload app</button></> : <>

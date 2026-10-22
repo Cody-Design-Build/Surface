@@ -14,6 +14,15 @@ try {
   const info=systemInfo(); assert.equal(info.account?.id,"signup-user-id");
   assert.equal(JSON.stringify(info).includes("private-"),false);
   assert.equal(installedVersion().number,"0.1.0");assert.match(installedVersion().commit!,/^[a-f0-9]{40}$/);
+  const installed=installedVersion();
+  const running={number:"0.0.9",commit:"0".repeat(40)};
+  fs.writeFileSync(path.join(tmp,"update.json"),JSON.stringify({current:installed.commit,available:"b".repeat(40),availableVersion:"0.2.0",updateAvailable:true,checkedAt:new Date().toISOString()}));
+  const checked=systemInfo(running);
+  assert.deepEqual(checked.version,installed,"installed version follows the checkout checked by the updater");
+  assert.deepEqual(checked.runningVersion,running,"the server's startup revision stays independently visible");
+  assert.equal(checked.update.available,true,"a completed check remains visible after HEAD changes without a restart");
+  assert.equal(checked.update.availableCommit,"b".repeat(40));
+  assert.ok(checked.update.checkedAt);
   fs.writeFileSync(path.join(tmp,"session.json"),JSON.stringify({"sb-team-auth-token":"broken"})); assert.equal(signedInAccount(),null);
   fs.writeFileSync(path.join(tmp,"session.json"),"{}");assert.equal(signedInAccount(),null);
   console.log("System info: actual signup identity, correct cloud, no exposed credentials, local/signed-out display and installed revision passed.");

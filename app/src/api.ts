@@ -151,6 +151,7 @@ export interface SystemInfo {
   machine: string;
   account: { id: string; email: string; name: string | null } | null;
   version: { number: string; commit: string | null };
+  runningVersion?: { number: string; commit: string | null };
   update: { available: boolean; availableCommit?: string | null; availableVersion?: string | null; checkedAt: string | null; job: { id: string; operation: "check" | "install"; state: "running" | "complete" | "error"; error?: string } | null };
 }
 
