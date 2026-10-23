@@ -2,6 +2,8 @@
 
 **Current direction, Oct 16, 2026.** Agents help humans work with Surface's headless, mutable database foundation. Markdown is the first and foundational bridge; the CLI is the built interface for exact operations. See [SPEC §10](SPEC.md#10-agents).
 
+**Scope correction (Oct 23, 2026):** hosted Data View development is in the separate [CDB-Surface repository](https://github.com/Cody-Design-Build/CDB-Surface). This Surface repository retains its Vault, disk checkouts, CLI, local/offline database, and sync. The earlier [whole-app cloud plan](CLOUD-HOSTING-PLAN.md) is historical, not an instruction to remove these features.
+
 ## The agent's role
 
 Bring your own agent. Surface does not require one particular model or provider. An agent can help define types and relationships, organize records, answer questions, perform updates and create a useful surface for the work at hand.
