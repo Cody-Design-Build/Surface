@@ -8,6 +8,7 @@ import type { TypeRow } from "./db.ts";
 
 function describeField(f: TypeRow["fields"][number], types: TypeRow[]): string {
   let kind: string = f.kind;
+  if (f.kind === "phone") kind += ": E.164 entries [{number, label?, extension?}]; CLI also accepts formatted US/Canadian numbers or +country-code numbers, one labeled number per line";
   if (f.kind === "select" || f.kind === "multi_select") kind += ` (${(f.options ?? []).join(", ")})`;
   if (f.kind === "link") {
     const t = types.find((t) => t.id === f.target);

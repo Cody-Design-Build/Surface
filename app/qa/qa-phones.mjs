@@ -1,0 +1,52 @@
+// Real React editors and phone cells, with no business workspace or network access.
+import assert from "node:assert/strict";
+import { registerHooks } from "node:module";
+import { Window } from "happy-dom";
+registerHooks({ load(url, context, nextLoad) { if (url.endsWith(".css")) return { format: "module", source: "export default {}", shortCircuit: true }; return nextLoad(url, context); } });
+const window = new Window({ url: "http://localhost/" });
+for (const key of ["window", "document", "navigator", "HTMLElement", "HTMLInputElement", "HTMLTextAreaElement", "Element", "Node", "Event", "MouseEvent", "KeyboardEvent"]) Object.defineProperty(globalThis, key, { value: key === "window" ? window : window[key], configurable: true });
+globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+const { createElement, act } = await import("react");
+const { createRoot } = await import("react-dom/client");
+const { renderToStaticMarkup } = await import("react-dom/server");
+const { Value } = await import("../src/Properties.tsx");
+const { CellView } = await import("../src/ViewPage.tsx");
+const { textOf } = await import("../src/Grid.tsx");
+const { normalizePhones } = await import("../../cli/src/phone.ts");
+const f = { id: "phone", key: "phone", name: "Phone", kind: "phone" };
+const value = [{ number: "+14155550123", label: "mobile", extension: "004" }, { number: "+442079460958", label: "office" }];
+const app = { records: [] };
+const html = renderToStaticMarkup(createElement(CellView, { app, f, v: value }));
+assert(html.includes('href="tel:+14155550123;ext=004"'));
+assert(html.includes("(415) 555-0123 ext. 004"));
+assert(html.includes("+44 20 7946 0958"));
+assert(!html.includes("[object Object]"));
+const gridText = textOf(app, f, { fields: { phone: value } });
+assert.deepEqual(normalizePhones(gridText), value, "copy/paste and grid text retain every entry and extension");
+document.body.innerHTML = '<div id="root"></div>';
+const root = createRoot(document.querySelector("#root"));
+const changes = [];
+const draw = current => root.render(createElement(Value, { f, value: current, records: [], onOpen() {}, onChange(v) { changes.push(v); } }));
+try {
+  await act(async () => draw(value));
+  let field = document.querySelector("textarea");
+  assert(field);
+  assert.equal(Number(field.rows), 2);
+  assert(field.value.includes("mobile: (415) 555-0123 ext. 004"));
+  assert(field.value.includes("office: +44 20 7946 0958"));
+  await act(async () => field.focus());
+  const edited = "mobile: 415.555.0123 ext. 004\noffice: +44 20 7946 0958\nhome: 415.555.0124";
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value").set.call(field, edited);
+    field.dispatchEvent(new window.Event("input", { bubbles: true }));
+  });
+  await act(async () => field.blur());
+  assert.equal(changes.at(-1), edited);
+  assert.equal(normalizePhones(changes.at(-1)).length, 3);
+  await act(async () => draw(normalizePhones(edited)));
+  assert.equal(Number(document.querySelector("textarea").rows), 3);
+  await act(async () => draw("unparseable legacy note"));
+  field = document.querySelector("textarea");
+  assert.equal(field.value, "unparseable legacy note", "legacy values remain visible for correction");
+  console.log("Phone UI passed: readable/clickable numbers, labeled multi-number editing, extensions, grid copy/paste, and legacy visibility.");
+} finally { await act(async () => root.unmount()); await window.happyDOM.close(); }

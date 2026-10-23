@@ -53,6 +53,19 @@ If automatic recovery cannot stop a process, obtain the database lock, or restor
 
 The local server performs bounded, passive in-process release discovery on startup and when the four-hour cache expires. Interactive CLI commands may show a cached notice but never launch a discovery worker or installer. JSON and noninteractive commands stay quiet. Failed passive checks retry after 15 minutes; a failed cloud or release check does not establish that the computer has no internet connection. `SURFACE_UPDATE_CHECK=0` disables passive discovery (manual `surface update --check` still works; reinstall the service to persist the setting).
 
+### Recovering the phone schema rollout (0.1.2)
+
+The shared database received migration `0009_phone_fields.sql` before the matching client was published. Version 0.1.1 cannot sync the new structured phone values. On every computer, run:
+
+```sh
+surface update
+surface restart
+surface doctor
+surface sync
+```
+
+Version 0.1.2 bundles the phone validator, renderer and migration. The updater installs dependencies and builds the app before activation, backs up the stopped local database, and restarts a running server. The explicit restart also covers an installation that was already current but still had an older process running. Existing local phone strings remain readable and are normalized when edited. Keep local edits and sync conflicts; do not delete the database, rejoin the workspace, or rerun cloud migrations to repair a client installation.
+
 ### Publishing and migrating releases
 
 Release maintainers update package versions and lockfiles consistently, commit the intended release (including migration/recovery notes), run the release checks, and publish an immutable stable tag to the installation's `origin`:
@@ -61,6 +74,8 @@ Release maintainers update package versions and lockfiles consistently, commit t
 git tag -a v1.2.3 <release-commit> -m "Surface 1.2.3"
 git push origin refs/tags/v1.2.3
 ```
+
+Publish and verify the compatible stable client release before deploying a shared schema that changes stored value formats. Upgrade participating clients before converting existing shared records. Test upgrades from the previous published release, including pending local data.
 
 Pushing a branch or a prerelease tag alone does not offer an update. Do not move an already published tag or reuse a version for different code; the updater rejects conflicting same-version aliases and a tag that changes during preparation. Publish a new stable version to correct a release. Clients require their installed commit to be an ancestor of the target release; preserve release ancestry or provide a separately reviewed migration instead of force-resetting installations.
 
@@ -73,7 +88,7 @@ cd cli
 SURFACE_KEEP_UPDATE_FIXTURE=1 npm run test:updates
 ```
 
-This executable integration fixture snapshots the current source into a temporary local Git publisher, publishes real annotated stable/prerelease tags and unreleased commits, installs the actual CLI/app with real `npm ci` and production builds, and runs a real server. It exercises dirty/divergent code preservation, read-only checks, preparation failure without stopping the server, atomic activation, actual-revision health checks, rollback after a release's startup failure, repeat updates from the active detached release, and stopped-server preservation. Git is local-only; npm may download dependencies into an isolated cache. Its temporary HOME/config/data/ports prevent touching an installed CLI, systemd service or launch agent. The optional environment variable keeps the fixture and logs for inspection; without it the fixture is removed. This does not exercise a real systemd/launchd session; verify managed-service restart behavior separately in an isolated OS account.
+This executable integration fixture starts from the published `v0.1.1` client and database, then snapshots the current source into a temporary local Git publisher, publishes real annotated stable/prerelease tags and unreleased commits, installs the actual CLI/app with real `npm ci` and production builds, and runs a real server. It exercises migration of existing phone data, dirty/divergent code preservation, read-only checks, preparation failure without stopping the server, atomic activation, actual-revision health checks, rollback after a release's startup failure, repeat updates from the active detached release, and stopped-server preservation. Git is local-only; npm may download dependencies into an isolated cache. Its temporary HOME/config/data/ports prevent touching an installed CLI, systemd service or launch agent. The optional environment variable keeps the fixture and logs for inspection; without it the fixture is removed. This does not exercise a real systemd/launchd session; verify managed-service restart behavior separately in an isolated OS account.
 
 The writing and data interfaces use the same port (4317 by default). A workspace is part of its URL, so tabs stay independent. Close any old data server on 4318 during the first upgrade.
 
@@ -157,6 +172,27 @@ Markdown contains only stored fields: inverse fields are omitted, not duplicated
 
 Local databases apply migration **0007** when opened by the updated client. Before adding or syncing inverse-bearing schemas, an authorized administrator must run `surface cloud migrate --since 7` with `SUPABASE_ACCESS_TOKEN`, or apply `surface cloud schema --since 7` through the SQL editor. Client installation does not migrate the cloud. The schema-version capability check fails closed on an older or inaccessible hub, preserving local edits rather than silently discarding inverse metadata or duplicating reverse values.
 
+
+## Phone fields
+
+Phone is a validated database type, not unrestricted text. The CLI, Markdown push and app accept common US/Canadian formats (default region US), or international numbers beginning with `+` and a country code. They normalize numbers to E.164. The app displays US/Canadian numbers as `(415) 555-0123` and international numbers in international format.
+
+A phone field can hold several entries. Labels and extensions are stored separately from the number, so nothing is lost:
+
+```yaml
+phone:
+  - number: "+14155550123"
+    label: mobile
+  - number: "+14155550124"
+    label: office
+    extension: "004"
+```
+
+Plain text input also works: `phone=415.555.0123`, or labeled numbers on separate lines (`mobile: 415.555.0123`, `office: 415.555.0124 ext. 004`). The grid accepts those lines separated by semicolons too. The property editor uses Shift+Enter for another line. The CLI also accepts a JSON array of entries as its assignment value.
+
+Incomplete numbers, conflicting extensions, unsupported labels and unknown entry keys are rejected rather than guessed or dropped. Validation checks structure and plausible number length, not whether a number is active or assigned. Database writes must use canonical arrays of `{number, label?, extension?}`; formatting through a skill alone cannot bypass this rule. Empty optional fields are `null`.
+
+**Upgrade:** migration `0009_phone_fields.sql` applies automatically to local stores on restart. Cloud administrators must apply migration 9 before updated clients write structured phones (`surface cloud migrate --since 9` with administrator credentials, or `surface cloud schema --since 9` in the SQL editor). Older clients need updating to edit phone fields. Existing legacy values remain visible and don't block unrelated edits; normalize or review them explicitly. History retains the original values.
 
 ## Work with records
 

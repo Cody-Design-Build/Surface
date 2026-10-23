@@ -1,3 +1,4 @@
+import { phoneText, phoneEntries, phoneHref } from "../../cli/src/phone.ts";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError, type AppState, type FieldDef, type LayoutDef, type RecordFull, type Summary, type TypeInfo, type ViewDef, type ViewInfo } from "./api.ts";
 import { defaultsFrom, deleteRecord, setFields } from "./edits.ts";
@@ -292,6 +293,10 @@ function titleOf(app: AppState, id: string) {
 
 export function CellView({ app, f, v }: { app: AppState; f: FieldDef; v: unknown }) {
   if (v == null || v === "" || (Array.isArray(v) && !v.length)) return <span className="empty">—</span>;
+  if (f.kind === "phone") {
+    const entries = phoneEntries(v);
+    return entries ? <>{entries.map((entry, i) => <span key={i}>{i > 0 ? "; " : ""}<a className="cell-url" href={phoneHref(entry)} onClick={e => e.stopPropagation()}>{phoneText([entry])}</a></span>)}</> : <>{phoneText(v)}</>;
+  }
   if (f.kind === "checkbox") return v ? <span className="cell-check on">✓</span> : <span className="cell-check" />;
   if (f.kind === "select") return <Pill label={String(v)} />;
   if (f.kind === "multi_select") return <>{(v as string[]).map((x) => <Pill key={x} label={x} />)}</>;

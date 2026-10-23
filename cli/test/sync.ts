@@ -347,6 +347,45 @@ try {
   await stop(aServe.proc);
   ok("serve syncs on its own: app edits go up, others' edits come down");
 
+  // Reproduce an edit queued by the pre-phone client, then upgraded before sync.
+  run("a", ["field", "add", "task", "phone", "--kind", "phone"]);
+  run("a", ["sync"]);
+  run("b", ["sync"]);
+  const seedLegacyPhone = `
+    import {localAdmin,closeLocal} from ${JSON.stringify(new URL("../src/local.ts",import.meta.url).href)};
+    try { await localAdmin(async tx => {
+      await tx.exec("alter table public.records disable trigger records_validate");
+      await tx.query(\`update public.records set fields=fields || jsonb_build_object(
+        (select f->>'id' from public.types t,jsonb_array_elements(t.fields) f where t.id=records.type_id and f->>'key'='phone'),
+        'mobile: (415) 555-0123 ext. 004'::text) where id=$1\`,[${JSON.stringify(t1)}]);
+      await tx.exec("alter table public.records enable trigger records_validate");
+    }); } finally {await closeLocal();}
+  `;
+  execFileSync(process.execPath,["--no-warnings","--input-type=module","-e",seedLegacyPhone],{cwd:dir("a"),env:envOf("a"),stdio:"pipe"});
+  run("a",["sync"]); run("b",["sync"]);
+  assert.deepEqual(find("b","task","Order tile")!.fields.phone,[{number:"+14155550123",label:"mobile",extension:"004"}]);
+  const phoneStatus = callSync("a","status") as {pending:Record<string,number>;conflicts:unknown[]};
+  assert.equal(phoneStatus.pending.record ?? 0,0);
+  assert.equal(phoneStatus.conflicts.length,0);
+  ok("legacy queued phone edits normalize on sync without losing extensions or leaving pending records");
+  // A cloud conversion must not look like a competing edit solely because
+  // PostgreSQL orders object keys differently from the string normalizer.
+  const legacyBaseEdit = seedLegacyPhone
+    .replace('await tx.exec("alter table public.records disable trigger records_validate");',
+      'await tx.exec("alter table public.records disable trigger records_validate; set local surface.applying = \'1\'");')
+    .replace('await tx.exec("alter table public.records enable trigger records_validate");', `
+      await tx.exec("set local surface.applying = ''");
+      await tx.query(\`update public.records set fields=jsonb_set(fields,
+        array[(select f->>'id' from public.types t,jsonb_array_elements(t.fields) f where t.id=records.type_id and f->>'key'='phone')],
+        to_jsonb('mobile: (415) 555-0124 ext. 004'::text)) where id=$1\`,[${JSON.stringify(t1)}]);
+      await tx.exec("alter table public.records enable trigger records_validate");
+    `);
+  execFileSync(process.execPath,["--no-warnings","--input-type=module","-e",legacyBaseEdit],{cwd:dir("a"),env:envOf("a"),stdio:"pipe"});
+  run("a",["sync"]); run("b",["sync"]);
+  assert.deepEqual(find("b","task","Order tile")!.fields.phone,[{number:"+14155550124",label:"mobile",extension:"004"}]);
+  assert.equal((callSync("a","status") as {conflicts:unknown[]}).conflicts.length,0);
+  ok("a converted cloud phone and its legacy base compare equally before a queued phone edit");
+
   console.log(`\nall ${step} passed`);
 } catch (e) {
   console.error(e);

@@ -1,6 +1,6 @@
 {
   "name": "surface-cli",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "type": "module",
   "description": "Surface CLI: a types engine on Supabase, with Markdown checkouts",
@@ -27,11 +27,13 @@
     "test:system": "node --no-warnings test/system.ts",
     "test:local-repair": "node --no-warnings test/local-repair.ts",
     "test:restart": "node --no-warnings test/restart.ts",
-    "test:logging": "bash test/logging.sh"
+    "test:logging": "bash test/logging.sh",
+    "test:phones": "node --no-warnings test/phones.ts"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.10",
     "@supabase/supabase-js": "^2.117.3",
+    "libphonenumber-js": "1.13.15",
     "yaml": "^2.9.1"
   },
   "devDependencies": {

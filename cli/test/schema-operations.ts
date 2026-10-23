@@ -42,7 +42,7 @@ try {
     { kind: "multi_select", input: "red,blue", expected: ["Red", "Blue"], flags: ["--options", "Red,Blue"] },
     { kind: "url", input: "example.com", expected: "https://example.com" },
     { kind: "email", input: "person@example.test", expected: "person@example.test" },
-    { kind: "phone", input: "+1 415 555 0100", expected: "+1 415 555 0100" },
+    { kind: "phone", input: "+1 415 555 0100", expected: [{ number: "+14155550100" }] },
     { kind: "link", input: organization.title, expected: organization.id, flags: ["--target", "organization"] },
   ];
   assert.deepEqual(cases.map(field => field.kind).sort(), [...KINDS].sort(), "a supported field kind needs a real CLI round-trip case");

@@ -14,6 +14,7 @@ import { exec, localAdmin, localOwnerPort, localUser, remoteClient, type Desc } 
 import { CONFIG_DIR } from "./config.ts";
 import { logger } from "./log.ts";
 import { statusErrorKind } from "./system.ts";
+import { phoneEntries } from "./phone.ts";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -621,7 +622,11 @@ type Types = Awaited<ReturnType<typeof mapTypes>>;
 
 const byKey = (fields: Record<string, unknown>, t: TypeRow | undefined) => {
   const out: Record<string, unknown> = {};
-  for (const f of t?.fields ?? []) if (!f.inverse && fields[f.id] !== undefined && fields[f.id] !== null) out[f.key] = fields[f.id];
+  for (const f of t?.fields ?? []) if (!f.inverse && fields[f.id] !== undefined && fields[f.id] !== null) {
+    // Compare and send old queued phone strings in the new representation too.
+    // Keep invalid legacy values visible; never silently erase ambiguous data.
+    out[f.key] = f.kind === "phone" ? phoneEntries(fields[f.id]) ?? fields[f.id] : fields[f.id];
+  }
   return out;
 };
 const byId = (fields: Record<string, unknown>, t: TypeRow | undefined) => {
@@ -717,7 +722,7 @@ function document(r: Row, t: TypeRow | undefined): Row {
 }
 const equal = (a: unknown, b: unknown): boolean => {
   if (a == null && b == null) return true;
-  if (Array.isArray(a) || Array.isArray(b)) return JSON.stringify(a) === JSON.stringify(b);
+  if (Array.isArray(a) || Array.isArray(b)) return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((value, i) => equal(value, b[i]));
   if (a && b && typeof a === "object" && typeof b === "object") {
     const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
     return [...keys].every(k => equal((a as Row)[k], (b as Row)[k]));

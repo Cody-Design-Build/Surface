@@ -15,6 +15,7 @@ import { localEdits, localViewEdits, makeResolver, pull, push, snapshot, status,
 import { matches, parseWhere, sortRows, type QueryCtx } from "./query.ts";
 import { asTreeDef, defaultTree, drawTree, isTreeDef, resolveTree, validateDataView, validateTree, type TreeNode } from "./tree.ts";
 import { cliValue, normalize } from "./normalize.ts";
+import { phoneText } from "./phone.ts";
 import { basename, parse, render } from "./markdown.ts";
 import { writeAgentFiles } from "./skills.ts";
 import { migrateCloud } from "./cloud-migrations.ts";
@@ -752,6 +753,7 @@ const commands: Record<string, Cmd> = {
     const show = (r: RecordRow, f: FieldDef) => {
       const v = r.fields[f.id];
       if (v == null) return "";
+      if (f.kind === "phone") return phoneText(v).replace(/\n/g, "; ");
       if (f.kind === "link") return (Array.isArray(v) ? v : [v]).map((id) => titles.get(id as string) ?? id).join(", ");
       return Array.isArray(v) ? v.join(", ") : String(v);
     };

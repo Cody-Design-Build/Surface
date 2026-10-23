@@ -1,5 +1,6 @@
 // Filtering and sorting records: shared by `surface query` and the Views tree.
 import { UserError } from "./client.ts";
+import { phoneText } from "./phone.ts";
 import type { RecordRow, TypeRow } from "./db.ts";
 
 export interface Cond {
@@ -43,7 +44,7 @@ export function valueOf(r: RecordRow, key: string, ctx: QueryCtx): unknown {
   const ids = linkIds(r, key, t);
   if (ids) return ids.map((id) => ctx.titles.get(id) ?? id);
   const f = t.fields.find((f) => f.key === key);
-  return f ? r.fields[f.id] : undefined;
+  return f?.kind === "phone" ? phoneText(r.fields[f.id], false) : f ? r.fields[f.id] : undefined;
 }
 
 export function matches(r: RecordRow, conds: Cond[], ctx: QueryCtx): boolean {

@@ -346,6 +346,7 @@ article:hover .aliases-add, .aliases-add:focus { opacity: 1; }
 .prop-input:focus { background: var(--bg-raised); box-shadow: 0 0 0 1px var(--focus), 0 1px 3px var(--shadow-color); }
 .prop-input::placeholder, .empty { color: var(--text-faint); }
 .prop-input.date { width: auto; min-width: 150px; }
+.phone-input { resize: vertical; min-height: 30px; font: inherit; line-height: 1.5; }
 .text-value { display: flex; align-items: center; gap: 4px; }
 .prop-open { color: var(--text-muted); padding: 4px; border-radius: 5px; }
 .prop-open:hover { background: var(--bg-hover); color: var(--accent-text); }

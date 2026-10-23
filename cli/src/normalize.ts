@@ -1,6 +1,7 @@
 // Lenient reading of hand-edited values. Safe, unambiguous fixes are applied and
 // reported as notices; anything ambiguous is an error that blocks the push.
 import type { FieldDef } from "./db.ts";
+import { normalizePhones } from "./phone.ts";
 
 export interface Resolver {
   /** Resolve a link label ("Kitchen Remodel", "[[Kitchen Remodel|alias]]", or an id) to a record id. */
@@ -87,8 +88,13 @@ export function normalize(def: FieldDef, raw: unknown, resolve: Resolver): Norma
   const asText = (v: unknown) => (v instanceof Date ? v.toISOString().slice(0, 10) : String(v));
 
   switch (def.kind) {
-    case "text":
     case "phone": {
+      try {
+        const value = normalizePhones(raw);
+        return { value, ...(JSON.stringify(value) !== JSON.stringify(raw) ? { notice: "normalized phone numbers (E.164); labels and extensions preserved" } : {}) };
+      } catch (e) { return { value: raw, error: (e as Error).message }; }
+    }
+    case "text": {
       if (typeof raw === "string") return { value: raw };
       if (Array.isArray(raw) || typeof raw === "object") return { value: raw, error: "must be text, not a list" };
       return { value: asText(raw), notice: `read ${JSON.stringify(raw)} as text` };

@@ -15,6 +15,7 @@ import "react-data-grid/lib/styles.css";
 import type { AppState, FieldDef, LayoutDef, RecordFull, TypeInfo } from "./api.ts";
 import { Icon } from "./Icon.tsx";
 import { Pill } from "./Properties.tsx";
+import { phoneText } from "../../cli/src/phone.ts";
 import { CellView } from "./ViewPage.tsx";
 
 export type LayoutPatch = { layout?: Partial<LayoutDef>; sort?: string | null };
@@ -48,6 +49,7 @@ export function textOf(app: AppState, f: FieldDef | undefined, rec: RecordFull):
   if (!f) return rec.title;
   const v = rec.fields[f.key];
   if (v == null || v === "") return "";
+  if (f.kind === "phone") return phoneText(v).replace(/\n/g, "; ");
   if (f.kind === "checkbox") return v ? "true" : "false";
   if (f.kind === "link") return (Array.isArray(v) ? v : [v]).map((id) => titleOf(app, String(id))).join(", ");
   return Array.isArray(v) ? v.join(", ") : String(v);
@@ -112,7 +114,7 @@ function TextEditor({ row, column, onRowChange, onClose, f }: RenderEditCellProp
       autoFocus
       type={f?.kind === "date" ? "date" : "text"}
       inputMode={f?.kind === "number" ? "decimal" : f?.kind === "email" ? "email" : f?.kind === "phone" ? "tel" : undefined}
-      value={value == null ? "" : String(value)}
+      value={f?.kind === "phone" && Array.isArray(value) ? phoneText(value).replace(/\n/g, "; ") : value == null ? "" : String(value)}
       ref={(el) => {
         if (el && f?.kind !== "date" && el.dataset.sel !== "1") {
           el.dataset.sel = "1";

@@ -11,7 +11,7 @@ import { setTimeout as delay } from "node:timers/promises";
 
 import { once } from "node:events";
 const source = path.resolve(import.meta.dirname,"../..");
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(),"surface-releases-"));
+const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(),"surface-releases-")));
 const home = path.join(tmp,"home"), config = path.join(home,".config/surface-cli"), data = path.join(tmp,"data");
 const publisher = path.join(tmp,"publisher"), installed = path.join(tmp,"installed"), workspace = path.join(tmp,"workspace");
 const env = {...process.env,HOME:home,SURFACE_CONFIG_DIR:config,SURFACE_DATA_DIR:data,SURFACE_STORE:"local",SURFACE_UPDATE_CHECK:"0",
@@ -59,14 +59,21 @@ function publish(version:string, edit?:()=>void) {
 let count = 0;
 const ok = (message:string) => console.log(`ok ${++count} ${message}`);
 try {
-  for (const name of ["cli","app","supabase","surfaces.mts",".gitignore"]) fs.cpSync(path.join(source,name),path.join(publisher,name),{recursive:true,
-    filter: file => !["node_modules","dist",".git"].includes(path.basename(file))});
+  // Start with the published client/schema, not two copies of today's code.
+  const baseline = execFileSync("git",["archive","v0.1.1","cli","app","supabase","surfaces.mts",".gitignore"],{cwd:source,maxBuffer:32*1024*1024});
+  execFileSync("tar",["-xf","-"],{cwd:publisher,input:baseline});
   fs.appendFileSync(path.join(publisher,".gitignore"),"\nnode_modules/\ndist/\n");
   git(publisher,"init","-b","main"); git(publisher,"config","user.email","release-test@example.invalid"); git(publisher,"config","user.name","Release test");
   const initial = publish("0.1.0");
   git(tmp,"clone",publisher,installed);
   await execute("npm",["ci","--no-fund","--no-audit"],{cwd:path.join(installed,"cli"),env,timeout:180000,maxBuffer:8*1024*1024});
   await execute(process.execPath,["--no-warnings",path.join(installed,"cli/src/main.ts"),"setup","--dir",workspace],{cwd:installed,env,timeout:240000,maxBuffer:8*1024*1024});
+  await cli(["type","add","contact"]);
+  await cli(["field","add","contact","phone","--kind","phone"]);
+  await cli(["new","contact","Upgrade phone","phone=415.555.0123"]);
+  assert.equal(JSON.parse(await cli(["query","contact","--json"]))[0].fields.phone,"415.555.0123");
+  for (const name of ["cli","app","supabase","surfaces.mts"]) fs.cpSync(path.join(source,name),path.join(publisher,name),{recursive:true,
+    filter: file => !["node_modules","dist",".git"].includes(path.basename(file))});
   const release = publish("0.2.0");
   publish("99.0.0-rc.1");
   fs.writeFileSync(path.join(publisher,"development-only"),"must not be installed\n");
@@ -119,6 +126,10 @@ try {
   assert.equal(git(active(),"rev-parse","HEAD"),next);assert.equal(git(installed,"rev-parse","HEAD"),initial);
   assert.equal(fs.existsSync(path.join(active(),"development-only")),true,"stable release includes its intentional history");
   assert.equal(fs.readFileSync(path.join(state().backup,"db/release-test-marker"),"utf8"),"pending local data");
+  assert.equal(JSON.parse(await cli(["query","contact","--json"]))[0].fields.phone,"415.555.0123","upgrade preserves existing phone values");
+  await cli(["set","Upgrade phone","phone=mobile: (415) 555-0123 ext. 004"]);
+  assert.deepEqual(JSON.parse(await cli(["query","contact","--json"]))[0].fields.phone,[{number:"+14155550123",label:"mobile",extension:"004"}]);
+  ok("published 0.1.1 database upgrades to phone schema before new writes; existing values survive");
   const previous = active();
   ok("prepared release activates atomically, restarts the prior server and verifies its actual commit; stopped data is backed up");
   // A real failed release opens/migrates the actual PGlite database before startup fails.

@@ -1,9 +1,11 @@
 // Record changes made from views, boards and Move to…, each with an undo entry.
 import { api, type AppState, type RecordFull, type TypeInfo } from "./api.ts";
 import { did } from "./undo.ts";
+import { phoneText } from "../../cli/src/phone.ts";
 
 function fmt(v: unknown, f?: { kind: string }, titleOf?: (id: string) => string): string {
   if (v == null || v === "" || (Array.isArray(v) && !v.length)) return "empty";
+  if (f?.kind === "phone") return phoneText(v).replace(/\n/g, "; ");
   if (f?.kind === "checkbox") return v ? "checked" : "unchecked";
   if (f?.kind === "link" && titleOf) return (Array.isArray(v) ? v : [v]).map((x) => titleOf(String(x))).join(", ");
   return Array.isArray(v) ? v.join(", ") : String(v);

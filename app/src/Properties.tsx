@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { FieldDef, Summary } from "./api.ts";
 import { Icon } from "./Icon.tsx";
+import { phoneText } from "../../cli/src/phone.ts";
 
 interface Props {
   fields: FieldDef[];
@@ -34,6 +35,8 @@ export function Properties({ fields, values, errors, records, onChange, onOpen }
 
 export function Value({ f, value, records, onChange, onOpen }: { f: FieldDef; value: unknown; records: Summary[]; onChange: (v: unknown) => void; onOpen: (id: string) => void }) {
   switch (f.kind) {
+    case "phone":
+      return <PhoneValue value={value} onChange={onChange} />;
     case "checkbox":
       return (
         <button type="button" className={`check ${value ? "on" : ""}`} onClick={() => onChange(!value)} aria-pressed={!!value}>
@@ -51,6 +54,31 @@ export function Value({ f, value, records, onChange, onOpen }: { f: FieldDef; va
     default:
       return <TextValue f={f} value={value} onChange={onChange} />;
   }
+}
+
+function PhoneValue({ value, onChange }: { value: unknown; onChange: (v: unknown) => void }) {
+  const canonical = phoneText(value);
+  const [text, setText] = useState(canonical);
+  const focused = useRef(false);
+  useEffect(() => { if (!focused.current) setText(canonical); }, [canonical]);
+  return <textarea
+    className="prop-input phone-input"
+    aria-label="Phone numbers"
+    placeholder="(415) 555-0123, or mobile: (415) 555-0123"
+    rows={Math.max(1, text.split("\n").length)}
+    value={text}
+    onFocus={() => { focused.current = true; }}
+    onChange={e => setText(e.target.value)}
+    onBlur={() => {
+      focused.current = false;
+      if (text !== canonical) onChange(text.trim() ? text : null);
+    }}
+    onKeyDown={e => {
+      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); e.currentTarget.blur(); }
+      if (e.key === "Escape") { e.preventDefault(); setText(canonical); focused.current = false; }
+    }}
+    title="One phone number per line. Labels and extensions are preserved. Shift+Enter adds a line."
+  />;
 }
 
 function TextValue({ f, value, onChange }: { f: FieldDef; value: unknown; onChange: (v: unknown) => void }) {

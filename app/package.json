@@ -1,7 +1,7 @@
 {
   "name": "surface-app",
   "private": true,
-  "version": "0.1.1",
+  "version": "0.1.2",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -9,7 +9,8 @@
     "qa:browsers": "npm run build && playwright test",
     "qa:safari": "npm run build && node qa/native-safari.mjs",
     "qa:data": "node --import tsx qa/qa-data.mjs",
-    "qa:apps": "node --import tsx qa/qa-app-switcher.mjs && node --import tsx qa/qa-app-shell.mjs && node --import tsx qa/qa-api-navigation.mjs"
+    "qa:apps": "node --import tsx qa/qa-app-switcher.mjs && node --import tsx qa/qa-app-shell.mjs && node --import tsx qa/qa-api-navigation.mjs",
+    "qa:phones": "node --import tsx qa/qa-phones.mjs"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.3",
