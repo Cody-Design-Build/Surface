@@ -19,6 +19,8 @@ import { normalize } from "./normalize.ts";
 import { asTreeDef, defaultTree, isTreeDef, resolveTree, validateDataView, validateTree, type TreeDef, type TreeNode } from "./tree.ts";
 import { matches, parseWhere, sortRows } from "./query.ts";
 import { logger, logFile, debugOn } from "./log.ts";
+import { ensureAppBuild } from "./app-build.ts";
+import { ROOT } from "./service.ts";
 
 const L = logger("serve");
 const HL = logger("http");
@@ -759,12 +761,14 @@ export async function serve(initial: Checkout, opts: { port: number; host?: stri
     fs.rmSync(lock);
     fs.writeFileSync(lock,String(process.pid),{flag:"wx"});
   }
+  const version = installedVersion();
+  try { ensureAppBuild(ROOT, version); }
+  catch (error) { release(); throw error; }
   process.once("exit",release);
   const token = serveToken();
   const port = opts.port;
   const host = opts.host ?? "127.0.0.1";
   const contexts = new Map<string, Promise<Awaited<ReturnType<typeof workspaceHandler>>>>();
-  const version = installedVersion();
   let syncLoop: { kick: () => void; stop: () => void } | null = null;
   let discovering = false;
   let stopping = false;

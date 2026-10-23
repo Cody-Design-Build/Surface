@@ -131,6 +131,10 @@ Existing dirty records from before this upgrade use the previous conservative wh
 
 Release discovery is passive and read-only: the server checks on startup and when the four-hour cache expires; the browser displays currency and the CLI may print a cached notice. No browser update controls, detached update workers, automatic installation or schedules remain. Explicit CLI installation/setup disables and removes old Surface update schedulers; `--check` leaves them unchanged. Discovery can be disabled with `SURFACE_UPDATE_CHECK=0`; failed checks retry after 15 minutes without claiming the computer is offline.
 
+Startup and `surface restart` verify that the web build's `surface-build.json` matches the installed version and Git commit, and that every app HTML entry exists. Missing or stale builds are compiled with `npm run build` into a temporary directory and published only after validation; failed compilation preserves the previous assets and does not stop an existing server. Matching builds are reused. Dependencies must already be installed; startup does not install packages or update Git.
+
+The browser's **New version ready → Reload** action only refreshes the page after the running server changes. It does not install or rebuild anything. Startup's build check ensures the refreshed page can load matching assets instead of repeatedly offering Reload for the same stale bundle. Uncommitted frontend edits still require an explicit `npm run build` in `app/`.
+
 ## 2. The database engine
 
 **Built: PGlite** (Postgres compiled to WebAssembly, run inside Node). The spike in §8 and the local-store tests established it.

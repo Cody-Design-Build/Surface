@@ -15,6 +15,7 @@ import "react-data-grid/lib/styles.css";
 import type { AppState, FieldDef, LayoutDef, RecordFull, TypeInfo } from "./api.ts";
 import { Icon } from "./Icon.tsx";
 import { Pill } from "./Properties.tsx";
+import { PhoneEditor } from "./PhoneEditor.tsx";
 import { phoneText } from "../../cli/src/phone.ts";
 import { CellView } from "./ViewPage.tsx";
 
@@ -22,7 +23,7 @@ export type LayoutPatch = { layout?: Partial<LayoutDef>; sort?: string | null };
 export type Change = { rec: RecordFull; title?: string; fields?: Record<string, unknown> };
 
 const ROW_H = { compact: 30, normal: 36, tall: 52 } as const;
-const TEXTY = new Set(["text", "number", "email", "phone", "url"]);
+const TEXTY = new Set(["text", "number", "email", "url"]);
 
 interface Props {
   app: AppState;
@@ -113,8 +114,8 @@ function TextEditor({ row, column, onRowChange, onClose, f }: RenderEditCellProp
       className="sg-input"
       autoFocus
       type={f?.kind === "date" ? "date" : "text"}
-      inputMode={f?.kind === "number" ? "decimal" : f?.kind === "email" ? "email" : f?.kind === "phone" ? "tel" : undefined}
-      value={f?.kind === "phone" && Array.isArray(value) ? phoneText(value).replace(/\n/g, "; ") : value == null ? "" : String(value)}
+      inputMode={f?.kind === "number" ? "decimal" : f?.kind === "email" ? "email" : undefined}
+      value={value == null ? "" : String(value)}
       ref={(el) => {
         if (el && f?.kind !== "date" && el.dataset.sel !== "1") {
           el.dataset.sel = "1";
@@ -129,6 +130,32 @@ function TextEditor({ row, column, onRowChange, onClose, f }: RenderEditCellProp
       aria-label={String(column.name)}
     />
   );
+}
+
+export function PhoneGridEditor({ row, onRowChange, onClose, f }: RenderEditCellProps<RecordFull> & { f: FieldDef }) {
+  const anchor = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ left: number; top: number; width: number } | null>(null);
+  useLayoutEffect(() => {
+    const bounds = anchor.current?.closest(".rdg-cell")?.getBoundingClientRect();
+    if (bounds) setPos({
+      left: Math.max(8, Math.min(bounds.left, window.innerWidth - 428)),
+      top: Math.max(8, Math.min(bounds.bottom + 2, window.innerHeight - 280)),
+      width: Math.min(Math.max(bounds.width, 360), window.innerWidth - 16),
+    });
+  }, []);
+  return <div ref={anchor} className="sg-choice">
+    {pos ? createPortal(
+      <div className="menu sg-menu sg-phone-menu" style={{ position: "fixed", left: pos.left, top: pos.top, width: pos.width, maxHeight: Math.max(120, window.innerHeight - pos.top - 8) }} onMouseDown={event => event.stopPropagation()}>
+        <PhoneEditor
+          autoFocus
+          value={row.fields[f.key]}
+          onChange={(value, finish) => onRowChange({ ...row, fields: { ...row.fields, [f.key]: value } }, finish)}
+          onCancel={() => onClose(false)}
+        />
+      </div>,
+      document.body,
+    ) : null}
+  </div>;
 }
 
 /** Select, multi-select and link editing: a menu under the cell, typed to filter. */
@@ -298,7 +325,7 @@ export function Grid({ app, type, layout, sort, rows, readOnly, embedded, open, 
       editable: !readOnly && f.kind !== "checkbox",
       cellClass: `sg-cell sgk-${f.kind}`,
       headerCellClass: `sgh-${f.kind}`,
-      editorOptions: { displayCellContent: false },
+      editorOptions: { displayCellContent: false, ...(f.kind === "phone" ? { commitOnOutsideClick: false } : {}) },
       renderCell: ({ row }) =>
         f.kind === "checkbox" ? (
           <button
@@ -320,7 +347,7 @@ export function Grid({ app, type, layout, sort, rows, readOnly, embedded, open, 
         ) : (
           <CellView app={app} f={f} v={row.fields[f.key]} />
         ),
-      renderEditCell: (p) => (TEXTY.has(f.kind) || f.kind === "date" ? <TextEditor {...p} f={f} /> : <ChoiceEditor {...p} app={app} f={f} />),
+      renderEditCell: (p) => (f.kind === "phone" ? <PhoneGridEditor {...p} f={f} /> : TEXTY.has(f.kind) || f.kind === "date" ? <TextEditor {...p} f={f} /> : <ChoiceEditor {...p} app={app} f={f} />),
     }));
     // TreeDataGrid moves grouped columns to the front and freezes them. Group by zero-width stand-in
     // columns instead, so the real columns stay where they are.

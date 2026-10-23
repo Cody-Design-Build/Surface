@@ -357,13 +357,13 @@ try {
       await tx.exec("alter table public.records disable trigger records_validate");
       await tx.query(\`update public.records set fields=fields || jsonb_build_object(
         (select f->>'id' from public.types t,jsonb_array_elements(t.fields) f where t.id=records.type_id and f->>'key'='phone'),
-        'mobile: (415) 555-0123 ext. 004'::text) where id=$1\`,[${JSON.stringify(t1)}]);
+        '(415) 555-0123 ext. 004'::text) where id=$1\`,[${JSON.stringify(t1)}]);
       await tx.exec("alter table public.records enable trigger records_validate");
     }); } finally {await closeLocal();}
   `;
   execFileSync(process.execPath,["--no-warnings","--input-type=module","-e",seedLegacyPhone],{cwd:dir("a"),env:envOf("a"),stdio:"pipe"});
   run("a",["sync"]); run("b",["sync"]);
-  assert.deepEqual(find("b","task","Order tile")!.fields.phone,[{number:"+14155550123",label:"mobile",extension:"004"}]);
+  assert.deepEqual(find("b","task","Order tile")!.fields.phone,[{number:"+14155550123",extension:"004"}]);
   const phoneStatus = callSync("a","status") as {pending:Record<string,number>;conflicts:unknown[]};
   assert.equal(phoneStatus.pending.record ?? 0,0);
   assert.equal(phoneStatus.conflicts.length,0);
@@ -377,12 +377,12 @@ try {
       await tx.exec("set local surface.applying = ''");
       await tx.query(\`update public.records set fields=jsonb_set(fields,
         array[(select f->>'id' from public.types t,jsonb_array_elements(t.fields) f where t.id=records.type_id and f->>'key'='phone')],
-        to_jsonb('mobile: (415) 555-0124 ext. 004'::text)) where id=$1\`,[${JSON.stringify(t1)}]);
+        to_jsonb('(415) 555-0124 ext. 004'::text)) where id=$1\`,[${JSON.stringify(t1)}]);
       await tx.exec("alter table public.records enable trigger records_validate");
     `);
   execFileSync(process.execPath,["--no-warnings","--input-type=module","-e",legacyBaseEdit],{cwd:dir("a"),env:envOf("a"),stdio:"pipe"});
   run("a",["sync"]); run("b",["sync"]);
-  assert.deepEqual(find("b","task","Order tile")!.fields.phone,[{number:"+14155550124",label:"mobile",extension:"004"}]);
+  assert.deepEqual(find("b","task","Order tile")!.fields.phone,[{number:"+14155550124",extension:"004"}]);
   assert.equal((callSync("a","status") as {conflicts:unknown[]}).conflicts.length,0);
   ok("a converted cloud phone and its legacy base compare equally before a queued phone edit");
 

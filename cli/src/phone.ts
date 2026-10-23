@@ -1,17 +1,15 @@
-// One phone field can hold several labeled numbers without losing extensions.
+// One phone field holds ordered numbers; the first entry is primary.
 // Numbers are stored as E.164; punctuation belongs to the display, not identity.
 import { parsePhoneNumberFromString } from "libphonenumber-js";
 
 export interface PhoneEntry {
   number: string;
-  label?: string;
   extension?: string;
 }
 
-const LABEL = /^[a-z][a-z0-9 _-]{0,39}$/i;
 const E164 = /^\+[1-9][0-9]{6,14}$/;
 
-/** Accept plain input, labeled lines, or readable YAML/JSON entries. Never extract
+/** Accept plain input or readable YAML/JSON entries without labels. Never extract
  * a number from arbitrary prose: malformed or ambiguous input must be reviewed. */
 export function normalizePhones(raw: unknown): PhoneEntry[] | null {
   if (raw == null || (typeof raw === "string" && !raw.trim()) || (Array.isArray(raw) && !raw.length)) return null;
@@ -23,17 +21,16 @@ export function normalizePhones(raw: unknown): PhoneEntry[] | null {
     ? input.split(/\r?\n|;(?!\s*ext=)/i).filter(s => s.trim()) : [input];
   if (!items.length || items.length > 20) throw new Error("use between 1 and 20 phone entries");
   const entries = items.map(item => {
-    let number: unknown = item, label: unknown, extension: unknown;
+    let number: unknown = item, extension: unknown;
     if (item && typeof item === "object" && !Array.isArray(item)) {
       const entry = item as Record<string, unknown>;
-      if (Object.keys(entry).some(k => !["number", "label", "extension"].includes(k))) throw new Error("phone entries accept only number, label and extension");
-      ({ number, label, extension } = entry);
-    } else if (typeof item === "string") {
-      const match = item.trim().match(/^([a-z][a-z0-9 _-]{0,39}):\s*(.+)$/i);
-      if (match && match[1].toLowerCase() !== "tel") { label = match[1]; number = match[2]; }
+      if ("label" in entry) throw new Error("phone labels are not supported; use number and optional extension, with the primary number first");
+      if (Object.keys(entry).some(k => !["number", "extension"].includes(k))) throw new Error("phone entries accept only number and extension");
+      ({ number, extension } = entry);
     }
     if (typeof number === "number" && Number.isSafeInteger(number) && number > 0) number = String(number);
     if (typeof number !== "string") throw new Error("each phone entry needs a number");
+    if (/^(?!tel:)[a-z][a-z0-9 _-]*:/i.test(number.trim())) throw new Error("phone labels are not supported; enter one number per line, with the primary number first");
     const text = number.trim().replace(/^tel:/i, "");
     // Seven-digit local numbers are ambiguous. US/Canada is the default only
     // when no country code is supplied; international numbers need a leading +.
@@ -45,8 +42,7 @@ export function normalizePhones(raw: unknown): PhoneEntry[] | null {
     if (parsed.ext && extension != null && extension !== parsed.ext) throw new Error("conflicting phone extensions; keep one extension per entry");
     extension ??= parsed.ext;
     if (extension != null && !/^[0-9]{1,10}$/.test(String(extension))) throw new Error("extensions must be 1–10 digits");
-    if (label != null && (typeof label !== "string" || !LABEL.test(label.trim()))) throw new Error("phone labels must start with a letter and use at most 40 letters, digits, spaces, - or _");
-    return { number: String(parsed.number), ...(label != null ? { label: String(label).trim().toLowerCase() } : {}), ...(extension != null ? { extension: String(extension) } : {}) };
+    return { number: String(parsed.number), ...(extension != null ? { extension: String(extension) } : {}) };
   });
   // PostgreSQL JSONB orders object keys independently of JavaScript. Keep an
   // already-canonical value intact so check/push do not report perpetual edits.
@@ -69,7 +65,7 @@ export function phoneText(value: unknown, readable = true): string {
   return entries.map(entry => {
     const parsed = parsePhoneNumberFromString(entry.number);
     const number = readable && parsed ? parsed.countryCallingCode === "1" ? parsed.formatNational() : parsed.formatInternational() : entry.number;
-    return `${entry.label ? entry.label + ": " : ""}${number}${entry.extension ? " ext. " + entry.extension : ""}`;
+    return `${number}${entry.extension ? " ext. " + entry.extension : ""}`;
   }).join("\n");
 }
 

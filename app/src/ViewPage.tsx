@@ -1,5 +1,6 @@
-import { phoneText, phoneEntries, phoneHref } from "../../cli/src/phone.ts";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { phoneText, phoneEntries, phoneHref, type PhoneEntry } from "../../cli/src/phone.ts";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { api, ApiError, type AppState, type FieldDef, type LayoutDef, type RecordFull, type Summary, type TypeInfo, type ViewDef, type ViewInfo } from "./api.ts";
 import { defaultsFrom, deleteRecord, setFields } from "./edits.ts";
 import { Grid, GridOptions, type Change, type LayoutPatch } from "./Grid.tsx";
@@ -291,11 +292,76 @@ function titleOf(app: AppState, id: string) {
   return app.records.find((r) => r.id === id)?.title ?? id;
 }
 
+function PhoneCell({ entries }: { entries: PhoneEntry[] }) {
+  const id = useId();
+  const button = useRef<HTMLButtonElement>(null);
+  const popup = useRef<HTMLDivElement>(null);
+  const [position, setPosition] = useState<{ left: number; top: number } | null>(null);
+  useEffect(() => {
+    if (!position) return;
+    popup.current?.querySelector<HTMLAnchorElement>("a")?.focus();
+    const outside = (event: MouseEvent) => {
+      if (!popup.current?.contains(event.target as Node) && !button.current?.contains(event.target as Node)) setPosition(null);
+    };
+    const close = () => setPosition(null);
+    document.addEventListener("mousedown", outside);
+    window.addEventListener("resize", close);
+    return () => {
+      document.removeEventListener("mousedown", outside);
+      window.removeEventListener("resize", close);
+    };
+  }, [position]);
+  return <span className="phone-cell">
+    <a className="cell-url phone-cell-primary" href={phoneHref(entries[0])} onClick={event => event.stopPropagation()}>{phoneText([entries[0]])}</a>
+    {entries.length > 1 ? <button
+      ref={button}
+      type="button"
+      className="phone-more"
+      aria-label={`Show ${entries.length - 1} more phone ${entries.length === 2 ? "number" : "numbers"}`}
+      aria-expanded={!!position}
+      aria-controls={id}
+      onMouseDown={event => event.stopPropagation()}
+      onDoubleClick={event => event.stopPropagation()}
+      onClick={event => {
+        event.stopPropagation();
+        const bounds = event.currentTarget.getBoundingClientRect();
+        setPosition(position ? null : {
+          left: Math.max(8, Math.min(bounds.left, window.innerWidth - 308)),
+          top: Math.max(8, Math.min(bounds.bottom + 4, window.innerHeight - Math.min(240, (entries.length - 1) * 34 + 16))),
+        });
+      }}
+    >+{entries.length - 1} more</button> : null}
+    {position ? createPortal(<div
+      ref={popup}
+      id={id}
+      className="menu phone-more-menu"
+      role="group"
+      aria-label="Additional phone numbers"
+      style={{ position: "fixed", left: position.left, top: position.top }}
+      onMouseDown={event => event.stopPropagation()}
+      onClick={event => event.stopPropagation()}
+      onBlur={event => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null) && event.relatedTarget !== button.current) setPosition(null);
+      }}
+      onKeyDown={event => {
+        event.stopPropagation();
+        if (event.key === "Escape") {
+          event.preventDefault();
+          setPosition(null);
+          button.current?.focus();
+        }
+      }}
+    >
+      {entries.slice(1).map((entry, index) => <a className="cell-url" key={index} href={phoneHref(entry)}>{phoneText([entry])}</a>)}
+    </div>, document.body) : null}
+  </span>;
+}
+
 export function CellView({ app, f, v }: { app: AppState; f: FieldDef; v: unknown }) {
   if (v == null || v === "" || (Array.isArray(v) && !v.length)) return <span className="empty">—</span>;
   if (f.kind === "phone") {
     const entries = phoneEntries(v);
-    return entries ? <>{entries.map((entry, i) => <span key={i}>{i > 0 ? "; " : ""}<a className="cell-url" href={phoneHref(entry)} onClick={e => e.stopPropagation()}>{phoneText([entry])}</a></span>)}</> : <>{phoneText(v)}</>;
+    return entries ? <PhoneCell entries={entries} /> : <>{phoneText(v)}</>;
   }
   if (f.kind === "checkbox") return v ? <span className="cell-check on">✓</span> : <span className="cell-check" />;
   if (f.kind === "select") return <Pill label={String(v)} />;

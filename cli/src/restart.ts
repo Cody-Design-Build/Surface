@@ -5,6 +5,8 @@ import { CONFIG_DIR, findCheckout, readJson } from "./config.ts";
 import { UserError } from "./client.ts";
 import { openSurface, running, startServer } from "./open.ts";
 import { ROOT, runCommand, serviceAction, serviceInstalled } from "./service.ts";
+import { ensureAppBuild } from "./app-build.ts";
+import { installedVersion } from "./system.ts";
 
 export async function restartLocal() {
   let server = await running();
@@ -20,13 +22,19 @@ export async function restartLocal() {
     checkout = findCheckout() ?? (record.root ? findCheckout(record.root) : null);
     if (!checkout) throw new UserError("Run surface restart from your workspace folder to start Surface again.");
     const port = record.port ?? 4317;
-    if (managed) serviceAction("restart");
+    if (managed) {
+      ensureAppBuild(ROOT, installedVersion());
+      serviceAction("restart");
+    }
     else await startServer(checkout,port);
     server = {root:checkout.root,port};
   } else {
     checkout = findCheckout(server.root);
     if (!checkout) throw new UserError(`No checkout at ${server.root}; the server was left running.`);
-    if (managed) serviceAction("restart");
+    if (managed) {
+      ensureAppBuild(ROOT, installedVersion());
+      serviceAction("restart");
+    }
     else {
       const record = readJson<{pid?:number;port?:number}>(path.join(CONFIG_DIR,"serve.json"),{});
       const pid = record.pid;
@@ -34,6 +42,7 @@ export async function restartLocal() {
       const inspected = runCommand("ps",["-p",String(pid),"-o","command="],{quiet:true,allowFailure:true});
       const command = inspected.stdout?.trim() ?? "";
       if (inspected.status !== 0 || !command.includes(path.join(ROOT,"cli/src/main.ts")) || !/(?:^|\s)serve(?:\s|$)/.test(command)) throw new UserError("Cannot verify that the recorded process is this Surface server. Stop it in its original terminal, then run surface serve.");
+      ensureAppBuild(ROOT, installedVersion());
       process.kill(pid!,"SIGTERM");
       const deadline = Date.now()+30000;
       while (true) {

@@ -9,6 +9,9 @@ import os from "node:os";
 import path from "node:path";
 import { apps } from "../../surfaces.mts";
 import { CONFIG_DIR, type Checkout } from "./config.ts";
+import { ensureAppBuild } from "./app-build.ts";
+import { ROOT } from "./service.ts";
+import { installedVersion } from "./system.ts";
 
 const RUNNING_FILE = path.join(CONFIG_DIR, "serve.json");
 const TOKEN_FILE = path.join(CONFIG_DIR, "serve-token");
@@ -59,6 +62,7 @@ export async function running(): Promise<{ port: number; root: string; protocol?
 }
 
 export async function startServer(co: Checkout, port: number): Promise<number> {
+  ensureAppBuild(ROOT, installedVersion());
   const bin = path.resolve(import.meta.dirname,"main.ts");
   const log = path.join(CONFIG_DIR, "serve.log");
   fs.mkdirSync(CONFIG_DIR, { recursive: true });

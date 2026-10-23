@@ -15,7 +15,7 @@ export const FIELD_TYPES: { kind: Kind; label: string; hint: string }[] = [
   { kind: "checkbox", label: "Checkbox", hint: "Yes or no" },
   { kind: "link", label: "Link to another record", hint: "Relate records in this table to records in another table" },
   { kind: "email", label: "Email", hint: "An email address" },
-  { kind: "phone", label: "Phone number", hint: "Formats automatically; supports multiple labeled numbers and extensions" },
+  { kind: "phone", label: "Phone number", hint: "Multiple numbers; first is primary. Extensions supported." },
   { kind: "url", label: "URL", hint: "A web address" },
 ];
 export const fieldTypeLabel = (k: Kind) => FIELD_TYPES.find((x) => x.kind === k)?.label ?? k;

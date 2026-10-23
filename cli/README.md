@@ -177,20 +177,26 @@ Local databases apply migration **0007** when opened by the updated client. Befo
 
 Phone is a validated database type, not unrestricted text. The CLI, Markdown push and app accept common US/Canadian formats (default region US), or international numbers beginning with `+` and a country code. They normalize numbers to E.164. The app displays US/Canadian numbers as `(415) 555-0123` and international numbers in international format.
 
-A phone field can hold several entries. Labels and extensions are stored separately from the number, so nothing is lost:
+Use one phone field for an ordered list of entries. **The first is primary**; do not create separate Mobile/Office fields, phone-type labels, or primary flags. See the shared [phone field policy](../docs/PHONE.md).
 
 ```yaml
 phone:
-  - number: "+14155550123"
-    label: mobile
+  - number: "+14155550123" # Primary
   - number: "+14155550124"
-    label: office
     extension: "004"
 ```
 
-Plain text input also works: `phone=415.555.0123`, or labeled numbers on separate lines (`mobile: 415.555.0123`, `office: 415.555.0124 ext. 004`). The grid accepts those lines separated by semicolons too. The property editor uses Shift+Enter for another line. The CLI also accepts a JSON array of entries as its assignment value.
+Choose a different primary without losing the other numbers:
 
-Incomplete numbers, conflicting extensions, unsupported labels and unknown entry keys are rejected rather than guessed or dropped. Validation checks structure and plausible number length, not whether a number is active or assigned. Database writes must use canonical arrays of `{number, label?, extension?}`; formatting through a skill alone cannot bypass this rule. Empty optional fields are `null`.
+```sh
+surface phone primary "Contact name" 2
+```
+
+Positions are one-based. This moves the selected entry first and preserves the order of the others. New numbers append; removing the primary promotes the next. The web editor provides a primary star, Add number, removal, and separate extensions; compact cells show the primary and `+N more`.
+
+Plain CLI input still works: `phone=415.555.0123`, multiple numbers on separate lines or separated by semicolons, or a JSON array of `{number, extension?}` entries. Replacing a list with `surface set` preserves the supplied order. Copy/export includes every number, not only the primary.
+
+CLI/API writes reject incomplete numbers, conflicting extensions, phone-type labels, and unknown entry keys rather than guessing or dropping information. Validation checks structure and plausible number length, not whether a number is active or assigned. Clear optional fields with `null` or an empty CLI assignment.
 
 **Upgrade:** migration `0009_phone_fields.sql` applies automatically to local stores on restart. Cloud administrators must apply migration 9 before updated clients write structured phones (`surface cloud migrate --since 9` with administrator credentials, or `surface cloud schema --since 9` in the SQL editor). Older clients need updating to edit phone fields. Existing legacy values remain visible and don't block unrelated edits; normalize or review them explicitly. History retains the original values.
 

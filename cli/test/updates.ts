@@ -127,8 +127,8 @@ try {
   assert.equal(fs.existsSync(path.join(active(),"development-only")),true,"stable release includes its intentional history");
   assert.equal(fs.readFileSync(path.join(state().backup,"db/release-test-marker"),"utf8"),"pending local data");
   assert.equal(JSON.parse(await cli(["query","contact","--json"]))[0].fields.phone,"415.555.0123","upgrade preserves existing phone values");
-  await cli(["set","Upgrade phone","phone=mobile: (415) 555-0123 ext. 004"]);
-  assert.deepEqual(JSON.parse(await cli(["query","contact","--json"]))[0].fields.phone,[{number:"+14155550123",label:"mobile",extension:"004"}]);
+  await cli(["set","Upgrade phone","phone=(415) 555-0123 ext. 004"]);
+  assert.deepEqual(JSON.parse(await cli(["query","contact","--json"]))[0].fields.phone,[{number:"+14155550123",extension:"004"}]);
   ok("published 0.1.1 database upgrades to phone schema before new writes; existing values survive");
   const previous = active();
   ok("prepared release activates atomically, restarts the prior server and verifies its actual commit; stopped data is backed up");

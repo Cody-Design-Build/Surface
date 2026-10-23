@@ -8,7 +8,7 @@ import type { TypeRow } from "./db.ts";
 
 function describeField(f: TypeRow["fields"][number], types: TypeRow[]): string {
   let kind: string = f.kind;
-  if (f.kind === "phone") kind += ": E.164 entries [{number, label?, extension?}]; CLI also accepts formatted US/Canadian numbers or +country-code numbers, one labeled number per line";
+  if (f.kind === "phone") kind += ": ordered E.164 entries [{number, extension?}]; first is primary; no labels; CLI accepts formatted US/Canadian numbers or +country-code numbers";
   if (f.kind === "select" || f.kind === "multi_select") kind += ` (${(f.options ?? []).join(", ")})`;
   if (f.kind === "link") {
     const t = types.find((t) => t.id === f.target);
@@ -51,6 +51,14 @@ Every file is one record: front matter = typed fields, body = notes.
    Types are readable in \`.surface/types/\` but are changed only with \`surface type …\` / \`surface field …\`.
 8. Every record can have one \`parent\` (\`parent: "[[Page]]"\`): Notion-style nesting. It never moves the file.
 
+## Phone fields
+
+- Keep multiple numbers in one ordered field. Each entry is \`{number, extension?}\`; never add mobile/office labels or a separate primary flag.
+- The first entry is primary. Add numbers at the end; removing the first promotes the next. Clear an optional field with \`null\`.
+- Use \`surface phone primary <record> <1-based-position> [--field phone]\` to choose the primary. It moves that entry first without reordering the others.
+- Preserve every number, extension, and existing order unless asked to change them. Never sort or deduplicate numbers during cleanup.
+- An existing first entry is only the default; do not claim it is the contact's confirmed preference. Do not infer mobile/office type.
+
 ## Files, folders and views
 
 - **Files are storage.** Each record is one file in one folder. This checkout's layout: \`${layout}\`
@@ -71,6 +79,7 @@ Every file is one record: front matter = typed fields, body = notes.
 | \`surface show <id or name>\` | One record |
 | \`surface new <type> "Title" key=value …\` | Create a record |
 | \`surface set <id or name> key=value …\` | Change fields |
+| \`surface phone primary <record> <position>\` | Make that phone entry primary (one-based position) |
 | \`surface types\` / \`surface type show <key>\` | The schema |
 | \`surface new page "Title" --parent "Other page"\` | Nest a page inside another |
 | \`surface tree --paths\` | The Views tree, with file paths |
@@ -87,6 +96,8 @@ Records are Markdown files with typed front matter; the Surface database is the 
 
 Read \`.agents/skills/surface/SKILL.md\` before changing anything. In short: use the \`surface\` CLI,
 or edit files and run \`surface push\`. Never edit \`.surface/\`.
+
+Phone rule: one ordered list of \`{number, extension?}\`; first entry is primary. Never add phone-type labels or a separate primary flag. Preserve numbers, extensions, and order; see the skill for primary selection.
 
 Types: ${types.map((t) => `\`${t.key}\``).join(", ")}. Run \`surface types\` for fields.
 

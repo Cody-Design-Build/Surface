@@ -15,7 +15,7 @@ import { localEdits, localViewEdits, makeResolver, pull, push, snapshot, status,
 import { matches, parseWhere, sortRows, type QueryCtx } from "./query.ts";
 import { asTreeDef, defaultTree, drawTree, isTreeDef, resolveTree, validateDataView, validateTree, type TreeNode } from "./tree.ts";
 import { cliValue, normalize } from "./normalize.ts";
-import { phoneText } from "./phone.ts";
+import { normalizePhones, phoneText } from "./phone.ts";
 import { basename, parse, render } from "./markdown.ts";
 import { writeAgentFiles } from "./skills.ts";
 import { migrateCloud } from "./cloud-migrations.ts";
@@ -706,6 +706,34 @@ const commands: Record<string, Cmd> = {
     for (const n of notices) console.log(dim(`  ${n}`));
     await refreshCheckout(co);
     console.log(res.record.rev === r.rev ? "No change." : green(`Updated "${title}" (rev ${res.record.rev}).`));
+  },
+
+  async phone(a) {
+    const [sub, ref, rawIndex] = a._;
+    if (sub !== "primary" || !ref || rawIndex === undefined || a._.length !== 3) throw new UserError("Usage: surface phone primary <record> <1-based-index> [--field <key>]");
+    if (!/^[1-9][0-9]*$/.test(rawIndex) || !Number.isSafeInteger(Number(rawIndex))) throw new UserError("Phone index must be a positive, 1-based integer.");
+    await requireUser();
+    const ws = await workspaceId(a);
+    const co = findCheckout();
+    const r = await findRecord(ws, ref, co);
+    if (co && localEdits(co).has(r.id)) throw new UserError(`${co.state.records[r.id].path} has unpushed edits. Push them first, or pull --force to discard.`);
+    const types = await fetchTypes(ws);
+    const t = types.find((x) => x.id === r.type_id)!;
+    const field = fieldByKey(t, flag(a, "field") ?? "phone");
+    if (field.kind !== "phone") throw new UserError(`Field "${field.key}" on "${t.key}" is not a phone field.`);
+    let entries;
+    try { entries = normalizePhones(r.fields[field.id]); }
+    catch (error) { throw new UserError(`${field.key}: ${error instanceof Error ? error.message : String(error)}`); }
+    const index = Number(rawIndex) - 1;
+    if (!entries?.length) throw new UserError(`Field "${field.key}" has no phone numbers.`);
+    if (index >= entries.length) throw new UserError(`Phone index must be between 1 and ${entries.length}.`);
+    if (index === 0) return void console.log("No change.");
+    const fields = fieldsByKey(r, t);
+    fields[field.key] = [entries[index], ...entries.slice(0, index), ...entries.slice(index + 1)];
+    const res = await pushRecord({ workspace: ws, id: r.id, baseRev: r.rev, type: t.key, title: r.title, fields, body: r.body, folder: r.folder });
+    if (!res.ok) throw new UserError(res.message);
+    await refreshCheckout(co);
+    console.log(res.record.rev === r.rev ? "No change." : green(`Updated "${r.title}" (rev ${res.record.rev}).`));
   },
 
   async show(a) {
@@ -1671,6 +1699,8 @@ Types
 Records
   new <type> "Title" [field=value …] [--body text] [--folder A/B] [--parent <record>]
   set <id|name> field=value …         (also title=, type=, body=, folder=, parent= ; parent= clears)
+  phone primary <record> <1-based-index> [--field <key>]
+                                      move a number to first (primary), preserving all others
   show <id|name> [--json]
   query [type] [--where "status=doing && due<2026-11-01"] [--sort -due] [--limit n] [--this <record>] [--json]
       where keys: any field, title, type, folder, parent; "parent=" means no parent; "project=this" uses --this
